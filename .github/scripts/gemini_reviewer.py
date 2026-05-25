@@ -1,6 +1,6 @@
 import os
 import requests
-import google.generativeai as genai
+from google import genai
 
 # 1. Load Environment Variables
 repo_name = os.environ["REPO_NAME"]
@@ -8,7 +8,7 @@ pr_number = os.environ["PR_NUMBER"]
 github_token = os.environ["GITHUB_TOKEN"]
 gemini_api_key = os.environ["GEMINI_API_KEY"]
 
-genai.configure(api_key=gemini_api_key)
+client = genai.Client(api_key=gemini_api_key)
 
 # 2. Fetch the Pull Request Diff (the changed code) from GitHub
 headers = {
@@ -35,8 +35,10 @@ Here is the code diff:
 {pr_diff}
 """
 
-model = genai.GenerativeModel('gemini-1.5-pro')
-ai_response = model.generate_content(prompt).text
+ai_response = client.models.generate_content(
+    model="gemini-2.5-flash",
+    contents=prompt,
+).text
 
 # 4. Parse the AI's Decision
 lines = ai_response.strip().split('\n')
