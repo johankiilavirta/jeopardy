@@ -128,11 +128,15 @@ if decision not in ["APPROVE", "REQUEST_CHANGES"]:
     feedback = f"Error: AI returned invalid decision format. Raw output:\n\n{ai_response}"
 
 # 8. Submit the Review to GitHub
+# GITHUB_TOKEN can't submit APPROVE reviews (GitHub restriction for actions bot),
+# so we always post as COMMENT and include the verdict in the body.
 review_url = f"https://api.github.com/repos/{repo_name}/pulls/{pr_number}/reviews"
+verdict = "✅ **APPROVED**" if decision == "APPROVE" else "❌ **CHANGES REQUESTED**"
 review_data = {
-    "event": decision,
-    "body": f"### Gemini Code Review\n\n{feedback}"
+    "event": "COMMENT",
+    "body": f"### Gemini Code Review\n\n{verdict}\n\n{feedback}"
 }
 
-requests.post(review_url, headers=gh_headers, json=review_data)
-print(f"Submitted {decision} review to PR #{pr_number}")
+response = requests.post(review_url, headers=gh_headers, json=review_data)
+response.raise_for_status()
+print(f"Submitted review ({decision}) to PR #{pr_number}")
