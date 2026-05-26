@@ -27,6 +27,7 @@ export class MockTransport implements Transport {
     b.disconnectCbs.forEach(cb => cb(a.id));
   }
 
+  // Silently drops message if peer is not linked, simulating network loss
   send(peerId: string, message: string): void {
     const peer = this.peers.get(peerId);
     if (peer) {

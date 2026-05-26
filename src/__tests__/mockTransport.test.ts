@@ -31,13 +31,18 @@ describe('MockTransport', () => {
   it('broadcast sends to all connected peers', () => {
     const a = new MockTransport('alice');
     const b = new MockTransport('bob');
+    const c = new MockTransport('charlie');
     MockTransport.link(a, b);
+    MockTransport.link(a, c);
 
-    const received = vi.fn();
-    b.onMessage(received);
+    const bReceived = vi.fn();
+    const cReceived = vi.fn();
+    b.onMessage(bReceived);
+    c.onMessage(cReceived);
     a.broadcast('hello');
 
-    expect(received).toHaveBeenCalledWith('alice', 'hello');
+    expect(bReceived).toHaveBeenCalledWith('alice', 'hello');
+    expect(cReceived).toHaveBeenCalledWith('alice', 'hello');
   });
 
   it('does not deliver messages to unlinked peers', () => {
