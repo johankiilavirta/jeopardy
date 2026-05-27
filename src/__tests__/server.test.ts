@@ -1,7 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
 import { MockTransport } from '../mockTransport.js';
-import { createServer } from '../server.js';
+import { createServer, type Timer } from '../server.js';
 import type { GameState } from '../types.js';
+
+function createMockTimer() {
+  let callback: (() => void) | null = null;
+  let id = 0;
+  const timer: Timer = {
+    set: (cb, _ms) => { callback = cb; return ++id; },
+    clear: () => { callback = null; },
+  };
+  return { timer, fire: () => callback?.() };
+}
 
 function lastStateFrom(messages: [string, string][]): { state: GameState; playerId: string } {
   const last = messages[messages.length - 1]!;
@@ -137,6 +147,79 @@ describe('GameServer', () => {
     p1.send('host', JSON.stringify({ type: 'UNDO' }));
 
     expect(lastStateFrom(p1Messages).state.status).toBe('CHOOSE_CLUE');
+  });
+
+  it('buzzer timer fires TIMEOUT after clue is selected', () => {
+    const { timer, fire } = createMockTimer();
+    const host = new MockTransport('host');
+    const server = createServer(host, ['Alice', 'Bob'], { timer });
+
+    const p1 = new MockTransport('player1');
+    const p1Messages = captureMessages(p1);
+    MockTransport.link(host, p1);
+    MockTransport.link(host, new MockTransport('player2'));
+
+    p1.send('host', JSON.stringify({
+      type: 'SELECT_CLUE',
+      clue: { id: 1, category: 'Science', text: 'Q', answer: 'A', value: 200 },
+    }));
+    expect(lastStateFrom(p1Messages).state.status).toBe('CLUE_READING');
+
+    fire();
+    expect(lastStateFrom(p1Messages).state.status).toBe('CHOOSE_CLUE');
+    expect(lastStateFrom(p1Messages).state.burnedClueIds).toContain(1);
+  });
+
+  it('buzzer timer resets when player fails and others can still buzz', () => {
+    const { timer, fire } = createMockTimer();
+    const host = new MockTransport('host');
+    createServer(host, ['Alice', 'Bob'], { timer });
+
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    const p1Messages = captureMessages(p1);
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    p1.send('host', JSON.stringify({
+      type: 'SELECT_CLUE',
+      clue: { id: 1, category: 'Science', text: 'Q', answer: 'A', value: 200 },
+    }));
+
+    // Bob buzzes and gets it wrong — should reset timer for alice
+    p2.send('host', JSON.stringify({ type: 'BUZZ' }));
+    p2.send('host', JSON.stringify({ type: 'JUDGE_ANSWER', correct: false }));
+    expect(lastStateFrom(p1Messages).state.status).toBe('CLUE_READING');
+
+    // Timer fires again — now nobody buzzed, clue burned
+    fire();
+    expect(lastStateFrom(p1Messages).state.status).toBe('CHOOSE_CLUE');
+    expect(lastStateFrom(p1Messages).state.burnedClueIds).toContain(1);
+  });
+
+  it('buzzer timer is cleared when someone buzzes', () => {
+    const { timer, fire } = createMockTimer();
+    const host = new MockTransport('host');
+    createServer(host, ['Alice', 'Bob'], { timer });
+
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    const p1Messages = captureMessages(p1);
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    p1.send('host', JSON.stringify({
+      type: 'SELECT_CLUE',
+      clue: { id: 1, category: 'Science', text: 'Q', answer: 'A', value: 200 },
+    }));
+
+    // Bob buzzes — moves to ANSWER_PHASE, timer should be cleared
+    p2.send('host', JSON.stringify({ type: 'BUZZ' }));
+    expect(lastStateFrom(p1Messages).state.status).toBe('ANSWER_PHASE');
+
+    // Firing the old timer should be a no-op
+    fire();
+    expect(lastStateFrom(p1Messages).state.status).toBe('ANSWER_PHASE');
   });
 
   it('full game flow: select, buzz, judge correct', () => {
