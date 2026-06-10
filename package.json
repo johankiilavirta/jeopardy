@@ -2,17 +2,32 @@
   "name": "jeopardy",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
-  "type": "module",
+  "main": "index.ts",
   "scripts": {
     "test": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "npm run typecheck:lib && npm run typecheck:app",
+    "typecheck:lib": "tsc -p tsconfig.lib.json --noEmit",
+    "typecheck:app": "tsc -p tsconfig.json --noEmit",
+    "start": "expo start",
+    "ios": "expo start --ios"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "private": true,
+  "dependencies": {
+    "@expo-google-fonts/anton": "^0.4.2",
+    "@expo-google-fonts/oswald": "^0.4.2",
+    "expo": "~56.0.9",
+    "expo-font": "~56.0.5",
+    "expo-status-bar": "~56.0.4",
+    "react": "19.2.3",
+    "react-native": "0.85.3",
+    "react-native-safe-area-context": "~5.7.0"
+  },
   "devDependencies": {
     "@types/node": "^25.9.1",
+    "@types/react": "~19.2.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.7"
   }
