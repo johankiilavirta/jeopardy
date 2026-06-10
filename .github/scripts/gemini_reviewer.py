@@ -29,17 +29,42 @@ files_response = requests.get(
 )
 changed_files = files_response.json()
 
+# Extensions to skip for full content context
+SKIP_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".pdf", ".lock"]
+SKIP_FILES = ["package-lock.json", "yarn.lock", "pnpm-lock.yaml"]
+
 file_contents = []
+total_context_chars = 0
+MAX_CONTEXT_CHARS = 100000  # ~25k tokens roughly
+
 for f in changed_files:
     filename = f["filename"]
     status = f["status"]
+    
     if status == "removed":
         continue
+        
+    if any(filename.endswith(ext) for ext in SKIP_EXTENSIONS) or filename in SKIP_FILES:
+        print(f"Skipping full content for {filename} (unsupported type/lockfile)")
+        continue
+
     raw_url = f.get("raw_url")
     if not raw_url:
         continue
+        
     content = requests.get(raw_url, headers=gh_headers).text
-    file_contents.append(f"=== {filename} ===\n{content}")
+    
+    # If a single file is too large, truncate it
+    if len(content) > 20000:
+        content = content[:20000] + "\n... [truncated due to size] ..."
+
+    entry = f"=== {filename} ===\n{content}"
+    if total_context_chars + len(entry) > MAX_CONTEXT_CHARS:
+        print(f"Skipping further context, reached limit with {filename}")
+        break
+        
+    file_contents.append(entry)
+    total_context_chars += len(entry)
 
 full_file_context = "\n\n".join(file_contents)
 
@@ -78,10 +103,21 @@ tree_response = requests.get(
     headers=gh_headers
 )
 tree_data = tree_response.json()
-file_tree = "\n".join(
-    item["path"] for item in tree_data.get("tree", [])
-    if item["type"] == "blob" and not item["path"].startswith("node_modules/")
-)
+
+# Limit file tree to avoid massive prompts in large repos
+file_tree_list = []
+for item in tree_data.get("tree", []):
+    path = item["path"]
+    if item["type"] == "blob":
+        if any(part.startswith('.') for part in path.split('/')): continue # skip hidden
+        if path.startswith('node_modules/'): continue
+        if path.endswith('.lock') or path == 'package-lock.json': continue
+        file_tree_list.append(path)
+    if len(file_tree_list) > 500: # hard limit for tree
+        file_tree_list.append("... [tree truncated] ...")
+        break
+
+file_tree = "\n".join(file_tree_list)
 
 # 6. Prompt Gemini
 prompt = f"""You are a code reviewer for a TypeScript project. Review the pull request below.
