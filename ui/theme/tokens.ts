@@ -25,6 +25,10 @@ export const colors = {
   dimOverlay: 'rgba(0,0,0,0.4)',
   /** Category header text */
   categoryText: '#FFFFFF',
+  /** Revealed behind the clue card on a right (correct) swipe */
+  judgeCorrect: '#128A35',
+  /** Revealed behind the clue card on a left (incorrect) swipe */
+  judgeIncorrect: '#B3231F',
 } as const;
 
 /** Corner radius — broadcast boards are sharp. */
