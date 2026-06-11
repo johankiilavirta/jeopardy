@@ -69,6 +69,17 @@ export function ClueScreen({ clue, onJudge, answer, onAnswerChange }: ClueScreen
     inputRange: [0, 1],
     outputRange: [panelHeight + 12, 0],
   });
+  // The clue glides up in lockstep so it re-centers in the space left
+  // above the panel (half the panel's height) instead of hiding behind
+  // the glass, shrinking a touch to keep clear of the header.
+  const clueRise = kb.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -panelHeight / 2],
+  });
+  const clueScale = kb.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0.9],
+  });
   // The floating answer line hands off to the panel's answer strip: it
   // drifts up and fades out as the keyboard rises (and back on dismiss).
   const affordanceOpacity = kb.interpolate({
@@ -165,9 +176,13 @@ export function ClueScreen({ clue, onJudge, answer, onAnswerChange }: ClueScreen
           </View>
 
           <View style={styles.body}>
-            <Text style={styles.clueText} allowFontScaling={false}>
-              {clue.text.toUpperCase()}
-            </Text>
+            <Animated.View
+              style={{ transform: [{ translateY: clueRise }, { scale: clueScale }] }}
+            >
+              <Text style={styles.clueText} allowFontScaling={false}>
+                {clue.text.toUpperCase()}
+              </Text>
+            </Animated.View>
           </View>
         </Pressable>
 
