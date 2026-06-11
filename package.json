@@ -19,6 +19,7 @@
     "@expo-google-fonts/anton": "^0.4.2",
     "@expo-google-fonts/oswald": "^0.4.2",
     "expo": "~56.0.9",
+    "expo-blur": "~56.0.3",
     "expo-font": "~56.0.5",
     "expo-status-bar": "~56.0.4",
     "react": "19.2.3",
