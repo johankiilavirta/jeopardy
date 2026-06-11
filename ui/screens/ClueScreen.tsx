@@ -1,3 +1,4 @@
+import { BlurView } from 'expo-blur';
 import { useMemo, useRef, useState } from 'react';
 import {
   Animated,
@@ -10,7 +11,7 @@ import {
 } from 'react-native';
 import type { ActiveClue } from '../../src/types';
 import { AnswerKeyboard } from '../components/AnswerKeyboard';
-import { colors, shadow, type as typeTokens } from '../theme/tokens';
+import { colors, radius, shadow, type as typeTokens } from '../theme/tokens';
 
 /** Horizontal drag (px) past which a release commits the judgement. */
 const SWIPE_THRESHOLD = 110;
@@ -116,18 +117,6 @@ export function ClueScreen({ clue, onJudge, answer, onAnswerChange }: ClueScreen
             </Text>
           </View>
 
-          {onAnswerChange && (
-            <Pressable onPress={() => setKeyboardVisible(true)}>
-              <Text
-                style={[styles.answerLine, !answer && styles.answerPlaceholder]}
-                numberOfLines={1}
-                allowFontScaling={false}
-              >
-                {answer || 'TYPE YOUR ANSWER'}
-              </Text>
-            </Pressable>
-          )}
-
           <View style={styles.body}>
             <Text style={styles.clueText} allowFontScaling={false}>
               {clue.text.toUpperCase()}
@@ -135,13 +124,41 @@ export function ClueScreen({ clue, onJudge, answer, onAnswerChange }: ClueScreen
           </View>
         </Pressable>
 
+        {/* Floating answer affordance below the header — absolutely
+            positioned so the centered clue text never reflows. Hidden while
+            the keyboard is up (the glass panel shows the answer instead). */}
+        {onAnswerChange && !keyboardVisible && (
+          <Pressable style={styles.answerLineWrap} onPress={() => setKeyboardVisible(true)}>
+            <Text
+              style={[styles.answerLine, !answer && styles.answerPlaceholder]}
+              numberOfLines={1}
+              allowFontScaling={false}
+            >
+              {answer || 'TYPE YOUR ANSWER'}
+            </Text>
+          </Pressable>
+        )}
+
+        {/* Liquid-glass keyboard: materializes over the lower card with the
+            typed answer right above the keys; the clue stays put behind it.
+            The noop Pressable keeps taps between keys from falling through
+            to the card (which would dismiss the keyboard). */}
         {onAnswerChange && keyboardVisible && (
-          <View style={styles.keyboardOverlay}>
-            <AnswerKeyboard
-              onInsert={ch => onAnswerChange((answer ?? '') + ch)}
-              onBackspace={() => onAnswerChange((answer ?? '').slice(0, -1))}
-            />
-          </View>
+          <Pressable style={styles.keyboardOverlay} onPress={() => {}}>
+            <BlurView intensity={25} tint="dark" style={styles.glass}>
+              <Text
+                style={[styles.glassAnswer, !answer && styles.answerPlaceholder]}
+                numberOfLines={1}
+                allowFontScaling={false}
+              >
+                {answer || 'TYPE YOUR ANSWER'}
+              </Text>
+              <AnswerKeyboard
+                onInsert={ch => onAnswerChange((answer ?? '') + ch)}
+                onBackspace={() => onAnswerChange((answer ?? '').slice(0, -1))}
+              />
+            </BlurView>
+          </Pressable>
         )}
       </Animated.View>
     </View>
@@ -194,18 +211,22 @@ const styles = StyleSheet.create({
     color: colors.categoryText,
     transform: [{ scaleX: 0.85 }],
   },
+  answerLineWrap: {
+    // Floats below the top bar without affecting the card's flow.
+    position: 'absolute',
+    top: 50,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
   answerLine: {
-    // Own full-width row below the top bar, so it centers on the card
-    // regardless of how long the category name is.
-    alignSelf: 'stretch',
     fontFamily: typeTokens.ui500,
     fontSize: 16,
     letterSpacing: 1,
     color: colors.categoryText,
     textAlign: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 8,
-    marginTop: 6,
+    paddingHorizontal: 24,
   },
   answerPlaceholder: {
     color: 'rgba(255,255,255,0.35)',
@@ -237,11 +258,25 @@ const styles = StyleSheet.create({
     textShadowRadius: shadow.valueText.textShadowRadius,
   },
   keyboardOverlay: {
-    // Frameless overlay floating over the bottom of the card — the keys
-    // blend straight into the broadcast blue.
     position: 'absolute',
     left: 12,
     right: 12,
-    bottom: 16,
+    bottom: 12,
+  },
+  glass: {
+    // Frosted panel over the broadcast blue — the clue stays readable
+    // through it. BlurView needs overflow hidden to clip to the radius.
+    borderRadius: radius,
+    overflow: 'hidden',
+    padding: 8,
+    gap: 6,
+  },
+  glassAnswer: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 18,
+    letterSpacing: 1,
+    color: colors.categoryText,
+    textAlign: 'center',
+    paddingVertical: 2,
   },
 });

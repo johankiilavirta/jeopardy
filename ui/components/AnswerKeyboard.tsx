@@ -2,9 +2,10 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { radius, type as typeTokens } from '../theme/tokens';
 
 /**
- * Deliberately simple in-app keyboard (dark, semi-transparent) so we never
- * summon the iOS system keyboard: uppercase letters, apostrophe, hyphen,
- * space and backspace. No shift, no autocorrect, no nonsense.
+ * Deliberately simple in-app keyboard so we never summon the iOS system
+ * keyboard: uppercase letters, apostrophe, hyphen, space and backspace.
+ * No shift, no autocorrect, no nonsense. Designed to sit on a dark
+ * BlurView (frosted glass) — the keys are faint frost chips.
  */
 
 const LETTER_ROWS = [
@@ -65,7 +66,6 @@ export function AnswerKeyboard({ onInsert, onBackspace }: AnswerKeyboardProps) {
 
 const styles = StyleSheet.create({
   keyboard: {
-    // No panel/frame — just the keys floating over the card.
     gap: 5,
   },
   row: {
@@ -74,13 +74,13 @@ const styles = StyleSheet.create({
   },
   key: {
     height: 40,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(255,255,255,0.14)',
     borderRadius: radius,
     alignItems: 'center',
     justifyContent: 'center',
   },
   keyPressed: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: 'rgba(255,255,255,0.35)',
   },
   keyText: {
     fontFamily: typeTokens.ui500,
