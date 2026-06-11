@@ -1,5 +1,5 @@
 import { BlurView } from 'expo-blur';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   PanResponder,
@@ -32,7 +32,54 @@ interface ClueScreenProps {
 export function ClueScreen({ clue, onJudge, answer, onAnswerChange }: ClueScreenProps) {
   const { width } = useWindowDimensions();
   const pan = useRef(new Animated.Value(0)).current;
+
+  // Keyboard slide animation. `keyboardVisible` is the target state; the
+  // panel stays mounted (`kbMounted`) until the slide-out finishes. A single
+  // driver value `kb` (0 hidden → 1 shown) animates both the panel and the
+  // floating answer line, so rapid open/close just retargets one animation.
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [kbMounted, setKbMounted] = useState(false);
+  const [panelHeight, setPanelHeight] = useState(240);
+  const kb = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (keyboardVisible) {
+      setKbMounted(true);
+      Animated.spring(kb, {
+        toValue: 1,
+        speed: 16,
+        bounciness: 4,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      // Interrupting this with a reopen calls back with finished: false,
+      // so we never unmount mid-slide.
+      Animated.timing(kb, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setKbMounted(false);
+      });
+    }
+  }, [keyboardVisible, kb]);
+
+  // Panel slides up from just below the bottom edge into place.
+  const panelRise = kb.interpolate({
+    inputRange: [0, 1],
+    outputRange: [panelHeight + 12, 0],
+  });
+  // The floating answer line hands off to the panel's answer strip: it
+  // drifts up and fades out as the keyboard rises (and back on dismiss).
+  const affordanceOpacity = kb.interpolate({
+    inputRange: [0, 0.5],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+  const affordanceRise = kb.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -14],
+  });
 
   const panResponder = useMemo(() => {
     if (!onJudge) return null;
@@ -125,40 +172,54 @@ export function ClueScreen({ clue, onJudge, answer, onAnswerChange }: ClueScreen
         </Pressable>
 
         {/* Floating answer affordance below the header — absolutely
-            positioned so the centered clue text never reflows. Hidden while
-            the keyboard is up (the glass panel shows the answer instead). */}
-        {onAnswerChange && !keyboardVisible && (
-          <Pressable style={styles.answerLineWrap} onPress={() => setKeyboardVisible(true)}>
-            <Text
-              style={[styles.answerLine, !answer && styles.answerPlaceholder]}
-              numberOfLines={1}
-              allowFontScaling={false}
-            >
-              {answer || 'TYPE YOUR ANSWER'}
-            </Text>
-          </Pressable>
-        )}
-
-        {/* Liquid-glass keyboard: materializes over the lower card with the
-            typed answer right above the keys; the clue stays put behind it.
-            The noop Pressable keeps taps between keys from falling through
-            to the card (which would dismiss the keyboard). */}
-        {onAnswerChange && keyboardVisible && (
-          <Pressable style={styles.keyboardOverlay} onPress={() => {}}>
-            <BlurView intensity={25} tint="dark" style={styles.glass}>
+            positioned so the centered clue text never reflows. It drifts up
+            and fades as the keyboard rises (the panel's answer strip takes
+            over), then fades back in on dismiss. */}
+        {onAnswerChange && (
+          <Animated.View
+            style={[
+              styles.answerLineWrap,
+              { opacity: affordanceOpacity, transform: [{ translateY: affordanceRise }] },
+            ]}
+            pointerEvents={keyboardVisible ? 'none' : 'auto'}
+          >
+            <Pressable onPress={() => setKeyboardVisible(true)}>
               <Text
-                style={[styles.glassAnswer, !answer && styles.answerPlaceholder]}
+                style={[styles.answerLine, !answer && styles.answerPlaceholder]}
                 numberOfLines={1}
                 allowFontScaling={false}
               >
                 {answer || 'TYPE YOUR ANSWER'}
               </Text>
-              <AnswerKeyboard
-                onInsert={ch => onAnswerChange((answer ?? '') + ch)}
-                onBackspace={() => onAnswerChange((answer ?? '').slice(0, -1))}
-              />
-            </BlurView>
-          </Pressable>
+            </Pressable>
+          </Animated.View>
+        )}
+
+        {/* Liquid-glass keyboard: slides up over the lower card with the
+            typed answer right above the keys; the clue stays put behind it.
+            The noop Pressable keeps taps between keys from falling through
+            to the card (which would dismiss the keyboard). */}
+        {onAnswerChange && kbMounted && (
+          <Animated.View
+            style={[styles.keyboardOverlay, { transform: [{ translateY: panelRise }] }]}
+            onLayout={e => setPanelHeight(e.nativeEvent.layout.height)}
+          >
+            <Pressable onPress={() => {}}>
+              <BlurView intensity={25} tint="dark" style={styles.glass}>
+                <Text
+                  style={[styles.glassAnswer, !answer && styles.answerPlaceholder]}
+                  numberOfLines={1}
+                  allowFontScaling={false}
+                >
+                  {answer || 'TYPE YOUR ANSWER'}
+                </Text>
+                <AnswerKeyboard
+                  onInsert={ch => onAnswerChange((answer ?? '') + ch)}
+                  onBackspace={() => onAnswerChange((answer ?? '').slice(0, -1))}
+                />
+              </BlurView>
+            </Pressable>
+          </Animated.View>
         )}
       </Animated.View>
     </View>
