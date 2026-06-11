@@ -28,6 +28,10 @@ export function reducer(state: GameState, action: Action): GameState {
       return handleJudgeAnswer(state, action);
     case 'TIMEOUT':
       return handleTimeout(state);
+    case 'BUZZER_OPEN':
+      return handleBuzzerOpen(state);
+    case 'DISMISS_CLUE':
+      return handleDismissClue(state);
     default:
       return state;
   }
@@ -54,8 +58,18 @@ function handleSelectClue(state: GameState, action: Extract<Action, { type: 'SEL
   };
 }
 
-function handleBuzz(state: GameState, action: Extract<Action, { type: 'BUZZ' }>): GameState {
+function handleBuzzerOpen(state: GameState): GameState {
   if (state.status !== 'CLUE_READING') return state;
+  if (!state.activeClue) return state;
+
+  return {
+    ...state,
+    status: 'BUZZ_OPEN',
+  };
+}
+
+function handleBuzz(state: GameState, action: Extract<Action, { type: 'BUZZ' }>): GameState {
+  if (state.status !== 'BUZZ_OPEN') return state;
   if (!state.activeClue) return state;
 
   // Can't buzz if you already failed this clue
@@ -120,10 +134,10 @@ function handleJudgeAnswer(state: GameState, action: Extract<Action, { type: 'JU
       };
     }
 
-    // Others can still buzz
+    // Others can still buzz — the window reopens right away (no re-reading)
     return {
       ...state,
-      status: 'CLUE_READING',
+      status: 'BUZZ_OPEN',
       players: updatedPlayers,
       activeClue: updatedClue,
       answeringPlayerId: null,
@@ -132,10 +146,22 @@ function handleJudgeAnswer(state: GameState, action: Extract<Action, { type: 'JU
 }
 
 function handleTimeout(state: GameState): GameState {
-  if (state.status !== 'CLUE_READING') return state;
+  if (state.status !== 'BUZZ_OPEN') return state;
   if (!state.activeClue) return state;
 
-  // Nobody buzzed (or remaining players didn't buzz). Burn the clue, original picker keeps turn.
+  // Nobody buzzed: the clue lingers on screen in a "too late" state.
+  // No burn or turn change yet — that happens on DISMISS_CLUE.
+  return {
+    ...state,
+    status: 'CLUE_EXPIRED',
+  };
+}
+
+function handleDismissClue(state: GameState): GameState {
+  if (state.status !== 'CLUE_EXPIRED') return state;
+  if (!state.activeClue) return state;
+
+  // Linger is over. Burn the clue, original picker keeps turn.
   return {
     ...state,
     status: checkGameOverWith(state, state.activeClue.id) ? 'GAME_OVER' : 'CHOOSE_CLUE',

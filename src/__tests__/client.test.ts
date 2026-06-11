@@ -1,7 +1,23 @@
 import { describe, it, expect, vi } from 'vitest';
 import { MockTransport } from '../mockTransport.js';
-import { createServer } from '../server.js';
+import { createServer, type Timer } from '../server.js';
 import { createClient, sendAction } from '../client.js';
+
+function createMockTimer() {
+  let callback: (() => void) | null = null;
+  const timer: Timer = {
+    set: (cb) => { callback = cb; return 1; },
+    clear: () => { callback = null; },
+  };
+  return {
+    timer,
+    fire: () => {
+      const cb = callback;
+      callback = null;
+      cb?.();
+    },
+  };
+}
 
 describe('GameClient', () => {
   it('receives state on connect', () => {
@@ -67,8 +83,9 @@ describe('GameClient', () => {
   });
 
   it('full round trip: select, buzz, judge', () => {
+    const { timer, fire } = createMockTimer();
     const host = new MockTransport('host');
-    createServer(host, ['Alice', 'Bob']);
+    createServer(host, ['Alice', 'Bob'], { timer });
 
     const p1 = new MockTransport('player1');
     const p2 = new MockTransport('player2');
@@ -83,6 +100,10 @@ describe('GameClient', () => {
       clue: { id: 1, category: 'Science', text: 'Q', answer: 'A', value: 400 },
     });
     expect(client1.state!.status).toBe('CLUE_READING');
+
+    // Reading lockout ends, buzz window opens
+    fire();
+    expect(client1.state!.status).toBe('BUZZ_OPEN');
 
     // Bob buzzes
     sendAction(p2, 'host', { type: 'BUZZ' });

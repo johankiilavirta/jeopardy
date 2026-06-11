@@ -43,13 +43,17 @@ export function DemoHarness() {
           <ClueScreen
             clue={state.activeClue}
             onJudge={correct => {
+              // Demo bridge until part 2 wires up the real phase timers:
+              // skip the reading lockout so the swipe still buzzes...
+              dispatch({ type: 'BUZZER_OPEN' });
               dispatch({ type: 'BUZZ', playerId: LOCAL_PLAYER_ID });
               dispatch({ type: 'JUDGE_ANSWER', playerId: LOCAL_PLAYER_ID, correct });
-              // The reducer auto-returns to the board once ALL players have
-              // missed. The demo opponent never buzzes, so on a miss we time
-              // the clue out right away — exactly what the real 5s buzzer
-              // timer does in multiplayer when nobody else buzzes in.
-              if (!correct) dispatch({ type: 'TIMEOUT' });
+              // ...and on a miss, fast-forward through the expired linger
+              // back to the board (the demo opponent never buzzes).
+              if (!correct) {
+                dispatch({ type: 'TIMEOUT' });
+                dispatch({ type: 'DISMISS_CLUE' });
+              }
             }}
             answer={answer}
             onAnswerChange={setAnswer}

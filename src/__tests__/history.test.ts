@@ -35,12 +35,15 @@ describe('history', () => {
   it('multiple undos work', () => {
     let h = createHistory(createInitialState(['Alice', 'Bob']));
     h = dispatch(h, { type: 'SELECT_CLUE', playerId: 'alice', clue: clue(1) });
+    h = dispatch(h, { type: 'BUZZER_OPEN' });
     h = dispatch(h, { type: 'BUZZ', playerId: 'bob' });
     h = dispatch(h, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: true });
 
     expect(h.current.players['bob']!.score).toBe(200);
     h = undo(h);
     expect(h.current.status).toBe('ANSWER_PHASE');
+    h = undo(h);
+    expect(h.current.status).toBe('BUZZ_OPEN');
     h = undo(h);
     expect(h.current.status).toBe('CLUE_READING');
     h = undo(h);
