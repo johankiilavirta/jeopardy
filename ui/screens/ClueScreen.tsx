@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Animated,
   PanResponder,
@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import type { ActiveClue } from '../../src/types';
+import { AnswerKeyboard } from '../components/AnswerKeyboard';
 import { colors, shadow, type as typeTokens } from '../theme/tokens';
 
 /** Horizontal drag (px) past which a release commits the judgement. */
@@ -19,17 +20,18 @@ const VERDICT_HOLD_MS = 500;
 
 interface ClueScreenProps {
   clue: ActiveClue;
-  /** Tap: pass on the clue (demo wiring point). */
-  onContinue?: (() => void) | undefined;
   /** Swipe judging: right = correct, left = incorrect. Omit to disable swiping. */
   onJudge?: ((correct: boolean) => void) | undefined;
-  /** Overrides the default bottom hint text. */
-  hint?: string | undefined;
+  /** The player's typed answer, shown below the top bar. */
+  answer?: string | undefined;
+  /** Enables the answer line + in-app keyboard (controlled). */
+  onAnswerChange?: ((text: string) => void) | undefined;
 }
 
-export function ClueScreen({ clue, onContinue, onJudge, hint }: ClueScreenProps) {
+export function ClueScreen({ clue, onJudge, answer, onAnswerChange }: ClueScreenProps) {
   const { width } = useWindowDimensions();
   const pan = useRef(new Animated.Value(0)).current;
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const panResponder = useMemo(() => {
     if (!onJudge) return null;
@@ -102,7 +104,9 @@ export function ClueScreen({ clue, onContinue, onJudge, hint }: ClueScreenProps)
         style={[styles.cardWrap, { transform: [{ translateX: pan }] }]}
         {...(panResponder ? panResponder.panHandlers : {})}
       >
-        <Pressable style={styles.card} onPress={onContinue}>
+        {/* Tapping anywhere on the card (outside the answer line / keys)
+            hides the keyboard. */}
+        <Pressable style={styles.card} onPress={() => setKeyboardVisible(false)}>
           <View style={styles.header}>
             <Text style={styles.category} numberOfLines={1} allowFontScaling={false}>
               {clue.category.toUpperCase()}
@@ -112,17 +116,33 @@ export function ClueScreen({ clue, onContinue, onJudge, hint }: ClueScreenProps)
             </Text>
           </View>
 
+          {onAnswerChange && (
+            <Pressable onPress={() => setKeyboardVisible(true)}>
+              <Text
+                style={[styles.answerLine, !answer && styles.answerPlaceholder]}
+                numberOfLines={1}
+                allowFontScaling={false}
+              >
+                {answer || 'TYPE YOUR ANSWER'}
+              </Text>
+            </Pressable>
+          )}
+
           <View style={styles.body}>
             <Text style={styles.clueText} allowFontScaling={false}>
               {clue.text.toUpperCase()}
             </Text>
           </View>
-
-          <Text style={styles.hint} allowFontScaling={false}>
-            {hint ??
-              (onJudge ? '\u2190 WRONG \u00b7 TAP TO PASS \u00b7 CORRECT \u2192' : 'TAP TO CONTINUE')}
-          </Text>
         </Pressable>
+
+        {onAnswerChange && keyboardVisible && (
+          <View style={styles.keyboardOverlay}>
+            <AnswerKeyboard
+              onInsert={ch => onAnswerChange((answer ?? '') + ch)}
+              onBackspace={() => onAnswerChange((answer ?? '').slice(0, -1))}
+            />
+          </View>
+        )}
       </Animated.View>
     </View>
   );
@@ -163,7 +183,7 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: 16,
   },
@@ -173,6 +193,22 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: colors.categoryText,
     transform: [{ scaleX: 0.85 }],
+  },
+  answerLine: {
+    // Own full-width row below the top bar, so it centers on the card
+    // regardless of how long the category name is.
+    alignSelf: 'stretch',
+    fontFamily: typeTokens.ui500,
+    fontSize: 16,
+    letterSpacing: 1,
+    color: colors.categoryText,
+    textAlign: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    marginTop: 6,
+  },
+  answerPlaceholder: {
+    color: 'rgba(255,255,255,0.35)',
   },
   value: {
     fontFamily: typeTokens.board,
@@ -200,11 +236,12 @@ const styles = StyleSheet.create({
     textShadowOffset: shadow.valueText.textShadowOffset,
     textShadowRadius: shadow.valueText.textShadowRadius,
   },
-  hint: {
-    fontFamily: typeTokens.ui500,
-    fontSize: 11,
-    letterSpacing: 2,
-    color: 'rgba(255,255,255,0.45)',
-    textAlign: 'center',
+  keyboardOverlay: {
+    // Frameless overlay floating over the bottom of the card — the keys
+    // blend straight into the broadcast blue.
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 16,
   },
 });

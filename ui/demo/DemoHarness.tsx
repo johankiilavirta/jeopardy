@@ -10,12 +10,13 @@ import { ClueScreen } from '../screens/ClueScreen';
 
 // Demo loop driven by the real reducer: tapping a cell dispatches SELECT_CLUE
 // (board → clue card); swiping the card right/left dispatches BUZZ +
-// JUDGE_ANSWER (correct/incorrect — scores update for real); tapping it
-// dispatches TIMEOUT (pass: burns the clue, back to the board). Other
-// fixtures live in ui/fixtures/gameStates.ts — swap the initial state below
-// to preview them.
+// JUDGE_ANSWER (correct/incorrect — scores update for real). Passing is
+// disabled for now (swipe-up pass is a later feature). Other fixtures live
+// in ui/fixtures/gameStates.ts — swap the initial state below to preview
+// them.
 export function DemoHarness() {
   const [state, setState] = useState<GameState>(yourTurnFresh);
+  const [answer, setAnswer] = useState('');
   const dispatch = (action: Action) => setState(s => reducer(s, action));
 
   return (
@@ -27,20 +28,20 @@ export function DemoHarness() {
         state={state}
         localPlayerId={LOCAL_PLAYER_ID}
         board={demoBoard}
-        onSelectClue={clueId =>
+        onSelectClue={clueId => {
+          setAnswer('');
           dispatch({
             type: 'SELECT_CLUE',
             playerId: LOCAL_PLAYER_ID,
             clue: getClueContent(clueId),
-          })
-        }
+          });
+        }}
       />
 
       {state.status === 'CLUE_READING' && state.activeClue && (
         <View style={StyleSheet.absoluteFill}>
           <ClueScreen
             clue={state.activeClue}
-            onContinue={() => dispatch({ type: 'TIMEOUT' })}
             onJudge={correct => {
               dispatch({ type: 'BUZZ', playerId: LOCAL_PLAYER_ID });
               dispatch({ type: 'JUDGE_ANSWER', playerId: LOCAL_PLAYER_ID, correct });
@@ -50,6 +51,8 @@ export function DemoHarness() {
               // timer does in multiplayer when nobody else buzzes in.
               if (!correct) dispatch({ type: 'TIMEOUT' });
             }}
+            answer={answer}
+            onAnswerChange={setAnswer}
           />
         </View>
       )}
