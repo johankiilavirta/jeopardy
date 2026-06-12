@@ -42,7 +42,7 @@ export function createServer(
     timer = defaultTimer,
     readingMs = 5000,
     buzzerMs = 5000,
-    dismissMs = 3000,
+    dismissMs = 5000,
     answerMs = 10000,
   } = options;
   const initialState = createInitialState(playerNames);

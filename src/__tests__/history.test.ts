@@ -56,4 +56,17 @@ describe('history', () => {
     h = dispatch(h, { type: 'BUZZ', playerId: 'alice' });
     expect(canUndo(h)).toBe(false);
   });
+
+  it('transient dispatch applies the change without growing past', () => {
+    let h = createHistory(createInitialState(['Alice', 'Bob']));
+    h = dispatch(h, { type: 'SELECT_CLUE', playerId: 'alice', clue: clue(1) }, { transient: true });
+    expect(h.current.status).toBe('CLUE_READING');
+    expect(canUndo(h)).toBe(false);
+  });
+
+  it('transient dispatch of an invalid action is a no-op', () => {
+    const h = createHistory(createInitialState(['Alice', 'Bob']));
+    const next = dispatch(h, { type: 'BUZZ', playerId: 'alice' }, { transient: true });
+    expect(next).toBe(h);
+  });
 });
