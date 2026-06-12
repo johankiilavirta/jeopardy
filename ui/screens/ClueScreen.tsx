@@ -1,4 +1,3 @@
-import { BlurView } from 'expo-blur';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
@@ -9,9 +8,9 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import type { ActiveClue } from '../../src/types';
+import type { ActiveClue, GameStatus } from '../../src/types';
 import { AnswerKeyboard } from '../components/AnswerKeyboard';
-import { colors, radius, shadow, type as typeTokens } from '../theme/tokens';
+import { colors, shadow, type as typeTokens } from '../theme/tokens';
 
 /** Horizontal drag (px) past which a release commits the judgement. */
 const SWIPE_THRESHOLD = 110;
@@ -19,25 +18,45 @@ const SWIPE_THRESHOLD = 110;
 /** How long the CORRECT/WRONG verdict color holds before committing. */
 const VERDICT_HOLD_MS = 500;
 
+/** Keyboard panel's resting distance from the bottom edge. The space row
+ *  leaves a narrow strip on the left for the countdown display. */
+const KEYBOARD_BOTTOM = 12;
+
 interface ClueScreenProps {
   clue: ActiveClue;
-  /** Swipe judging: right = correct, left = incorrect. Omit to disable swiping. */
+  /** Current phase — drives tap-to-buzz, the keyboard and swipe judging. */
+  status: GameStatus;
+  /** Small info line in the bottom-left corner ("Anyone can answer 4s"). */
+  statusText?: string | null | undefined;
+  /** Tap-to-buzz: called when the card is tapped during BUZZ_OPEN. */
+  onBuzz?: (() => void) | undefined;
+  /** Swipe judging during ANSWER_PHASE: right = correct, left = incorrect. */
   onJudge?: ((correct: boolean) => void) | undefined;
-  /** The player's typed answer, shown below the top bar. */
+  /** The player's typed answer, shown above the keys. */
   answer?: string | undefined;
-  /** Enables the answer line + in-app keyboard (controlled). */
+  /** Enables the in-app keyboard, summoned by ANSWER_PHASE (controlled). */
   onAnswerChange?: ((text: string) => void) | undefined;
 }
 
-export function ClueScreen({ clue, onJudge, answer, onAnswerChange }: ClueScreenProps) {
+export function ClueScreen({
+  clue,
+  status,
+  statusText,
+  onBuzz,
+  onJudge,
+  answer,
+  onAnswerChange,
+}: ClueScreenProps) {
   const { width } = useWindowDimensions();
   const pan = useRef(new Animated.Value(0)).current;
 
-  // Keyboard slide animation. `keyboardVisible` is the target state; the
-  // panel stays mounted (`kbMounted`) until the slide-out finishes. A single
-  // driver value `kb` (0 hidden → 1 shown) animates both the panel and the
-  // floating answer line, so rapid open/close just retargets one animation.
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  // Keyboard slide animation. The keyboard is summoned by the game phase —
+  // it rises when the player wins the buzz (ANSWER_PHASE) and drops when the
+  // answer locks or on the verdict. The panel stays mounted (`kbMounted`) until the slide-out
+  // finishes; a single driver value `kb` (0 hidden → 1 shown) animates the
+  // panel and clue together, so rapid open/close just retargets one
+  // animation.
+  const keyboardVisible = status === 'ANSWER_PHASE' && !!onAnswerChange;
   const [kbMounted, setKbMounted] = useState(false);
   const [panelHeight, setPanelHeight] = useState(240);
   const kb = useRef(new Animated.Value(0)).current;
@@ -67,7 +86,7 @@ export function ClueScreen({ clue, onJudge, answer, onAnswerChange }: ClueScreen
   // Panel slides up from just below the bottom edge into place.
   const panelRise = kb.interpolate({
     inputRange: [0, 1],
-    outputRange: [panelHeight + 12, 0],
+    outputRange: [panelHeight + KEYBOARD_BOTTOM, 0],
   });
   // The clue glides up in lockstep so it re-centers in the space left
   // above the panel (half the panel's height) instead of hiding behind
@@ -80,20 +99,12 @@ export function ClueScreen({ clue, onJudge, answer, onAnswerChange }: ClueScreen
     inputRange: [0, 1],
     outputRange: [1, 0.9],
   });
-  // The floating answer line hands off to the panel's answer strip: it
-  // drifts up and fades out as the keyboard rises (and back on dismiss).
-  const affordanceOpacity = kb.interpolate({
-    inputRange: [0, 0.5],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
-  });
-  const affordanceRise = kb.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -14],
-  });
 
+  // Swiping judges an answer attempt: live while answering and after the
+  // input locks (the verdict is always up to the players).
+  const canJudge = !!onJudge && (status === 'ANSWER_PHASE' || status === 'ANSWER_LOCKED');
   const panResponder = useMemo(() => {
-    if (!onJudge) return null;
+    if (!canJudge || !onJudge) return null;
     const snapBack = () =>
       Animated.spring(pan, { toValue: 0, useNativeDriver: false }).start();
 
@@ -128,7 +139,7 @@ export function ClueScreen({ clue, onJudge, answer, onAnswerChange }: ClueScreen
       },
       onPanResponderTerminate: snapBack,
     });
-  }, [onJudge, pan, width]);
+  }, [canJudge, onJudge, pan, width]);
 
   const correctOpacity = pan.interpolate({
     inputRange: [0, SWIPE_THRESHOLD],
@@ -163,9 +174,12 @@ export function ClueScreen({ clue, onJudge, answer, onAnswerChange }: ClueScreen
         style={[styles.cardWrap, { transform: [{ translateX: pan }] }]}
         {...(panResponder ? panResponder.panHandlers : {})}
       >
-        {/* Tapping anywhere on the card (outside the answer line / keys)
-            hides the keyboard. */}
-        <Pressable style={styles.card} onPress={() => setKeyboardVisible(false)}>
+        {/* Tapping anywhere on the card is the buzzer (only live during
+            the buzz window — the reducer rejects everything else anyway). */}
+        <Pressable
+          style={styles.card}
+          onPress={status === 'BUZZ_OPEN' ? onBuzz : undefined}
+        >
           <View style={styles.header}>
             <Text style={styles.category} numberOfLines={1} allowFontScaling={false}>
               {clue.category.toUpperCase()}
@@ -186,19 +200,28 @@ export function ClueScreen({ clue, onJudge, answer, onAnswerChange }: ClueScreen
           </View>
         </Pressable>
 
-        {/* Floating answer affordance below the header — absolutely
-            positioned so the centered clue text never reflows. It drifts up
-            and fades as the keyboard rises (the panel's answer strip takes
-            over), then fades back in on dismiss. */}
-        {onAnswerChange && (
+        {/* Countdown line, bottom-left: just the countdown number during
+            timed phases ("8s", "3s", etc), or player answer info when
+            locked/expired. Static — sits beside the space bar. */}
+        {statusText != null && (
+          <View style={styles.statusLineWrap} pointerEvents="none">
+            <Text style={styles.statusLine} numberOfLines={1} allowFontScaling={false}>
+              {statusText}
+            </Text>
+          </View>
+        )}
+
+        {/* Floating keyboard: slides up over the lower card with the typed
+            answer right above the keys. No panel background — only the keys
+            and answer line float over the card, so the static status line
+            in the corner stays visible. The noop Pressable keeps taps
+            between keys from falling through to the card underneath. */}
+        {onAnswerChange && kbMounted && (
           <Animated.View
-            style={[
-              styles.answerLineWrap,
-              { opacity: affordanceOpacity, transform: [{ translateY: affordanceRise }] },
-            ]}
-            pointerEvents={keyboardVisible ? 'none' : 'auto'}
+            style={[styles.keyboardOverlay, { transform: [{ translateY: panelRise }] }]}
+            onLayout={e => setPanelHeight(e.nativeEvent.layout.height)}
           >
-            <Pressable onPress={() => setKeyboardVisible(true)}>
+            <Pressable onPress={() => {}} style={styles.panel}>
               <Text
                 style={[styles.answerLine, !answer && styles.answerPlaceholder]}
                 numberOfLines={1}
@@ -206,33 +229,10 @@ export function ClueScreen({ clue, onJudge, answer, onAnswerChange }: ClueScreen
               >
                 {answer || 'TYPE YOUR ANSWER'}
               </Text>
-            </Pressable>
-          </Animated.View>
-        )}
-
-        {/* Liquid-glass keyboard: slides up over the lower card with the
-            typed answer right above the keys; the clue stays put behind it.
-            The noop Pressable keeps taps between keys from falling through
-            to the card (which would dismiss the keyboard). */}
-        {onAnswerChange && kbMounted && (
-          <Animated.View
-            style={[styles.keyboardOverlay, { transform: [{ translateY: panelRise }] }]}
-            onLayout={e => setPanelHeight(e.nativeEvent.layout.height)}
-          >
-            <Pressable onPress={() => {}}>
-              <BlurView intensity={25} tint="dark" style={styles.glass}>
-                <Text
-                  style={[styles.glassAnswer, !answer && styles.answerPlaceholder]}
-                  numberOfLines={1}
-                  allowFontScaling={false}
-                >
-                  {answer || 'TYPE YOUR ANSWER'}
-                </Text>
-                <AnswerKeyboard
-                  onInsert={ch => onAnswerChange((answer ?? '') + ch)}
-                  onBackspace={() => onAnswerChange((answer ?? '').slice(0, -1))}
-                />
-              </BlurView>
+              <AnswerKeyboard
+                onInsert={ch => onAnswerChange((answer ?? '') + ch)}
+                onBackspace={() => onAnswerChange((answer ?? '').slice(0, -1))}
+              />
             </Pressable>
           </Animated.View>
         )}
@@ -287,25 +287,24 @@ const styles = StyleSheet.create({
     color: colors.categoryText,
     transform: [{ scaleX: 0.85 }],
   },
-  answerLineWrap: {
-    // Floats below the top bar without affecting the card's flow.
-    position: 'absolute',
-    top: 50,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  answerLine: {
-    fontFamily: typeTokens.ui500,
-    fontSize: 16,
-    letterSpacing: 1,
-    color: colors.categoryText,
-    textAlign: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 24,
-  },
   answerPlaceholder: {
     color: 'rgba(255,255,255,0.35)',
+  },
+  statusLineWrap: {
+    position: 'absolute',
+    left: 24, // aligns with the card's horizontal padding
+    // The countdown sits on the keyboard's bottom row (flex:1 of the space bar).
+    // Vertically centered on the key height (40px), with the space bar taking
+    // flex:4 to its right. Just the number — "8s", "3s", etc.
+    bottom: 20,
+    height: 40,
+    justifyContent: 'center',
+  },
+  statusLine: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    color: 'rgba(255,255,255,0.65)',
   },
   value: {
     fontFamily: typeTokens.board,
@@ -337,17 +336,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     right: 12,
-    bottom: 12,
+    bottom: KEYBOARD_BOTTOM,
   },
-  glass: {
-    // Frosted panel over the broadcast blue — the clue stays readable
-    // through it. BlurView needs overflow hidden to clip to the radius.
-    borderRadius: radius,
-    overflow: 'hidden',
+  panel: {
+    // Fully transparent — just lays out the answer line over the keys.
     padding: 8,
     gap: 6,
   },
-  glassAnswer: {
+  answerLine: {
     fontFamily: typeTokens.ui500,
     fontSize: 18,
     letterSpacing: 1,

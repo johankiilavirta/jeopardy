@@ -1,7 +1,10 @@
 export type GameStatus =
   | 'CHOOSE_CLUE'
   | 'CLUE_READING'
+  | 'BUZZ_OPEN'
+  | 'CLUE_EXPIRED'
   | 'ANSWER_PHASE'
+  | 'ANSWER_LOCKED'
   | 'GAME_OVER';
 
 export interface Player {
@@ -58,4 +61,26 @@ export interface TimeoutAction {
   type: 'TIMEOUT';
 }
 
-export type Action = SelectClueAction | BuzzAction | JudgeAnswerAction | TimeoutAction;
+/** Server timer: reading lockout is over, the buzz window opens */
+export interface BuzzerOpenAction {
+  type: 'BUZZER_OPEN';
+}
+
+/** Server timer: the expired clue's linger is over, burn it and return to the board */
+export interface DismissClueAction {
+  type: 'DISMISS_CLUE';
+}
+
+/** Server timer: answering time is up — input locks, but judging stays manual */
+export interface LockAnswerAction {
+  type: 'LOCK_ANSWER';
+}
+
+export type Action =
+  | SelectClueAction
+  | BuzzAction
+  | JudgeAnswerAction
+  | TimeoutAction
+  | BuzzerOpenAction
+  | DismissClueAction
+  | LockAnswerAction;

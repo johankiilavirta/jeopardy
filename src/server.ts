@@ -20,52 +20,74 @@ export interface GameServer {
 
 export interface ServerOptions {
   timer?: Timer;
+  /** Reading lockout: time before the buzz window opens */
+  readingMs?: number;
+  /** How long the buzz window stays open */
   buzzerMs?: number;
+  /** How long an expired clue lingers before returning to the board */
+  dismissMs?: number;
+  /** How long the answering player can type before input locks */
+  answerMs?: number;
 }
+
+/** Actions clients are allowed to send. Timer actions are server-only. */
+const CLIENT_ACTIONS = new Set(['SELECT_CLUE', 'BUZZ', 'JUDGE_ANSWER']);
 
 export function createServer(
   transport: Transport,
   playerNames: string[],
   options: ServerOptions = {},
 ): GameServer {
-  const { timer = defaultTimer, buzzerMs = 5000 } = options;
+  const {
+    timer = defaultTimer,
+    readingMs = 5000,
+    buzzerMs = 5000,
+    dismissMs = 3000,
+    answerMs = 10000,
+  } = options;
   const initialState = createInitialState(playerNames);
   const server: GameServer = {
     history: createHistory(initialState),
     playerPeers: new Map(),
   };
 
-  let buzzerTimerId: unknown = null;
+  let phaseTimerId: unknown = null;
 
-  function clearBuzzerTimer(): void {
-    if (buzzerTimerId != null) {
-      timer.clear(buzzerTimerId);
-      buzzerTimerId = null;
+  function clearPhaseTimer(): void {
+    if (phaseTimerId != null) {
+      timer.clear(phaseTimerId);
+      phaseTimerId = null;
     }
   }
 
-  function startBuzzerTimer(): void {
-    clearBuzzerTimer();
-    buzzerTimerId = timer.set(() => {
-      const timeoutAction: Action = { type: 'TIMEOUT' };
-      const next = dispatch(server.history, timeoutAction);
-      if (next !== server.history) {
-        server.history = next;
-        clearBuzzerTimer();
-        broadcastState(transport, server);
-      }
-    }, buzzerMs);
+  function fireTimerAction(action: Action): void {
+    phaseTimerId = null;
+    const next = dispatch(server.history, action);
+    if (next === server.history) return;
+    server.history = next;
+    armPhaseTimer();
+    broadcastState(transport, server);
   }
 
-  function handleStateTransition(prevStatus: string): void {
-    const newStatus = server.history.current.status;
-    if (newStatus === 'CLUE_READING' && prevStatus !== 'CLUE_READING') {
-      startBuzzerTimer();
-    } else if (newStatus === 'CLUE_READING' && prevStatus === 'CLUE_READING') {
-      // Someone failed, timer restarts for remaining players
-      startBuzzerTimer();
-    } else if (newStatus !== 'CLUE_READING') {
-      clearBuzzerTimer();
+  /** Arm (or disarm) the phase timer based on the current status.
+   *  Called after every applied state change, so undoing into a timed
+   *  phase restarts its timer automatically. The phases are sequential,
+   *  so there's at most one pending timer. */
+  function armPhaseTimer(): void {
+    clearPhaseTimer();
+    switch (server.history.current.status) {
+      case 'CLUE_READING':
+        phaseTimerId = timer.set(() => fireTimerAction({ type: 'BUZZER_OPEN' }), readingMs);
+        break;
+      case 'BUZZ_OPEN':
+        phaseTimerId = timer.set(() => fireTimerAction({ type: 'TIMEOUT' }), buzzerMs);
+        break;
+      case 'CLUE_EXPIRED':
+        phaseTimerId = timer.set(() => fireTimerAction({ type: 'DISMISS_CLUE' }), dismissMs);
+        break;
+      case 'ANSWER_PHASE':
+        phaseTimerId = timer.set(() => fireTimerAction({ type: 'LOCK_ANSWER' }), answerMs);
+        break;
     }
   }
 
@@ -91,15 +113,16 @@ export function createServer(
       return;
     }
 
-    const prevStatus = server.history.current.status;
-
     if (parsed.type === 'UNDO') {
       if (!canUndo(server.history)) return;
       server.history = undo(server.history);
-      handleStateTransition(prevStatus);
+      armPhaseTimer();
       broadcastState(transport, server);
       return;
     }
+
+    // Clients may only send player actions — timer actions are server-only
+    if (!CLIENT_ACTIONS.has(parsed.type)) return;
 
     const playerId = server.playerPeers.get(peerId);
     if (!playerId) return;
@@ -110,7 +133,7 @@ export function createServer(
     if (next === server.history) return;
 
     server.history = next;
-    handleStateTransition(prevStatus);
+    armPhaseTimer();
     broadcastState(transport, server);
   });
 

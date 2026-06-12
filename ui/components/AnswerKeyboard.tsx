@@ -3,9 +3,11 @@ import { radius, type as typeTokens } from '../theme/tokens';
 
 /**
  * Deliberately simple in-app keyboard so we never summon the iOS system
- * keyboard: uppercase letters, apostrophe, hyphen, space and backspace.
- * No shift, no autocorrect, no nonsense. Designed to sit on a dark
- * BlurView (frosted glass) — the keys are faint frost chips.
+ * keyboard: uppercase letters, space and backspace. No shift, no
+ * autocorrect, no nonsense. Designed to float directly over the dark clue
+ * card — the keys are faint frost chips. The space bar expands to fill
+ * most of the bottom row, with a narrow strip on the left for the clue
+ * card's status line (just countdown numbers: "8s", "3s", etc).
  */
 
 const LETTER_ROWS = [
@@ -56,9 +58,8 @@ export function AnswerKeyboard({ onInsert, onBackspace }: AnswerKeyboardProps) {
         </View>
       ))}
       <View style={styles.row}>
-        <Key label={'\u2019'} onPress={() => onInsert('\u2019')} />
-        <Key label="SPACE" flex={5} onPress={() => onInsert(' ')} />
-        <Key label="-" onPress={() => onInsert('-')} />
+        <View style={styles.statusGap} />
+        <Key label="SPACE" flex={4} onPress={() => onInsert(' ')} />
       </View>
     </View>
   );
@@ -71,6 +72,10 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     gap: 5,
+  },
+  /** Narrow strip on the left for the countdown display ("8s", "3s", etc). */
+  statusGap: {
+    flex: 1,
   },
   key: {
     height: 40,
