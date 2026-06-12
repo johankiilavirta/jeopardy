@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { createInitialState, reducer } from '../reducer.js';
+import {
+  createInitialState,
+  reducer,
+  getBuzz,
+  allBuzzersLocked,
+  judgedPlayerId,
+} from '../reducer.js';
 import type { GameState } from '../types.js';
 
 const clue = (id: number, value = 200) => ({
@@ -16,6 +22,17 @@ function openClue(state: GameState, playerId: string, id = 1, value = 200): Game
   return reducer(state, { type: 'BUZZER_OPEN' });
 }
 
+/** Both players buzz (bob first), type, and lock — lands in REVEAL. */
+function bothAnswered(state: GameState, id = 1, value = 200): GameState {
+  state = openClue(state, 'alice', id, value);
+  state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+  state = reducer(state, { type: 'BUZZ', playerId: 'alice' }); // → ANSWERING
+  state = reducer(state, { type: 'SET_ANSWER', playerId: 'bob', text: 'BOBS ANSWER' });
+  state = reducer(state, { type: 'SET_ANSWER', playerId: 'alice', text: 'ALICES ANSWER' });
+  state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob' });
+  return reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice' }); // → REVEAL
+}
+
 describe('createInitialState', () => {
   it('creates state with players and CHOOSE_CLUE status', () => {
     const state = createInitialState(['Alice', 'Bob']);
@@ -24,6 +41,7 @@ describe('createInitialState', () => {
     expect(state.players['alice']!.name).toBe('Alice');
     expect(state.players['bob']!.name).toBe('Bob');
     expect(state.currentTurnPlayerId).toBeNull();
+    expect(state.buzzes).toEqual([]);
   });
 });
 
@@ -48,6 +66,16 @@ describe('SELECT_CLUE', () => {
     state = { ...state, burnedClueIds: [1] };
     const next = reducer(state, { type: 'SELECT_CLUE', playerId: 'alice', clue: clue(1) });
     expect(next.status).toBe('CHOOSE_CLUE'); // no change
+  });
+
+  it('resets buzzes from any stale state', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = {
+      ...state,
+      buzzes: [{ playerId: 'bob', answer: 'LEFTOVER', locked: true }],
+    };
+    const next = reducer(state, { type: 'SELECT_CLUE', playerId: 'alice', clue: clue(1) });
+    expect(next.buzzes).toEqual([]);
   });
 });
 
@@ -77,23 +105,36 @@ describe('BUZZ', () => {
     expect(next).toBe(state); // reference equality — no change
   });
 
-  it('first buzz wins during BUZZ_OPEN', () => {
+  it('first buzz appends an empty entry without closing the window', () => {
     let state = createInitialState(['Alice', 'Bob']);
     state = openClue(state, 'alice');
     const next = reducer(state, { type: 'BUZZ', playerId: 'bob' });
-    expect(next.status).toBe('ANSWER_PHASE');
-    expect(next.answeringPlayerId).toBe('bob');
+    expect(next.status).toBe('BUZZ_OPEN'); // alice can still buzz
+    expect(next.buzzes).toEqual([{ playerId: 'bob', answer: '', locked: false }]);
   });
 
-  it('cannot buzz if already failed this clue', () => {
+  it('records buzz order, and the last possible buzz closes the window', () => {
     let state = createInitialState(['Alice', 'Bob']);
     state = openClue(state, 'alice');
     state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
-    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
-    // Bob already failed, can't buzz again
+    state = reducer(state, { type: 'BUZZ', playerId: 'alice' });
+    expect(state.status).toBe('ANSWERING'); // everyone buzzed — window moot
+    expect(state.buzzes.map(b => b.playerId)).toEqual(['bob', 'alice']);
+  });
+
+  it('duplicate buzz is a no-op', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
     const next = reducer(state, { type: 'BUZZ', playerId: 'bob' });
-    expect(next.status).toBe('BUZZ_OPEN'); // unchanged
-    expect(next.answeringPlayerId).toBeNull();
+    expect(next).toBe(state);
+  });
+
+  it('unknown player cannot buzz', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    const next = reducer(state, { type: 'BUZZ', playerId: 'mallory' });
+    expect(next).toBe(state);
   });
 
   it('cannot buzz during CHOOSE_CLUE', () => {
@@ -110,118 +151,127 @@ describe('BUZZ', () => {
     const next = reducer(state, { type: 'BUZZ', playerId: 'bob' });
     expect(next).toBe(state);
   });
-});
 
-describe('JUDGE_ANSWER', () => {
-  it('correct answer: awards points, burns clue, winner picks next', () => {
-    let state = createInitialState(['Alice', 'Bob']);
-    state = openClue(state, 'alice', 1, 400);
-    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
-    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: true });
-
-    expect(state.status).toBe('CHOOSE_CLUE');
-    expect(state.players['bob']!.score).toBe(400);
-    expect(state.currentTurnPlayerId).toBe('bob');
-    expect(state.burnedClueIds).toContain(1);
-    expect(state.activeClue).toBeNull();
-  });
-
-  it('incorrect answer: deducts points, buzz window reopens for others', () => {
-    let state = createInitialState(['Alice', 'Bob']);
-    state = openClue(state, 'alice', 1, 200);
-    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
-    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
-
-    expect(state.status).toBe('BUZZ_OPEN');
-    expect(state.players['bob']!.score).toBe(-200);
-    expect(state.activeClue!.failedPlayerIds).toContain('bob');
-    expect(state.answeringPlayerId).toBeNull();
-  });
-
-  it('all players fail: burns clue, original picker keeps turn', () => {
-    let state = createInitialState(['Alice', 'Bob']);
-    state = openClue(state, 'alice', 1, 200);
-    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
-    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
-    state = reducer(state, { type: 'BUZZ', playerId: 'alice' });
-    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'alice', correct: false });
-
-    expect(state.status).toBe('CHOOSE_CLUE');
-    expect(state.currentTurnPlayerId).toBe('alice'); // original picker
-    expect(state.burnedClueIds).toContain(1);
-  });
-
-  it('only the answering player can judge', () => {
+  it('cannot buzz once ANSWERING (window closed)', () => {
     let state = createInitialState(['Alice', 'Bob']);
     state = openClue(state, 'alice');
     state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
-    const next = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'alice', correct: true });
-    expect(next).toBe(state); // no change — alice isn't answering
-  });
-});
-
-describe('LOCK_ANSWER', () => {
-  it('locks the answer, keeping the answering player and clue', () => {
-    let state = createInitialState(['Alice', 'Bob']);
-    state = openClue(state, 'alice');
-    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
-    state = reducer(state, { type: 'LOCK_ANSWER' });
-
-    expect(state.status).toBe('ANSWER_LOCKED');
-    expect(state.answeringPlayerId).toBe('bob');
-    expect(state.activeClue!.id).toBe(1);
-  });
-
-  it('is rejected outside ANSWER_PHASE', () => {
-    const idle = createInitialState(['Alice', 'Bob']);
-    expect(reducer(idle, { type: 'LOCK_ANSWER' })).toBe(idle);
-
-    const open = openClue(idle, 'alice');
-    expect(reducer(open, { type: 'LOCK_ANSWER' })).toBe(open);
-
-    const locked = reducer(
-      reducer(open, { type: 'BUZZ', playerId: 'bob' }),
-      { type: 'LOCK_ANSWER' },
-    );
-    expect(reducer(locked, { type: 'LOCK_ANSWER' })).toBe(locked);
-  });
-
-  it('judging still works after the lock: correct awards and burns', () => {
-    let state = createInitialState(['Alice', 'Bob']);
-    state = openClue(state, 'alice', 1, 400);
-    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
-    state = reducer(state, { type: 'LOCK_ANSWER' });
-    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: true });
-
-    expect(state.status).toBe('CHOOSE_CLUE');
-    expect(state.players['bob']!.score).toBe(400);
-    expect(state.burnedClueIds).toContain(1);
-  });
-
-  it('judging still works after the lock: wrong reopens the buzz window', () => {
-    let state = createInitialState(['Alice', 'Bob']);
-    state = openClue(state, 'alice', 1, 200);
-    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
-    state = reducer(state, { type: 'LOCK_ANSWER' });
-    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
-
-    expect(state.status).toBe('BUZZ_OPEN');
-    expect(state.players['bob']!.score).toBe(-200);
-    expect(state.activeClue!.failedPlayerIds).toContain('bob');
-  });
-
-  it('cannot buzz while the answer is locked', () => {
-    let state = createInitialState(['Alice', 'Bob']);
-    state = openClue(state, 'alice');
-    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
-    state = reducer(state, { type: 'LOCK_ANSWER' });
+    state = reducer(state, { type: 'TIMEOUT' }); // window expires while bob types
+    expect(state.status).toBe('ANSWERING');
     const next = reducer(state, { type: 'BUZZ', playerId: 'alice' });
     expect(next).toBe(state);
   });
 });
 
+describe('SET_ANSWER', () => {
+  it('updates the typing player\'s answer during BUZZ_OPEN', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    state = reducer(state, { type: 'SET_ANSWER', playerId: 'bob', text: 'PLUTO' });
+    expect(getBuzz(state, 'bob')!.answer).toBe('PLUTO');
+    expect(state.status).toBe('BUZZ_OPEN'); // no status change
+  });
+
+  it('updates during ANSWERING too', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    state = reducer(state, { type: 'TIMEOUT' });
+    state = reducer(state, { type: 'SET_ANSWER', playerId: 'bob', text: 'MARS' });
+    expect(getBuzz(state, 'bob')!.answer).toBe('MARS');
+  });
+
+  it('is rejected for a player who has not buzzed', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    const next = reducer(state, { type: 'SET_ANSWER', playerId: 'alice', text: 'SNEAKY' });
+    expect(next).toBe(state);
+  });
+
+  it('is rejected once that player is locked', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob', answer: 'FINAL' });
+    const next = reducer(state, { type: 'SET_ANSWER', playerId: 'bob', text: 'CHANGED' });
+    expect(next).toBe(state);
+  });
+
+  it('is rejected outside BUZZ_OPEN/ANSWERING', () => {
+    const idle = createInitialState(['Alice', 'Bob']);
+    expect(reducer(idle, { type: 'SET_ANSWER', playerId: 'alice', text: 'X' })).toBe(idle);
+
+    const reading = reducer(idle, { type: 'SELECT_CLUE', playerId: 'alice', clue: clue(1) });
+    expect(reducer(reading, { type: 'SET_ANSWER', playerId: 'alice', text: 'X' })).toBe(reading);
+
+    const reveal = bothAnswered(idle);
+    expect(reveal.status).toBe('REVEAL');
+    expect(reducer(reveal, { type: 'SET_ANSWER', playerId: 'bob', text: 'X' })).toBe(reveal);
+  });
+});
+
+describe('LOCK_ANSWER', () => {
+  it('swipe-lock overwrites the answer with the final text', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    state = reducer(state, { type: 'SET_ANSWER', playerId: 'bob', text: 'DRAF' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob', answer: 'DRAFT DONE' });
+    expect(getBuzz(state, 'bob')).toEqual({ playerId: 'bob', answer: 'DRAFT DONE', locked: true });
+  });
+
+  it('timer-lock (no answer field) keeps the last synced text', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    state = reducer(state, { type: 'SET_ANSWER', playerId: 'bob', text: 'PARTIAL' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob' });
+    expect(getBuzz(state, 'bob')).toEqual({ playerId: 'bob', answer: 'PARTIAL', locked: true });
+  });
+
+  it('locking during BUZZ_OPEN never reveals — others may still buzz', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob' });
+    expect(state.status).toBe('BUZZ_OPEN');
+    expect(allBuzzersLocked(state)).toBe(true);
+  });
+
+  it('the last lock during ANSWERING reveals early', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    state = reducer(state, { type: 'BUZZ', playerId: 'alice' }); // → ANSWERING
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob' });
+    expect(state.status).toBe('ANSWERING'); // alice still typing
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice' });
+    expect(state.status).toBe('REVEAL');
+  });
+
+  it('is rejected for non-buzzers and already-locked players', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    expect(reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice' })).toBe(state);
+
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob' });
+    expect(reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob' })).toBe(state);
+  });
+
+  it('is rejected outside BUZZ_OPEN/ANSWERING', () => {
+    const idle = createInitialState(['Alice', 'Bob']);
+    expect(reducer(idle, { type: 'LOCK_ANSWER', playerId: 'alice' })).toBe(idle);
+
+    const reveal = bothAnswered(idle);
+    expect(reducer(reveal, { type: 'LOCK_ANSWER', playerId: 'bob' })).toBe(reveal);
+  });
+});
+
 describe('TIMEOUT', () => {
-  it('expires the clue but keeps it on screen — nothing burned yet', () => {
+  it('nobody buzzed: expires the clue but keeps it on screen — nothing burned yet', () => {
     let state = createInitialState(['Alice', 'Bob']);
     state = openClue(state, 'alice');
     state = reducer(state, { type: 'TIMEOUT' });
@@ -232,16 +282,21 @@ describe('TIMEOUT', () => {
     expect(state.currentTurnPlayerId).toBeNull(); // no turn change yet
   });
 
-  it('works after one player fails and the reopened window expires', () => {
+  it('someone still typing: closes the window into ANSWERING', () => {
     let state = createInitialState(['Alice', 'Bob']);
     state = openClue(state, 'alice');
     state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
-    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
-    // Now only alice can buzz, but the window expires
     state = reducer(state, { type: 'TIMEOUT' });
+    expect(state.status).toBe('ANSWERING');
+  });
 
-    expect(state.status).toBe('CLUE_EXPIRED');
-    expect(state.activeClue!.id).toBe(1);
+  it('all buzzers already locked: reveals immediately', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob', answer: 'DONE' });
+    state = reducer(state, { type: 'TIMEOUT' });
+    expect(state.status).toBe('REVEAL');
   });
 
   it('is rejected outside BUZZ_OPEN', () => {
@@ -255,6 +310,120 @@ describe('TIMEOUT', () => {
     // Already expired
     const expired = reducer(openClue(idle, 'alice'), { type: 'TIMEOUT' });
     expect(reducer(expired, { type: 'TIMEOUT' })).toBe(expired);
+
+    // While answering
+    let answering = openClue(idle, 'alice');
+    answering = reducer(answering, { type: 'BUZZ', playerId: 'bob' });
+    answering = reducer(answering, { type: 'TIMEOUT' });
+    expect(reducer(answering, { type: 'TIMEOUT' })).toBe(answering);
+  });
+});
+
+describe('judgedPlayerId', () => {
+  it('is null outside REVEAL', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    expect(judgedPlayerId(state)).toBeNull();
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    expect(judgedPlayerId(state)).toBeNull();
+  });
+
+  it('walks buzz order, not player order', () => {
+    // Bob buzzed before alice, so bob is judged first even though alice
+    // comes first in the players record.
+    const state = bothAnswered(createInitialState(['Alice', 'Bob']));
+    expect(judgedPlayerId(state)).toBe('bob');
+    const next = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
+    expect(judgedPlayerId(next)).toBe('alice');
+  });
+});
+
+describe('JUDGE_ANSWER', () => {
+  it('correct answer: awards points, burns clue, winner picks next', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = bothAnswered(state, 1, 400);
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: true });
+
+    expect(state.status).toBe('CHOOSE_CLUE');
+    expect(state.players['bob']!.score).toBe(400);
+    expect(state.currentTurnPlayerId).toBe('bob');
+    expect(state.burnedClueIds).toContain(1);
+    expect(state.activeClue).toBeNull();
+    expect(state.buzzes).toEqual([]);
+  });
+
+  it('first buzzer wrong: deducts their points, next buzzer goes on the stand', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = bothAnswered(state, 1, 200);
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
+
+    expect(state.status).toBe('REVEAL'); // alice's answer is up next
+    expect(state.players['bob']!.score).toBe(-200);
+    expect(state.activeClue!.failedPlayerIds).toContain('bob');
+    expect(judgedPlayerId(state)).toBe('alice');
+  });
+
+  it('second buzzer also risks points: wrong after wrong deducts again', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = bothAnswered(state, 1, 200);
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'alice', correct: false });
+
+    expect(state.players['bob']!.score).toBe(-200);
+    expect(state.players['alice']!.score).toBe(-200);
+  });
+
+  it('second buzzer correct after first wrong: awarded, winner picks', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = bothAnswered(state, 1, 200);
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'alice', correct: true });
+
+    expect(state.status).toBe('CHOOSE_CLUE');
+    expect(state.players['alice']!.score).toBe(200);
+    expect(state.currentTurnPlayerId).toBe('alice');
+    expect(state.burnedClueIds).toContain(1);
+  });
+
+  it('all buzzers wrong: burns clue, original picker keeps turn', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = bothAnswered(state, 1, 200); // alice picked
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'alice', correct: false });
+
+    expect(state.status).toBe('CHOOSE_CLUE');
+    expect(state.currentTurnPlayerId).toBe('alice'); // original picker
+    expect(state.burnedClueIds).toContain(1);
+    expect(state.buzzes).toEqual([]);
+  });
+
+  it('single buzzer wrong: burns clue, original picker keeps turn', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice', 1, 200);
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob', answer: 'NOPE' });
+    state = reducer(state, { type: 'TIMEOUT' }); // → REVEAL
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
+
+    expect(state.status).toBe('CHOOSE_CLUE');
+    expect(state.players['bob']!.score).toBe(-200);
+    expect(state.currentTurnPlayerId).toBe('alice');
+    expect(state.burnedClueIds).toContain(1);
+  });
+
+  it('only the judged player can be judged', () => {
+    const state = bothAnswered(createInitialState(['Alice', 'Bob']));
+    // Bob buzzed first — alice isn't on the stand yet
+    const next = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'alice', correct: true });
+    expect(next).toBe(state);
+  });
+
+  it('is rejected outside REVEAL', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    const next = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: true });
+    expect(next).toBe(state); // still typing — no judging before the reveal
   });
 });
 
@@ -285,9 +454,20 @@ describe('GAME_OVER', () => {
     let state = createInitialState(['Alice', 'Bob']);
     state = { ...state, burnedClueIds: Array.from({ length: 29 }, (_, i) => i + 1), totalClues: 30 };
 
-    state = openClue(state, 'alice', 30, 200);
-    state = reducer(state, { type: 'BUZZ', playerId: 'alice' });
-    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'alice', correct: true });
+    state = bothAnswered(state, 30, 200);
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: true });
+
+    expect(state.status).toBe('GAME_OVER');
+    expect(state.burnedClueIds).toHaveLength(30);
+  });
+
+  it('triggers when everyone is wrong on the last clue', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = { ...state, burnedClueIds: Array.from({ length: 29 }, (_, i) => i + 1), totalClues: 30 };
+
+    state = bothAnswered(state, 30, 200);
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'alice', correct: false });
 
     expect(state.status).toBe('GAME_OVER');
     expect(state.burnedClueIds).toHaveLength(30);

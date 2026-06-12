@@ -3,8 +3,8 @@ export type GameStatus =
   | 'CLUE_READING'
   | 'BUZZ_OPEN'
   | 'CLUE_EXPIRED'
-  | 'ANSWER_PHASE'
-  | 'ANSWER_LOCKED'
+  | 'ANSWERING'
+  | 'REVEAL'
   | 'GAME_OVER';
 
 export interface Player {
@@ -19,8 +19,17 @@ export interface ActiveClue {
   text: string;
   answer: string;
   value: number;
-  /** Which players have already attempted and failed this clue */
+  /** Which players have already been judged wrong on this clue */
   failedPlayerIds: string[];
+}
+
+/** One player's attempt at the active clue, in buzz order. */
+export interface Buzz {
+  playerId: string;
+  /** The answer typed so far (final once `locked`). */
+  answer: string;
+  /** Input is closed: swiped down, or their personal timer expired. */
+  locked: boolean;
 }
 
 export interface GameState {
@@ -31,8 +40,8 @@ export interface GameState {
   /** Who originally selected this clue */
   clueSelectPlayerId: string | null;
   activeClue: ActiveClue | null;
-  /** Who buzzed in and is currently answering */
-  answeringPlayerId: string | null;
+  /** Everyone who buzzed on the active clue, in buzz order */
+  buzzes: Buzz[];
   burnedClueIds: number[];
   /** Board dimensions */
   totalClues: number;
@@ -49,6 +58,13 @@ export interface SelectClueAction {
 export interface BuzzAction {
   type: 'BUZZ';
   playerId: string;
+}
+
+/** Live keystroke sync while a buzzed player types (dispatched transiently) */
+export interface SetAnswerAction {
+  type: 'SET_ANSWER';
+  playerId: string;
+  text: string;
 }
 
 export interface JudgeAnswerAction {
@@ -71,14 +87,18 @@ export interface DismissClueAction {
   type: 'DISMISS_CLUE';
 }
 
-/** Server timer: answering time is up — input locks, but judging stays manual */
+/** A player's input closes. Swipe-down sends the final text in `answer`;
+ *  the server's personal-timer fallback omits it (last synced text stands). */
 export interface LockAnswerAction {
   type: 'LOCK_ANSWER';
+  playerId: string;
+  answer?: string;
 }
 
 export type Action =
   | SelectClueAction
   | BuzzAction
+  | SetAnswerAction
   | JudgeAnswerAction
   | TimeoutAction
   | BuzzerOpenAction

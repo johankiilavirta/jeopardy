@@ -37,13 +37,21 @@ describe('history', () => {
     h = dispatch(h, { type: 'SELECT_CLUE', playerId: 'alice', clue: clue(1) });
     h = dispatch(h, { type: 'BUZZER_OPEN' });
     h = dispatch(h, { type: 'BUZZ', playerId: 'bob' });
+    h = dispatch(h, { type: 'TIMEOUT' });
+    h = dispatch(h, { type: 'LOCK_ANSWER', playerId: 'bob', answer: 'X' });
     h = dispatch(h, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: true });
 
     expect(h.current.players['bob']!.score).toBe(200);
     h = undo(h);
-    expect(h.current.status).toBe('ANSWER_PHASE');
+    expect(h.current.status).toBe('REVEAL');
+    h = undo(h);
+    expect(h.current.status).toBe('ANSWERING');
     h = undo(h);
     expect(h.current.status).toBe('BUZZ_OPEN');
+    expect(h.current.buzzes).toHaveLength(1);
+    h = undo(h);
+    expect(h.current.status).toBe('BUZZ_OPEN');
+    expect(h.current.buzzes).toHaveLength(0);
     h = undo(h);
     expect(h.current.status).toBe('CLUE_READING');
     h = undo(h);
@@ -62,6 +70,22 @@ describe('history', () => {
     h = dispatch(h, { type: 'SELECT_CLUE', playerId: 'alice', clue: clue(1) }, { transient: true });
     expect(h.current.status).toBe('CLUE_READING');
     expect(canUndo(h)).toBe(false);
+  });
+
+  it('undo after transient typing reverts to the buzz boundary, not per-keystroke', () => {
+    let h = createHistory(createInitialState(['Alice', 'Bob']));
+    h = dispatch(h, { type: 'SELECT_CLUE', playerId: 'alice', clue: clue(1) });
+    h = dispatch(h, { type: 'BUZZER_OPEN' });
+    h = dispatch(h, { type: 'BUZZ', playerId: 'bob' });
+    h = dispatch(h, { type: 'SET_ANSWER', playerId: 'bob', text: 'P' }, { transient: true });
+    h = dispatch(h, { type: 'SET_ANSWER', playerId: 'bob', text: 'PL' }, { transient: true });
+    h = dispatch(h, { type: 'SET_ANSWER', playerId: 'bob', text: 'PLUTO' }, { transient: true });
+
+    expect(h.current.buzzes[0]!.answer).toBe('PLUTO');
+    h = undo(h);
+    // One undo skips all the keystrokes: back to the pre-buzz window
+    expect(h.current.status).toBe('BUZZ_OPEN');
+    expect(h.current.buzzes).toHaveLength(0);
   });
 
   it('transient dispatch of an invalid action is a no-op', () => {
