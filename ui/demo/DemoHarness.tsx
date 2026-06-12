@@ -13,14 +13,14 @@ import { ClueScreen } from '../screens/ClueScreen';
 // then the buzz window opens for 5s — tap the card to BUZZ. Buzzing summons
 // the keyboard (ANSWER_PHASE, 10s); when time runs out the input locks and
 // the keyboard drops, but the verdict is still the players' — swipe
-// right/left to judge. If nobody buzzes, the clue lingers for 3s before
+// right/left to judge. If nobody buzzes, the clue lingers for 5s before
 // burning. The harness runs the same phase timers GameServer does (the demo
 // has no server); a 100ms tick keeps the countdown honest.
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number; action: Action }>> = {
   CLUE_READING: { ms: 5000, action: { type: 'BUZZER_OPEN' } },
   BUZZ_OPEN: { ms: 5000, action: { type: 'TIMEOUT' } },
   ANSWER_PHASE: { ms: 10000, action: { type: 'LOCK_ANSWER' } },
-  CLUE_EXPIRED: { ms: 3000, action: { type: 'DISMISS_CLUE' } },
+  CLUE_EXPIRED: { ms: 5000, action: { type: 'DISMISS_CLUE' } },
 };
 
 // The info line in the clue card's bottom-left corner. Minimal during

@@ -234,7 +234,7 @@ describe('GameServer', () => {
     fire();
     expect(lastStateFrom(p1Messages).state.status).toBe('CLUE_EXPIRED');
     expect(lastStateFrom(p1Messages).state.activeClue!.id).toBe(1);
-    expect(armedMs()).toBe(3000); // dismissMs
+    expect(armedMs()).toBe(5000); // dismissMs
 
     fire();
     const final = lastStateFrom(p1Messages).state;
