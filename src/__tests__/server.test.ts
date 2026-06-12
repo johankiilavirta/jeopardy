@@ -138,7 +138,7 @@ describe('GameServer', () => {
     expect(server.history.current.status).toBe('CHOOSE_CLUE');
   });
 
-  it('ignores client-sent timer actions (TIMEOUT, BUZZER_OPEN, DISMISS_CLUE)', () => {
+  it('ignores client-sent timer actions (TIMEOUT, BUZZER_OPEN, DISMISS_CLUE, LOCK_ANSWER)', () => {
     const { timer, fire } = createMockTimer();
     const host = new MockTransport('host');
     const server = createServer(host, ['Alice', 'Bob'], { timer });
@@ -156,6 +156,12 @@ describe('GameServer', () => {
 
     fire(); // legit server timer opens the window
     expect(server.history.current.status).toBe('BUZZ_OPEN');
+
+    // ...nor lock an opponent's answer early...
+    p1.send('host', JSON.stringify({ type: 'BUZZ' }));
+    p1.send('host', JSON.stringify({ type: 'LOCK_ANSWER' }));
+    expect(server.history.current.status).toBe('ANSWER_PHASE');
+    p1.send('host', JSON.stringify({ type: 'UNDO' })); // back to BUZZ_OPEN
 
     // ...nor force an expiry...
     p1.send('host', JSON.stringify({ type: 'TIMEOUT' }));
@@ -301,7 +307,7 @@ describe('GameServer', () => {
     expect(lastStateFrom(p1Messages).state.burnedClueIds).toContain(1);
   });
 
-  it('buzz cancels the window-expiry timer', () => {
+  it('buzz replaces the window-expiry timer with the answer-lock timer', () => {
     const { timer, fire, armedMs } = createMockTimer();
     const host = new MockTransport('host');
     createServer(host, ['Alice', 'Bob'], { timer });
@@ -315,14 +321,21 @@ describe('GameServer', () => {
     p1.send('host', selectClueMsg);
     fire(); // window opens
 
-    // Bob buzzes — moves to ANSWER_PHASE, expiry timer cleared
+    // Bob buzzes — moves to ANSWER_PHASE, expiry timer replaced by answerMs
     p2.send('host', JSON.stringify({ type: 'BUZZ' }));
     expect(lastStateFrom(p1Messages).state.status).toBe('ANSWER_PHASE');
+    expect(armedMs()).toBe(10000);
+
+    // Answer time runs out: input locks, but no further timer — the
+    // verdict is up to the players
+    fire();
+    expect(lastStateFrom(p1Messages).state.status).toBe('ANSWER_LOCKED');
     expect(armedMs()).toBeNull();
 
-    // Firing the old timer should be a no-op
-    fire();
-    expect(lastStateFrom(p1Messages).state.status).toBe('ANSWER_PHASE');
+    // Judging still works after the lock
+    p2.send('host', JSON.stringify({ type: 'JUDGE_ANSWER', correct: true }));
+    expect(lastStateFrom(p1Messages).state.status).toBe('CHOOSE_CLUE');
+    expect(lastStateFrom(p1Messages).state.players['bob']!.score).toBe(200);
   });
 
   it('full game flow: select, buzz, judge correct', () => {

@@ -26,6 +26,8 @@ export interface ServerOptions {
   buzzerMs?: number;
   /** How long an expired clue lingers before returning to the board */
   dismissMs?: number;
+  /** How long the answering player can type before input locks */
+  answerMs?: number;
 }
 
 /** Actions clients are allowed to send. Timer actions are server-only. */
@@ -36,7 +38,13 @@ export function createServer(
   playerNames: string[],
   options: ServerOptions = {},
 ): GameServer {
-  const { timer = defaultTimer, readingMs = 5000, buzzerMs = 5000, dismissMs = 3000 } = options;
+  const {
+    timer = defaultTimer,
+    readingMs = 5000,
+    buzzerMs = 5000,
+    dismissMs = 3000,
+    answerMs = 10000,
+  } = options;
   const initialState = createInitialState(playerNames);
   const server: GameServer = {
     history: createHistory(initialState),
@@ -76,6 +84,9 @@ export function createServer(
         break;
       case 'CLUE_EXPIRED':
         phaseTimerId = timer.set(() => fireTimerAction({ type: 'DISMISS_CLUE' }), dismissMs);
+        break;
+      case 'ANSWER_PHASE':
+        phaseTimerId = timer.set(() => fireTimerAction({ type: 'LOCK_ANSWER' }), answerMs);
         break;
     }
   }

@@ -4,6 +4,7 @@ export type GameStatus =
   | 'BUZZ_OPEN'
   | 'CLUE_EXPIRED'
   | 'ANSWER_PHASE'
+  | 'ANSWER_LOCKED'
   | 'GAME_OVER';
 
 export interface Player {
@@ -70,10 +71,16 @@ export interface DismissClueAction {
   type: 'DISMISS_CLUE';
 }
 
+/** Server timer: answering time is up — input locks, but judging stays manual */
+export interface LockAnswerAction {
+  type: 'LOCK_ANSWER';
+}
+
 export type Action =
   | SelectClueAction
   | BuzzAction
   | JudgeAnswerAction
   | TimeoutAction
   | BuzzerOpenAction
-  | DismissClueAction;
+  | DismissClueAction
+  | LockAnswerAction;

@@ -32,6 +32,8 @@ export function reducer(state: GameState, action: Action): GameState {
       return handleBuzzerOpen(state);
     case 'DISMISS_CLUE':
       return handleDismissClue(state);
+    case 'LOCK_ANSWER':
+      return handleLockAnswer(state);
     default:
       return state;
   }
@@ -82,8 +84,20 @@ function handleBuzz(state: GameState, action: Extract<Action, { type: 'BUZZ' }>)
   };
 }
 
-function handleJudgeAnswer(state: GameState, action: Extract<Action, { type: 'JUDGE_ANSWER' }>): GameState {
+function handleLockAnswer(state: GameState): GameState {
   if (state.status !== 'ANSWER_PHASE') return state;
+  if (!state.activeClue) return state;
+
+  // Answering time is up: input locks (keyboard drops), but the verdict is
+  // still up to the players — JUDGE_ANSWER stays valid in ANSWER_LOCKED.
+  return {
+    ...state,
+    status: 'ANSWER_LOCKED',
+  };
+}
+
+function handleJudgeAnswer(state: GameState, action: Extract<Action, { type: 'JUDGE_ANSWER' }>): GameState {
+  if (state.status !== 'ANSWER_PHASE' && state.status !== 'ANSWER_LOCKED') return state;
   if (!state.activeClue) return state;
   if (state.answeringPlayerId !== action.playerId) return state;
 

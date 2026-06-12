@@ -160,6 +160,66 @@ describe('JUDGE_ANSWER', () => {
   });
 });
 
+describe('LOCK_ANSWER', () => {
+  it('locks the answer, keeping the answering player and clue', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    state = reducer(state, { type: 'LOCK_ANSWER' });
+
+    expect(state.status).toBe('ANSWER_LOCKED');
+    expect(state.answeringPlayerId).toBe('bob');
+    expect(state.activeClue!.id).toBe(1);
+  });
+
+  it('is rejected outside ANSWER_PHASE', () => {
+    const idle = createInitialState(['Alice', 'Bob']);
+    expect(reducer(idle, { type: 'LOCK_ANSWER' })).toBe(idle);
+
+    const open = openClue(idle, 'alice');
+    expect(reducer(open, { type: 'LOCK_ANSWER' })).toBe(open);
+
+    const locked = reducer(
+      reducer(open, { type: 'BUZZ', playerId: 'bob' }),
+      { type: 'LOCK_ANSWER' },
+    );
+    expect(reducer(locked, { type: 'LOCK_ANSWER' })).toBe(locked);
+  });
+
+  it('judging still works after the lock: correct awards and burns', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice', 1, 400);
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    state = reducer(state, { type: 'LOCK_ANSWER' });
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: true });
+
+    expect(state.status).toBe('CHOOSE_CLUE');
+    expect(state.players['bob']!.score).toBe(400);
+    expect(state.burnedClueIds).toContain(1);
+  });
+
+  it('judging still works after the lock: wrong reopens the buzz window', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice', 1, 200);
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    state = reducer(state, { type: 'LOCK_ANSWER' });
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
+
+    expect(state.status).toBe('BUZZ_OPEN');
+    expect(state.players['bob']!.score).toBe(-200);
+    expect(state.activeClue!.failedPlayerIds).toContain('bob');
+  });
+
+  it('cannot buzz while the answer is locked', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    state = reducer(state, { type: 'LOCK_ANSWER' });
+    const next = reducer(state, { type: 'BUZZ', playerId: 'alice' });
+    expect(next).toBe(state);
+  });
+});
+
 describe('TIMEOUT', () => {
   it('expires the clue but keeps it on screen — nothing burned yet', () => {
     let state = createInitialState(['Alice', 'Bob']);
