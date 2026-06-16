@@ -137,18 +137,36 @@ export function createServer(
     applyAction(action);
   }
 
-  transport.onPeerConnected((peerId) => {
+  /** Peers that connected but couldn't get a player slot yet. */
+  const waitingPeers = new Set<string>();
+
+  function tryAssign(peerId: string): void {
     const playerIds = Object.keys(server.history.current.players);
     const assignedIds = new Set(server.playerPeers.values());
     const available = playerIds.find(id => !assignedIds.has(id));
     if (available) {
       server.playerPeers.set(peerId, available);
+      waitingPeers.delete(peerId);
     }
     transport.send(peerId, JSON.stringify({
       type: 'STATE_UPDATE',
       state: server.history.current,
       playerId: server.playerPeers.get(peerId) ?? null,
     }));
+  }
+
+  transport.onPeerDisconnected((peerId) => {
+    server.playerPeers.delete(peerId);
+    waitingPeers.delete(peerId);
+    // A slot freed up — assign any peers that were waiting.
+    for (const waiting of waitingPeers) {
+      tryAssign(waiting);
+    }
+  });
+
+  transport.onPeerConnected((peerId) => {
+    waitingPeers.add(peerId);
+    tryAssign(peerId);
   });
 
   transport.onMessage((peerId, message) => {
