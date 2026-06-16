@@ -157,7 +157,7 @@ export function NetworkedGame() {
               dispatch({ type: 'LOCK_ANSWER', playerId, answer: text })
             }
             reveal={
-              gameState.status === 'REVEAL'
+              gameState.status === 'REVEAL' || gameState.status === 'CLUE_EXPIRED'
                 ? { correctAnswer: gameState.activeClue.answer }
                 : undefined
             }

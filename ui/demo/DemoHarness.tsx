@@ -154,7 +154,7 @@ export function DemoHarness() {
               dispatch({ type: 'LOCK_ANSWER', playerId: LOCAL_PLAYER_ID, answer: text })
             }
             reveal={
-              state.status === 'REVEAL'
+              state.status === 'REVEAL' || state.status === 'CLUE_EXPIRED'
                 ? { correctAnswer: state.activeClue.answer }
                 : undefined
             }
