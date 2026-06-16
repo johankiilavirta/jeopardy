@@ -29,7 +29,7 @@ function makeState(opts: {
     currentTurnPlayerId: opts.currentTurnPlayerId,
     clueSelectPlayerId: null,
     activeClue: null,
-    answeringPlayerId: null,
+    buzzes: [],
     burnedClueIds: opts.burnedClueIds,
     totalClues: 25,
   };

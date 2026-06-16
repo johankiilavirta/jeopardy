@@ -6,12 +6,20 @@ interface PlayerHeaderProps {
   players: Player[];
   /** Id of the player whose turn it is (null = nobody highlighted). */
   currentTurnPlayerId: string | null;
+  /** Local player shown first so each device's owner is top-left. */
+  localPlayerId?: string | undefined;
 }
 
-export function PlayerHeader({ players, currentTurnPlayerId }: PlayerHeaderProps) {
+export function PlayerHeader({ players, currentTurnPlayerId, localPlayerId }: PlayerHeaderProps) {
+  const sorted = localPlayerId
+    ? [...players].sort((a, b) =>
+        a.id === localPlayerId ? -1 : b.id === localPlayerId ? 1 : 0,
+      )
+    : players;
+
   return (
     <View style={styles.row}>
-      {players.map(player => (
+      {sorted.map(player => (
         <PlayerScoreBlock
           key={player.id}
           name={player.name}

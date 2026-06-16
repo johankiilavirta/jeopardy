@@ -45,11 +45,6 @@ export function Board({ board, burnedClueIds, locked, onSelectClue }: BoardProps
         </View>
       ))}
 
-      {/* Dim overlay when it is not the local player's turn. Sits inside the
-          board only (header stays bright) and swallows any stray touches. */}
-      {locked && (
-        <View style={[StyleSheet.absoluteFill, styles.dimOverlay]} pointerEvents="auto" />
-      )}
     </View>
   );
 }
@@ -71,8 +66,5 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     gap: grid.lineWidth,
-  },
-  dimOverlay: {
-    backgroundColor: colors.dimOverlay,
   },
 });

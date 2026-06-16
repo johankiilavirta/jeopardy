@@ -36,6 +36,7 @@ export function ChooseClueScreen({
       <PlayerHeader
         players={Object.values(state.players)}
         currentTurnPlayerId={state.currentTurnPlayerId}
+        localPlayerId={localPlayerId}
       />
       <View
         style={styles.boardWrap}

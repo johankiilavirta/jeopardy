@@ -21,8 +21,6 @@ export const colors = {
   grid: '#000000',
   /** Outline for the player whose turn it is */
   activeOutline: '#2E5BFF',
-  /** Dim overlay over the board when it is not the local player's turn */
-  dimOverlay: 'rgba(0,0,0,0.4)',
   /** Category header text */
   categoryText: '#FFFFFF',
   /** Revealed behind the clue card on a right (correct) swipe */

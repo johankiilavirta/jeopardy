@@ -9,7 +9,8 @@
     "typecheck:lib": "tsc -p tsconfig.lib.json --noEmit",
     "typecheck:app": "tsc -p tsconfig.json --noEmit",
     "start": "expo start",
-    "ios": "expo start --ios"
+    "ios": "expo start --ios",
+    "relay": "tsx relay/index.ts"
   },
   "keywords": [],
   "author": "",
@@ -20,6 +21,7 @@
     "@expo-google-fonts/oswald": "^0.4.2",
     "expo": "~56.0.9",
     "expo-blur": "~56.0.3",
+    "expo-constants": "~56.0.18",
     "expo-font": "~56.0.5",
     "expo-status-bar": "~56.0.4",
     "react": "19.2.3",
@@ -29,7 +31,10 @@
   "devDependencies": {
     "@types/node": "^25.9.1",
     "@types/react": "~19.2.2",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.19.4",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.7",
+    "ws": "^8.18.1"
   }
 }

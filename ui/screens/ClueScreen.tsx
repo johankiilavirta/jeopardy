@@ -8,12 +8,15 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import type { ActiveClue, GameStatus } from '../../src/types';
+import type { ActiveClue } from '../../src/types';
 import { AnswerKeyboard } from '../components/AnswerKeyboard';
 import { colors, shadow, type as typeTokens } from '../theme/tokens';
 
 /** Horizontal drag (px) past which a release commits the judgement. */
 const SWIPE_THRESHOLD = 110;
+
+/** Downward drag (px) on the keyboard past which a release locks the answer. */
+const LOCK_THRESHOLD = 80;
 
 /** How long the CORRECT/WRONG verdict color holds before committing. */
 const VERDICT_HOLD_MS = 500;
@@ -22,47 +25,77 @@ const VERDICT_HOLD_MS = 500;
  *  leaves a narrow strip on the left for the countdown display. */
 const KEYBOARD_BOTTOM = 12;
 
+interface RevealInfo {
+  /** The clue's correct answer, shown on the card in gold. */
+  correctAnswer: string;
+}
+
 interface ClueScreenProps {
   clue: ActiveClue;
-  /** Current phase — drives tap-to-buzz, the keyboard and swipe judging. */
-  status: GameStatus;
-  /** Small info line in the bottom-left corner ("Anyone can answer 4s"). */
+  /** Small info line in the bottom-left corner ("4s", "Bob answered…"). */
   statusText?: string | null | undefined;
-  /** Tap-to-buzz: called when the card is tapped during BUZZ_OPEN. */
+  /** Tap-to-buzz is live (buzz window open and this player hasn't buzzed). */
+  canBuzz?: boolean | undefined;
+  /** This player buzzed and is still typing — the keyboard is up. */
+  showKeyboard?: boolean | undefined;
+  /** Swipe judging is live (REVEAL). */
+  canJudge?: boolean | undefined;
+  /** Tap-to-buzz: called when the card is tapped while canBuzz. */
   onBuzz?: (() => void) | undefined;
-  /** Swipe judging during ANSWER_PHASE: right = correct, left = incorrect. */
+  /** Swipe judging: right = correct, left = incorrect. */
   onJudge?: ((correct: boolean) => void) | undefined;
   /** The player's typed answer, shown above the keys. */
   answer?: string | undefined;
-  /** Enables the in-app keyboard, summoned by ANSWER_PHASE (controlled). */
+  /** Enables the in-app keyboard (controlled input). */
   onAnswerChange?: ((text: string) => void) | undefined;
+  /** Swipe-down on the keyboard locks this final answer in. */
+  onLockAnswer?: ((answer: string) => void) | undefined;
+  /** Set during REVEAL: the correct answer plus the judged player's attempt. */
+  reveal?: RevealInfo | undefined;
 }
 
 export function ClueScreen({
   clue,
-  status,
   statusText,
+  canBuzz,
+  showKeyboard,
+  canJudge,
   onBuzz,
   onJudge,
   answer,
   onAnswerChange,
+  onLockAnswer,
+  reveal,
 }: ClueScreenProps) {
   const { width } = useWindowDimensions();
   const pan = useRef(new Animated.Value(0)).current;
 
+  // The player can swipe the keyboard down without locking if they haven't
+  // typed anything yet — it just dismisses temporarily. Tapping the card
+  // brings it back. Only a swipe-down with at least one character locks
+  // for real. `dismissed` resets whenever `showKeyboard` drops (lock,
+  // phase change, timer expiry).
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    if (!showKeyboard) setDismissed(false);
+  }, [showKeyboard]);
+
   // Keyboard slide animation. The keyboard is summoned by the game phase —
-  // it rises when the player wins the buzz (ANSWER_PHASE) and drops when the
-  // answer locks or on the verdict. The panel stays mounted (`kbMounted`) until the slide-out
-  // finishes; a single driver value `kb` (0 hidden → 1 shown) animates the
-  // panel and clue together, so rapid open/close just retargets one
-  // animation.
-  const keyboardVisible = status === 'ANSWER_PHASE' && !!onAnswerChange;
+  // it rises when this player buzzes and drops when their answer locks
+  // (swipe-down, personal timer) or the reveal arrives. The panel stays
+  // mounted (`kbMounted`) until the slide-out finishes; a single driver
+  // value `kb` (0 hidden → 1 shown) animates the panel and clue together,
+  // so rapid open/close just retargets one animation.
+  const keyboardVisible = !!showKeyboard && !dismissed && !!onAnswerChange;
   const [kbMounted, setKbMounted] = useState(false);
   const [panelHeight, setPanelHeight] = useState(240);
   const kb = useRef(new Animated.Value(0)).current;
+  // Live downward drag on the panel (swipe-to-lock follows the finger).
+  const kbDrag = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (keyboardVisible) {
+      kbDrag.setValue(0); // fresh summon — forget any half-drag
       setKbMounted(true);
       Animated.spring(kb, {
         toValue: 1,
@@ -81,7 +114,7 @@ export function ClueScreen({
         if (finished) setKbMounted(false);
       });
     }
-  }, [keyboardVisible, kb]);
+  }, [keyboardVisible, kb, kbDrag]);
 
   // Panel slides up from just below the bottom edge into place.
   const panelRise = kb.interpolate({
@@ -100,11 +133,40 @@ export function ClueScreen({
     outputRange: [1, 0.9],
   });
 
-  // Swiping judges an answer attempt: live while answering and after the
-  // input locks (the verdict is always up to the players).
-  const canJudge = !!onJudge && (status === 'ANSWER_PHASE' || status === 'ANSWER_LOCKED');
+  // Swipe-down on the keyboard panel: if the player has typed at least
+  // one character the gesture locks the answer in permanently. If the
+  // answer is still empty the keyboard just dismisses — the player can
+  // tap the card to bring it back and type before their timer expires.
+  const lockResponder = useMemo(() => {
+    if (!onLockAnswer) return null;
+    const snapBack = () =>
+      Animated.spring(kbDrag, { toValue: 0, useNativeDriver: true }).start();
+
+    return PanResponder.create({
+      // Claim only clearly-vertical downward drags (mirrors the horizontal
+      // judging heuristic), so key taps still land on the keys.
+      onMoveShouldSetPanResponder: (_e, g) =>
+        g.dy > 12 && g.dy > Math.abs(g.dx) * 1.5,
+      onPanResponderMove: (_e, g) => kbDrag.setValue(Math.max(0, g.dy)),
+      onPanResponderRelease: (_e, g) => {
+        if (g.dy > LOCK_THRESHOLD) {
+          if (answer) {
+            onLockAnswer(answer);
+          } else {
+            // Nothing typed — just dismiss, don't lock.
+            setDismissed(true);
+          }
+        }
+        snapBack();
+      },
+      onPanResponderTerminate: snapBack,
+    });
+  }, [onLockAnswer, answer, kbDrag]);
+
+  // Swiping judges the answer on the stand, only once the reveal is up.
+  const judgeActive = !!onJudge && !!canJudge;
   const panResponder = useMemo(() => {
-    if (!canJudge || !onJudge) return null;
+    if (!judgeActive || !onJudge) return null;
     const snapBack = () =>
       Animated.spring(pan, { toValue: 0, useNativeDriver: false }).start();
 
@@ -120,8 +182,8 @@ export function ClueScreen({
         if (Math.abs(g.dx) > SWIPE_THRESHOLD) {
           const correct = g.dx > 0;
           // Slide the card off, hold on the verdict color for a beat, then
-          // commit. On a wrong answer the clue stays live (the other player
-          // may still buzz), so the same card springs back in — no remount.
+          // commit. On a wrong answer the clue stays live (the next buzzer's
+          // answer goes up), so the same card springs back in — no remount.
           Animated.sequence([
             Animated.timing(pan, {
               toValue: correct ? width : -width,
@@ -139,7 +201,7 @@ export function ClueScreen({
       },
       onPanResponderTerminate: snapBack,
     });
-  }, [canJudge, onJudge, pan, width]);
+  }, [judgeActive, onJudge, pan, width]);
 
   const correctOpacity = pan.interpolate({
     inputRange: [0, SWIPE_THRESHOLD],
@@ -174,11 +236,18 @@ export function ClueScreen({
         style={[styles.cardWrap, { transform: [{ translateX: pan }] }]}
         {...(panResponder ? panResponder.panHandlers : {})}
       >
-        {/* Tapping anywhere on the card is the buzzer (only live during
-            the buzz window — the reducer rejects everything else anyway). */}
+        {/* Tapping anywhere on the card is the buzzer (only live while the
+            window is open and this player hasn't buzzed yet). If the
+            keyboard was dismissed without locking, tapping brings it back. */}
         <Pressable
           style={styles.card}
-          onPress={status === 'BUZZ_OPEN' ? onBuzz : undefined}
+          onPress={
+            canBuzz
+              ? onBuzz
+              : dismissed
+                ? () => setDismissed(false)
+                : undefined
+          }
         >
           <View style={styles.header}>
             <Text style={styles.category} numberOfLines={1} allowFontScaling={false}>
@@ -196,6 +265,15 @@ export function ClueScreen({
               <Text style={styles.clueText} allowFontScaling={false}>
                 {clue.text.toUpperCase()}
               </Text>
+
+              {/* The reveal: correct answer in gold under the clue text. */}
+              {reveal && (
+                <View style={styles.revealWrap}>
+                  <Text style={styles.revealAnswer} allowFontScaling={false}>
+                    {reveal.correctAnswer.toUpperCase()}
+                  </Text>
+                </View>
+              )}
             </Animated.View>
           </View>
         </Pressable>
@@ -215,11 +293,16 @@ export function ClueScreen({
             answer right above the keys. No panel background — only the keys
             and answer line float over the card, so the static status line
             in the corner stays visible. The noop Pressable keeps taps
-            between keys from falling through to the card underneath. */}
+            between keys from falling through to the card underneath.
+            Swiping the whole panel down locks the answer in. */}
         {onAnswerChange && kbMounted && (
           <Animated.View
-            style={[styles.keyboardOverlay, { transform: [{ translateY: panelRise }] }]}
+            style={[
+              styles.keyboardOverlay,
+              { transform: [{ translateY: Animated.add(panelRise, kbDrag) }] },
+            ]}
             onLayout={e => setPanelHeight(e.nativeEvent.layout.height)}
+            {...(lockResponder ? lockResponder.panHandlers : {})}
           >
             <Pressable onPress={() => {}} style={styles.panel}>
               <Text
@@ -327,6 +410,21 @@ const styles = StyleSheet.create({
     lineHeight: 38,
     letterSpacing: 0.5,
     color: colors.categoryText,
+    textAlign: 'center',
+    textShadowColor: shadow.valueText.textShadowColor,
+    textShadowOffset: shadow.valueText.textShadowOffset,
+    textShadowRadius: shadow.valueText.textShadowRadius,
+  },
+  revealWrap: {
+    marginTop: 28,
+    alignItems: 'center',
+    gap: 10,
+  },
+  revealAnswer: {
+    fontFamily: typeTokens.board,
+    fontSize: 30,
+    color: colors.gold,
+    transform: [{ scaleX: 0.85 }],
     textAlign: 'center',
     textShadowColor: shadow.valueText.textShadowColor,
     textShadowOffset: shadow.valueText.textShadowOffset,
