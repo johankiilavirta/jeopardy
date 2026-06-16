@@ -1,108 +1,205 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import type { Transport } from '../src/transport.js';
 import { createServer } from '../src/server.js';
+import { Room, RoomPlayer, RoomServerTransport } from './room.js';
 
-const PORT = 8787;
 const PLAYER_NAMES = ['Player 1', 'Player 2'];
 const TOTAL_CLUES = 25; // 5×5 board
 
-// --- Relay ---
+// --- Rooms ---
 
-const wss = new WebSocketServer({ port: PORT });
-let nextId = 1;
-const peers = new Map<string, WebSocket>();
+const rooms = new Map<number, Room>();
+const peerToRoom = new Map<string, number>();
+const peerToWs = new Map<string, WebSocket>();
+
+function generateRoomCode(): number {
+  for (let i = 0; i < 100; i++) {
+    const code = 100 + Math.floor(Math.random() * 900);
+    if (!rooms.has(code)) return code;
+  }
+  throw new Error('No room codes available');
+}
 
 function relaySend(ws: WebSocket, msg: object): void {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
 }
 
-wss.on('connection', (ws) => {
-  const peerId = `peer-${nextId++}`;
-  const existingPeers = Array.from(peers.keys());
-  peers.set(peerId, ws);
-
-  // Welcome the newcomer (includes everyone already connected).
-  relaySend(ws, { type: 'welcome', peerId, existingPeers });
-
-  // Tell everyone else about the newcomer.
-  for (const [id, sock] of peers) {
-    if (id !== peerId) relaySend(sock, { type: 'peer-connected', peerId });
+function broadcastLobbyUpdate(room: Room): void {
+  const players = room.players.map(p => ({
+    peerId: p.peerId,
+    name: p.name,
+    isHost: p.peerId === room.hostPeerId,
+  }));
+  for (const p of room.players) {
+    relaySend(p.ws, { type: 'lobby-update', players });
   }
-
-  ws.on('message', (raw) => {
-    let msg: { type: string; to?: string; payload?: string };
-    try { msg = JSON.parse(String(raw)); } catch { return; }
-    if (msg.type !== 'send') return;
-
-    const envelope = { type: 'message', from: peerId, payload: msg.payload };
-    if (msg.to === '*') {
-      for (const [id, sock] of peers) {
-        if (id !== peerId) relaySend(sock, envelope);
-      }
-    } else {
-      const target = peers.get(msg.to!);
-      if (target) relaySend(target, envelope);
-    }
-  });
-
-  ws.on('close', () => {
-    peers.delete(peerId);
-    for (const [, sock] of peers) {
-      relaySend(sock, { type: 'peer-disconnected', peerId });
-    }
-  });
-});
-
-console.log(`Relay listening on ws://localhost:${PORT}`);
-
-// --- Game server (loopback client) ---
-
-class NodeWSTransport implements Transport {
-  private ws: WebSocket;
-  private connectCbs: ((peerId: string) => void)[] = [];
-  private disconnectCbs: ((peerId: string) => void)[] = [];
-  private messageCbs: ((peerId: string, message: string) => void)[] = [];
-
-  constructor(url: string) {
-    this.ws = new WebSocket(url);
-    this.ws.on('message', (raw) => {
-      const msg = JSON.parse(String(raw));
-      switch (msg.type) {
-        case 'welcome':
-          console.log(`Server connected as ${msg.peerId}`);
-          for (const id of msg.existingPeers ?? []) {
-            this.connectCbs.forEach(cb => cb(id));
-          }
-          break;
-        case 'peer-connected':
-          this.connectCbs.forEach(cb => cb(msg.peerId));
-          break;
-        case 'peer-disconnected':
-          this.disconnectCbs.forEach(cb => cb(msg.peerId));
-          break;
-        case 'message':
-          this.messageCbs.forEach(cb => cb(msg.from, msg.payload));
-          break;
-      }
-    });
-  }
-
-  advertise(): void {}
-  discover(): void {}
-  stop(): void { this.ws.close(); }
-
-  send(peerId: string, message: string): void {
-    this.ws.send(JSON.stringify({ type: 'send', to: peerId, payload: message }));
-  }
-
-  broadcast(message: string): void {
-    this.ws.send(JSON.stringify({ type: 'send', to: '*', payload: message }));
-  }
-
-  onPeerConnected(cb: (peerId: string) => void): void { this.connectCbs.push(cb); }
-  onPeerDisconnected(cb: (peerId: string) => void): void { this.disconnectCbs.push(cb); }
-  onMessage(cb: (peerId: string, message: string) => void): void { this.messageCbs.push(cb); }
 }
 
-const serverTransport = new NodeWSTransport(`ws://localhost:${PORT}`);
-createServer(serverTransport, PLAYER_NAMES, { totalClues: TOTAL_CLUES });
+function removeFromRoom(peerId: string): void {
+  const roomCode = peerToRoom.get(peerId);
+  if (roomCode == null) return;
+
+  const room = rooms.get(roomCode);
+  peerToRoom.delete(peerId);
+  if (!room) return;
+
+  room.players = room.players.filter(p => p.peerId !== peerId);
+
+  if (room.phase === 'playing') {
+    // During game phase, notify the server transport
+    room.serverTransport?.notifyDisconnect(peerId);
+    for (const p of room.players) {
+      relaySend(p.ws, { type: 'peer-disconnected', peerId });
+    }
+    if (room.players.length === 0) {
+      room.serverTransport?.stop();
+      rooms.delete(roomCode);
+      console.log(`  Room ${roomCode} dissolved (empty)`);
+    }
+  } else {
+    // During lobby phase
+    if (peerId === room.hostPeerId) {
+      // Host left — dissolve room
+      for (const p of room.players) {
+        relaySend(p.ws, { type: 'room-error', message: 'Host left the room' });
+        peerToRoom.delete(p.peerId);
+      }
+      rooms.delete(roomCode);
+      console.log(`  Room ${roomCode} dissolved (host left)`);
+    } else {
+      broadcastLobbyUpdate(room);
+    }
+  }
+}
+
+// --- WebSocket Server with dynamic port ---
+
+const TRY_PORTS = [8787, 8788, 8789, 0];
+
+function startServer(portIndex: number): void {
+  const port = TRY_PORTS[portIndex];
+  const wss = new WebSocketServer({ port });
+
+  wss.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE' && portIndex < TRY_PORTS.length - 1) {
+      console.log(`Port ${port} in use, trying next...`);
+      startServer(portIndex + 1);
+    } else {
+      throw err;
+    }
+  });
+
+  wss.on('listening', () => {
+    const addr = wss.address();
+    const actualPort = typeof addr === 'object' ? addr.port : port;
+    console.log(`Relay listening on ws://localhost:${actualPort}`);
+  });
+
+  let nextId = 1;
+
+  wss.on('connection', (ws) => {
+    const peerId = `peer-${nextId++}`;
+    peerToWs.set(peerId, ws);
+
+    console.log(`+ ${peerId} connected`);
+    relaySend(ws, { type: 'welcome', peerId });
+
+    ws.on('message', (raw) => {
+      let msg: Record<string, unknown>;
+      try { msg = JSON.parse(String(raw)); } catch { return; }
+
+      switch (msg.type) {
+        case 'create-room': {
+          const code = generateRoomCode();
+          const room: Room = {
+            code,
+            hostPeerId: peerId,
+            players: [{ peerId, name: String(msg.playerName ?? 'Host'), ws }],
+            phase: 'lobby',
+          };
+          rooms.set(code, room);
+          peerToRoom.set(peerId, code);
+          console.log(`  Room ${code} created by ${peerId}`);
+          relaySend(ws, { type: 'room-created', roomCode: code });
+          broadcastLobbyUpdate(room);
+          break;
+        }
+
+        case 'join-room': {
+          const code = Number(msg.roomCode);
+          const room = rooms.get(code);
+          if (!room) {
+            relaySend(ws, { type: 'room-error', message: 'Room not found' });
+            return;
+          }
+          if (room.phase !== 'lobby') {
+            relaySend(ws, { type: 'room-error', message: 'Game already in progress' });
+            return;
+          }
+          if (room.players.length >= 2) {
+            relaySend(ws, { type: 'room-error', message: 'Room is full' });
+            return;
+          }
+          room.players.push({ peerId, name: String(msg.playerName ?? 'Guest'), ws });
+          peerToRoom.set(peerId, code);
+          console.log(`  ${peerId} joined room ${code}`);
+          broadcastLobbyUpdate(room);
+          break;
+        }
+
+        case 'start-game': {
+          const roomCode = peerToRoom.get(peerId);
+          if (roomCode == null) return;
+          const room = rooms.get(roomCode);
+          if (!room || room.phase !== 'lobby') return;
+          if (room.hostPeerId !== peerId) {
+            relaySend(ws, { type: 'room-error', message: 'Only the host can start' });
+            return;
+          }
+          if (room.players.length < 2) {
+            relaySend(ws, { type: 'room-error', message: 'Need 2 players to start' });
+            return;
+          }
+
+          room.phase = 'playing';
+          const serverTransport = new RoomServerTransport(room);
+          room.serverTransport = serverTransport;
+
+          const playerNames = room.players.map(p => p.name);
+          createServer(serverTransport, playerNames, { totalClues: TOTAL_CLUES });
+
+          const serverPeerId = 'server';
+          console.log(`  Room ${roomCode} game started`);
+
+          // Notify all players, then simulate connections
+          for (const p of room.players) {
+            relaySend(p.ws, { type: 'game-started', serverPeerId });
+          }
+          for (const p of room.players) {
+            serverTransport.notifyConnect(p.peerId);
+          }
+          break;
+        }
+
+        case 'send': {
+          const roomCode = peerToRoom.get(peerId);
+          if (roomCode == null) return;
+          const room = rooms.get(roomCode);
+          if (!room || room.phase !== 'playing' || !room.serverTransport) return;
+
+          if (msg.to === 'server') {
+            room.serverTransport.deliverMessage(peerId, String(msg.payload));
+          }
+          break;
+        }
+      }
+    });
+
+    ws.on('close', () => {
+      console.log(`- ${peerId} disconnected`);
+      removeFromRoom(peerId);
+      peerToWs.delete(peerId);
+    });
+  });
+}
+
+startServer(0);

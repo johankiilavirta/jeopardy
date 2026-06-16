@@ -6,6 +6,7 @@ const config: ExpoConfig = {
   extra: {
     network: !!process.env.EXPO_PUBLIC_NETWORK,
     relayHost: process.env.EXPO_PUBLIC_RELAY_HOST ?? 'localhost',
+    room: process.env.EXPO_PUBLIC_ROOM,
   },
 };
 

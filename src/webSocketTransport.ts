@@ -1,11 +1,12 @@
 import type { Transport } from './transport.js';
 
 interface RelayMessage {
-  type: 'welcome' | 'peer-connected' | 'peer-disconnected' | 'message';
+  type: string;
   peerId?: string;
   existingPeers?: string[];
   from?: string;
   payload?: string;
+  [key: string]: unknown;
 }
 
 export class WebSocketTransport implements Transport {
@@ -13,6 +14,7 @@ export class WebSocketTransport implements Transport {
   private connectCbs: ((peerId: string) => void)[] = [];
   private disconnectCbs: ((peerId: string) => void)[] = [];
   private messageCbs: ((peerId: string, message: string) => void)[] = [];
+  private rawMessageCbs: ((msg: Record<string, unknown>) => void)[] = [];
 
   /** Resolves with this peer's assigned ID once the relay sends "welcome". */
   readonly ready: Promise<string>;
@@ -40,6 +42,9 @@ export class WebSocketTransport implements Transport {
           case 'message':
             this.messageCbs.forEach(cb => cb(msg.from!, msg.payload!));
             break;
+          default:
+            this.rawMessageCbs.forEach(cb => cb(msg as Record<string, unknown>));
+            break;
         }
       };
     });
@@ -55,6 +60,16 @@ export class WebSocketTransport implements Transport {
 
   broadcast(message: string): void {
     this.ws.send(JSON.stringify({ type: 'send', to: '*', payload: message }));
+  }
+
+  /** Send a raw lobby/control message to the relay. */
+  sendRaw(msg: object): void {
+    this.ws.send(JSON.stringify(msg));
+  }
+
+  /** Register a callback for non-standard relay messages (lobby protocol). */
+  onRawMessage(cb: (msg: Record<string, unknown>) => void): void {
+    this.rawMessageCbs.push(cb);
   }
 
   onPeerConnected(cb: (peerId: string) => void): void {

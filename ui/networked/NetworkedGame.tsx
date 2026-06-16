@@ -1,9 +1,8 @@
-import Constants from 'expo-constants';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { createClient, sendAction } from '../../src/client';
 import { getBuzz, judgedPlayerId } from '../../src/reducer';
-import { WebSocketTransport } from '../../src/webSocketTransport';
+import type { WebSocketTransport } from '../../src/webSocketTransport';
 import type { Action, GameState, GameStatus } from '../../src/types';
 import { demoBoard } from '../fixtures/board';
 import { getClueContent } from '../fixtures/clues';
@@ -11,12 +10,11 @@ import { ChooseClueScreen } from '../screens/ChooseClueScreen';
 import { ClueScreen } from '../screens/ClueScreen';
 import { colors, type as typeTokens } from '../theme/tokens';
 
-const extra = Constants.expoConfig?.extra as { relayHost?: string } | undefined;
-const RELAY_HOST = extra?.relayHost ?? 'localhost';
-const RELAY_URL = `ws://${RELAY_HOST}:8787`;
-
-/** The server is always the first peer to connect to the relay. */
-const SERVER_PEER_ID = 'peer-1';
+interface NetworkedGameProps {
+  transport: WebSocketTransport;
+  serverPeerId: string;
+  onLeave?: () => void;
+}
 
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
   CLUE_READING: { ms: 5000 },
@@ -51,29 +49,21 @@ function statusLine(
   }
 }
 
-export function NetworkedGame() {
+export function NetworkedGame({ transport, serverPeerId, onLeave }: NetworkedGameProps) {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [personalCountdown, setPersonalCountdown] = useState<number | null>(null);
-  const transportRef = useRef<WebSocketTransport | null>(null);
 
   useEffect(() => {
-    const transport = new WebSocketTransport(RELAY_URL);
-    transportRef.current = transport;
-
     createClient(transport, (state, pid) => {
       setGameState(state);
       setPlayerId(pid);
     });
-
-    return () => { transport.stop(); };
-  }, []);
+  }, [transport]);
 
   const dispatch = (action: Action) => {
-    if (transportRef.current) {
-      sendAction(transportRef.current, SERVER_PEER_ID, action as unknown as Record<string, unknown>);
-    }
+    sendAction(transport, serverPeerId, action as unknown as Record<string, unknown>);
   };
 
   // Phase countdown timers (display-only, server is authoritative).
