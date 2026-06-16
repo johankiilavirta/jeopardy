@@ -28,9 +28,6 @@ const KEYBOARD_BOTTOM = 12;
 interface RevealInfo {
   /** The clue's correct answer, shown on the card in gold. */
   correctAnswer: string;
-  /** Whose typed answer is on the stand (judging walks buzz order). */
-  judgedName: string;
-  judgedAnswer: string;
 }
 
 interface ClueScreenProps {
@@ -73,13 +70,23 @@ export function ClueScreen({
   const { width } = useWindowDimensions();
   const pan = useRef(new Animated.Value(0)).current;
 
+  // The player can swipe the keyboard down without locking if they haven't
+  // typed anything yet — it just dismisses temporarily. Tapping the card
+  // brings it back. Only a swipe-down with at least one character locks
+  // for real. `dismissed` resets whenever `showKeyboard` drops (lock,
+  // phase change, timer expiry).
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    if (!showKeyboard) setDismissed(false);
+  }, [showKeyboard]);
+
   // Keyboard slide animation. The keyboard is summoned by the game phase —
   // it rises when this player buzzes and drops when their answer locks
   // (swipe-down, personal timer) or the reveal arrives. The panel stays
   // mounted (`kbMounted`) until the slide-out finishes; a single driver
   // value `kb` (0 hidden → 1 shown) animates the panel and clue together,
   // so rapid open/close just retargets one animation.
-  const keyboardVisible = !!showKeyboard && !!onAnswerChange;
+  const keyboardVisible = !!showKeyboard && !dismissed && !!onAnswerChange;
   const [kbMounted, setKbMounted] = useState(false);
   const [panelHeight, setPanelHeight] = useState(240);
   const kb = useRef(new Animated.Value(0)).current;
@@ -126,9 +133,10 @@ export function ClueScreen({
     outputRange: [1, 0.9],
   });
 
-  // Swipe-down on the keyboard panel locks the answer in: the panel
-  // follows the finger, and a release past the threshold commits. The
-  // actual slide-out plays when `showKeyboard` flips false upstream.
+  // Swipe-down on the keyboard panel: if the player has typed at least
+  // one character the gesture locks the answer in permanently. If the
+  // answer is still empty the keyboard just dismisses — the player can
+  // tap the card to bring it back and type before their timer expires.
   const lockResponder = useMemo(() => {
     if (!onLockAnswer) return null;
     const snapBack = () =>
@@ -142,10 +150,14 @@ export function ClueScreen({
       onPanResponderMove: (_e, g) => kbDrag.setValue(Math.max(0, g.dy)),
       onPanResponderRelease: (_e, g) => {
         if (g.dy > LOCK_THRESHOLD) {
-          onLockAnswer(answer ?? '');
-        } else {
-          snapBack();
+          if (answer) {
+            onLockAnswer(answer);
+          } else {
+            // Nothing typed — just dismiss, don't lock.
+            setDismissed(true);
+          }
         }
+        snapBack();
       },
       onPanResponderTerminate: snapBack,
     });
@@ -225,10 +237,17 @@ export function ClueScreen({
         {...(panResponder ? panResponder.panHandlers : {})}
       >
         {/* Tapping anywhere on the card is the buzzer (only live while the
-            window is open and this player hasn't buzzed yet). */}
+            window is open and this player hasn't buzzed yet). If the
+            keyboard was dismissed without locking, tapping brings it back. */}
         <Pressable
           style={styles.card}
-          onPress={canBuzz ? onBuzz : undefined}
+          onPress={
+            canBuzz
+              ? onBuzz
+              : dismissed
+                ? () => setDismissed(false)
+                : undefined
+          }
         >
           <View style={styles.header}>
             <Text style={styles.category} numberOfLines={1} allowFontScaling={false}>
@@ -247,16 +266,11 @@ export function ClueScreen({
                 {clue.text.toUpperCase()}
               </Text>
 
-              {/* The reveal: correct answer in gold under the clue, with the
-                  judged player's attempt below — swipe to pass the verdict. */}
+              {/* The reveal: correct answer in gold under the clue text. */}
               {reveal && (
                 <View style={styles.revealWrap}>
                   <Text style={styles.revealAnswer} allowFontScaling={false}>
                     {reveal.correctAnswer.toUpperCase()}
-                  </Text>
-                  <Text style={styles.revealAttempt} numberOfLines={2} allowFontScaling={false}>
-                    {reveal.judgedName.toUpperCase()} ANSWERED{' '}
-                    {reveal.judgedAnswer ? `“${reveal.judgedAnswer.toUpperCase()}”` : 'NOTHING'}
                   </Text>
                 </View>
               )}
@@ -415,13 +429,6 @@ const styles = StyleSheet.create({
     textShadowColor: shadow.valueText.textShadowColor,
     textShadowOffset: shadow.valueText.textShadowOffset,
     textShadowRadius: shadow.valueText.textShadowRadius,
-  },
-  revealAttempt: {
-    fontFamily: typeTokens.ui500,
-    fontSize: 15,
-    letterSpacing: 0.5,
-    color: 'rgba(255,255,255,0.75)',
-    textAlign: 'center',
   },
   keyboardOverlay: {
     position: 'absolute',

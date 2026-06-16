@@ -47,7 +47,7 @@ function statusLine(
       const onStand = judgedPlayerId(state);
       const name = state.players[onStand ?? '']?.name ?? 'Someone';
       const text = onStand ? getBuzz(state, onStand)?.answer : '';
-      return `${name} answered ${text || 'nothing'}`;
+      return `${name} ANSWERED ${text ? `"${text}"` : 'NOTHING'}`.toUpperCase();
     }
     case 'CLUE_EXPIRED':
       return 'Time to answer expired';
@@ -155,11 +155,7 @@ export function DemoHarness() {
             }
             reveal={
               state.status === 'REVEAL'
-                ? {
-                    correctAnswer: state.activeClue.answer,
-                    judgedName: state.players[onStand ?? '']?.name ?? 'Someone',
-                    judgedAnswer: onStand ? (getBuzz(state, onStand)?.answer ?? '') : '',
-                  }
+                ? { correctAnswer: state.activeClue.answer }
                 : undefined
             }
           />

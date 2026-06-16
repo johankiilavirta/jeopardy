@@ -1,6 +1,6 @@
 import type { GameState, Action, Buzz, Player } from './types.js';
 
-export function createInitialState(playerNames: string[]): GameState {
+export function createInitialState(playerNames: string[], totalClues = 30): GameState {
   const players: Record<string, Player> = {};
   for (const name of playerNames) {
     const id = name.toLowerCase().replace(/\s+/g, '-');
@@ -14,7 +14,7 @@ export function createInitialState(playerNames: string[]): GameState {
     activeClue: null,
     buzzes: [],
     burnedClueIds: [],
-    totalClues: 30,
+    totalClues,
   };
 }
 

@@ -28,6 +28,8 @@ export interface ServerOptions {
   dismissMs?: number;
   /** How long each buzzed player can type (from their own buzz) before input locks */
   answerMs?: number;
+  /** Total number of clues on the board (default 30) */
+  totalClues?: number;
 }
 
 /** Actions clients are allowed to send. Timer actions are server-only. */
@@ -44,8 +46,9 @@ export function createServer(
     buzzerMs = 5000,
     dismissMs = 5000,
     answerMs = 10000,
+    totalClues,
   } = options;
-  const initialState = createInitialState(playerNames);
+  const initialState = createInitialState(playerNames, totalClues);
   const server: GameServer = {
     history: createHistory(initialState),
     playerPeers: new Map(),
