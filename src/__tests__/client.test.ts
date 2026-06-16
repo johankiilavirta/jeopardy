@@ -120,7 +120,7 @@ describe('GameClient', () => {
     expect(client1.state!.status).toBe('REVEAL');
 
     // Bob judges himself correct
-    sendAction(p2, 'host', { type: 'JUDGE_ANSWER', correct: true });
+    sendAction(p2, 'host', { type: 'JUDGE_ANSWER', playerId: 'bob', correct: true });
     expect(client1.state!.players['bob']!.score).toBe(400);
     expect(client2.state!.currentTurnPlayerId).toBe('bob');
   });

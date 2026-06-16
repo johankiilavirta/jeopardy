@@ -178,9 +178,12 @@ export function createServer(
     const playerId = server.playerPeers.get(peerId);
     if (!playerId) return;
 
-    // playerId comes from the peer mapping, so you can only ever buzz,
-    // type, lock and judge as yourself.
-    const action = { ...parsed, playerId } as Action;
+    // For most actions, playerId is the sender (you can only buzz, type,
+    // lock as yourself). For JUDGE_ANSWER, playerId means "who is being
+    // judged" — the client sends the judged player's id, not its own.
+    const action = parsed.type === 'JUDGE_ANSWER'
+      ? { ...parsed } as Action
+      : { ...parsed, playerId } as Action;
     // Keystrokes are transient: they update state without growing the
     // undo stack.
     applyAction(action, { transient: action.type === 'SET_ANSWER' });

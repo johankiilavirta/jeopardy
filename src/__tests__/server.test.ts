@@ -509,13 +509,13 @@ describe('GameServer', () => {
     expect(count()).toBe(0); // no timers during the reveal
 
     // Bob (first buzzer) is judged wrong: −400, alice's answer goes up
-    p2.send('host', JSON.stringify({ type: 'JUDGE_ANSWER', correct: false }));
+    p2.send('host', JSON.stringify({ type: 'JUDGE_ANSWER', playerId: 'bob', correct: false }));
     let state = lastStateFrom(p1Messages).state;
     expect(state.status).toBe('REVEAL');
     expect(state.players['bob']!.score).toBe(-400);
 
     // Alice is judged correct: +400, she picks next
-    p1.send('host', JSON.stringify({ type: 'JUDGE_ANSWER', correct: true }));
+    p1.send('host', JSON.stringify({ type: 'JUDGE_ANSWER', playerId: 'alice', correct: true }));
     state = lastStateFrom(p1Messages).state;
     expect(state.status).toBe('CHOOSE_CLUE');
     expect(state.players['alice']!.score).toBe(400);
