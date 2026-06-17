@@ -15,6 +15,9 @@ interface NetworkedGameProps {
   serverPeerId: string;
   initialState?: { state: GameState; playerId: string | null } | null;
   peerDisconnected?: boolean;
+  roomCode?: number;
+  relayHost?: string;
+  relayPort?: string;
   onLeave?: () => void;
 }
 
@@ -51,7 +54,7 @@ function statusLine(
   }
 }
 
-export function NetworkedGame({ transport, serverPeerId, initialState, peerDisconnected, onLeave }: NetworkedGameProps) {
+export function NetworkedGame({ transport, serverPeerId, initialState, peerDisconnected, roomCode, relayHost, relayPort, onLeave }: NetworkedGameProps) {
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
@@ -110,12 +113,17 @@ export function NetworkedGame({ transport, serverPeerId, initialState, peerDisco
 
   const onStand = judgedPlayerId(gameState);
 
+  const disconnectedPlayerId = peerDisconnected
+    ? Object.keys(gameState.players).find(id => id !== playerId) ?? null
+    : null;
+
   return (
     <View style={styles.root}>
       <ChooseClueScreen
         state={gameState}
         localPlayerId={playerId}
         board={demoBoard}
+        disconnectedPlayerId={disconnectedPlayerId}
         onSelectClue={clueId => {
           dispatch({
             type: 'SELECT_CLUE',
@@ -127,7 +135,9 @@ export function NetworkedGame({ transport, serverPeerId, initialState, peerDisco
 
       {peerDisconnected && !gameState.activeClue && (
         <View style={styles.statusLineWrap}>
-          <Text style={styles.statusLine}>Opponent disconnected</Text>
+          <Text style={styles.statusLine}>
+            {`Rejoin Room ${roomCode ?? '???'}\n${relayHost ?? 'localhost'}:${relayPort ?? '8787'}`}
+          </Text>
         </View>
       )}
 

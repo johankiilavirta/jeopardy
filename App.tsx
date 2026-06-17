@@ -36,7 +36,7 @@ type AppScreen =
   | { type: 'menu' }
   | { type: 'join' }
   | { type: 'lobby'; roomCode: number; isHost: boolean }
-  | { type: 'game'; serverPeerId: string }
+  | { type: 'game'; serverPeerId: string; roomCode: number }
   | { type: 'settings' }
   | { type: 'demo' };
 
@@ -78,6 +78,8 @@ export default function App() {
     setLobbyError(null);
     setJoinError(null);
     setPeerDisconnected(false);
+
+    let roomCode = action !== 'create' ? action.join : 0;
 
     // For create, navigate to lobby right away (connection in background).
     // For join, stay on the join screen until we confirm the room exists.
@@ -121,9 +123,10 @@ export default function App() {
     transport.onRawMessage((msg) => {
       switch (msg.type) {
         case 'room-created':
+          roomCode = msg.roomCode as number;
           setScreen({
             type: 'lobby',
-            roomCode: msg.roomCode as number,
+            roomCode,
             isHost: true,
           });
           setLobbyError(null);
@@ -146,6 +149,7 @@ export default function App() {
           setScreen({
             type: 'game',
             serverPeerId: msg.serverPeerId as string,
+            roomCode,
           });
           break;
         case 'room-error':
@@ -196,7 +200,7 @@ export default function App() {
           createClient(transport, (state, pid) => {
             setInitialGameState({ state, playerId: pid });
           });
-          setScreen({ type: 'game', serverPeerId: msg.serverPeerId as string });
+          setScreen({ type: 'game', serverPeerId: msg.serverPeerId as string, roomCode: DEV_ROOM });
           break;
         case 'room-error':
           if (msg.message === 'Room not found') {
@@ -276,6 +280,9 @@ export default function App() {
             serverPeerId={screen.serverPeerId}
             initialState={initialGameState}
             peerDisconnected={peerDisconnected}
+            roomCode={screen.roomCode}
+            relayHost={relayHost}
+            relayPort={relayPort}
             onLeave={handleGameLeave}
           />
         ) : null;

@@ -6,6 +6,8 @@ interface PlayerScoreBlockProps {
   score: number;
   /** Whether it is this player's turn to pick (renders the blue outline). */
   activeTurn: boolean;
+  /** Whether this player has disconnected. */
+  disconnected?: boolean;
 }
 
 function formatScore(score: number): string {
@@ -13,9 +15,9 @@ function formatScore(score: number): string {
   return score < 0 ? `-$${abs}` : `$${abs}`;
 }
 
-export function PlayerScoreBlock({ name, score, activeTurn }: PlayerScoreBlockProps) {
+export function PlayerScoreBlock({ name, score, activeTurn, disconnected }: PlayerScoreBlockProps) {
   return (
-    <View style={[styles.block, activeTurn && styles.blockActive]}>
+    <View style={[styles.block, activeTurn && styles.blockActive, disconnected && styles.blockDisconnected]}>
       <Text style={styles.name} numberOfLines={1} allowFontScaling={false}>
         {name.toUpperCase()}
       </Text>
@@ -47,6 +49,9 @@ const styles = StyleSheet.create({
   },
   blockActive: {
     borderColor: colors.activeOutline,
+  },
+  blockDisconnected: {
+    opacity: 0.35,
   },
   name: {
     fontFamily: typeTokens.ui500,
