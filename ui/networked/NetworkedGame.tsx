@@ -136,7 +136,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, peerDisco
       {peerDisconnected && !gameState.activeClue && (
         <View style={styles.statusLineWrap}>
           <Text style={styles.statusLine}>
-            {`Rejoin Room ${roomCode ?? '???'}\n${relayHost ?? 'localhost'}:${relayPort ?? '8787'}`}
+            {`${relayHost ?? 'localhost'}:${relayPort ?? '8787'} @ ${roomCode ?? '???'}`}
           </Text>
         </View>
       )}
