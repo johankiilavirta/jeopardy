@@ -134,7 +134,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, peerDisco
       />
 
       {peerDisconnected && !gameState.activeClue && (
-        <View style={styles.statusLineWrap}>
+        <View style={[styles.statusLineWrap, styles.rejoinWrap]}>
           <Text style={styles.statusLine}>
             {`${relayHost ?? 'localhost'}:${relayPort ?? '8787'} @ ${roomCode ?? '???'}`}
           </Text>
@@ -189,6 +189,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     letterSpacing: 0.5,
     color: 'rgba(255,255,255,0.65)',
+  },
+  rejoinWrap: {
+    backgroundColor: colors.bg,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 4,
   },
   connecting: {
     flex: 1,
