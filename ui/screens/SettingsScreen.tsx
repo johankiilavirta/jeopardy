@@ -99,6 +99,7 @@ const styles = StyleSheet.create({
     top: 16,
     left: 16,
     padding: 8,
+    zIndex: 1,
   },
   backText: {
     fontFamily: typeTokens.ui500,

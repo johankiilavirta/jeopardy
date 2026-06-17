@@ -10,12 +10,16 @@ import {
   SafeAreaProvider,
   SafeAreaView,
 } from 'react-native-safe-area-context';
+import { createClient } from './src/client';
+import type { GameState } from './src/types';
 import { WebSocketTransport } from './src/webSocketTransport';
 import { DemoHarness } from './ui/demo/DemoHarness';
 import { NetworkedGame } from './ui/networked/NetworkedGame';
 import { MainMenuScreen } from './ui/screens/MainMenuScreen';
 import { JoinGameScreen } from './ui/screens/JoinGameScreen';
 import { LobbyScreen, type LobbyPlayer } from './ui/screens/LobbyScreen';
+
+const CONNECTION_TIMEOUT_MS = 7000;
 import { SettingsScreen } from './ui/screens/SettingsScreen';
 import { colors } from './ui/theme/tokens';
 
@@ -53,7 +57,9 @@ export default function App() {
   const [relayPort, setRelayPort] = useState('8787');
   const [lobbyPlayers, setLobbyPlayers] = useState<LobbyPlayer[]>([]);
   const [lobbyError, setLobbyError] = useState<string | null>(null);
-  const [joinRoomCode, setJoinRoomCode] = useState('');
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [initialGameState, setInitialGameState] = useState<{ state: GameState; playerId: string | null } | null>(null);
+  const [peerDisconnected, setPeerDisconnected] = useState(false);
   const transportRef = useRef<WebSocketTransport | null>(null);
   const myPeerIdRef = useRef<string | null>(null);
   const devAutoStartedRef = useRef(false);
@@ -66,11 +72,51 @@ export default function App() {
     setLobbyError(null);
   }, []);
 
+  /** Connect to relay and create or join a room. */
   const connectAndDo = useCallback((action: 'create' | { join: number }) => {
     disconnect();
+    setLobbyError(null);
+    setJoinError(null);
+    setPeerDisconnected(false);
+
+    // For create, navigate to lobby right away (connection in background).
+    // For join, stay on the join screen until we confirm the room exists.
+    if (action === 'create') {
+      setScreen({ type: 'lobby', roomCode: 0, isHost: true });
+    }
+
     const url = `ws://${relayHost}:${relayPort}`;
     const transport = new WebSocketTransport(url);
     transportRef.current = transport;
+
+    transport.onError((err) => {
+      if (action !== 'create') {
+        setJoinError(err);
+      } else {
+        setLobbyError(err);
+      }
+    });
+
+    transport.onPeerDisconnected(() => {
+      setPeerDisconnected(true);
+    });
+
+    transport.onPeerConnected(() => {
+      setPeerDisconnected(false);
+    });
+
+    // Time out if we don't get a welcome within 7 seconds
+    const timeout = setTimeout(() => {
+      if (!myPeerIdRef.current) {
+        const err = 'Could not connect to relay';
+        if (action !== 'create') {
+          setJoinError(err);
+        } else {
+          setLobbyError(err);
+        }
+        transport.stop();
+      }
+    }, CONNECTION_TIMEOUT_MS);
 
     transport.onRawMessage((msg) => {
       switch (msg.type) {
@@ -85,26 +131,40 @@ export default function App() {
         case 'lobby-update':
           setLobbyPlayers(msg.players as LobbyPlayer[]);
           setLobbyError(null);
+          // If we were on the join screen, now navigate to lobby
+          if (action !== 'create') {
+            const roomCode = typeof action === 'object' ? action.join : 0;
+            setScreen({ type: 'lobby', roomCode, isHost: false });
+          }
           break;
         case 'game-started':
+          // Register message handler BEFORE React re-renders so no
+          // STATE_UPDATE messages are lost to the void.
+          createClient(transport, (state, pid) => {
+            setInitialGameState({ state, playerId: pid });
+          });
           setScreen({
             type: 'game',
             serverPeerId: msg.serverPeerId as string,
           });
           break;
         case 'room-error':
-          setLobbyError(msg.message as string);
+          if (action !== 'create') {
+            setJoinError(msg.message as string);
+          } else {
+            setLobbyError(msg.message as string);
+          }
           break;
       }
     });
 
     transport.ready.then((peerId) => {
+      clearTimeout(timeout);
       myPeerIdRef.current = peerId;
       if (action === 'create') {
         transport.sendRaw({ type: 'create-room', playerName });
       } else {
         transport.sendRaw({ type: 'join-room', roomCode: action.join, playerName });
-        setScreen({ type: 'lobby', roomCode: action.join, isHost: false });
       }
     });
   }, [relayHost, relayPort, playerName, disconnect]);
@@ -113,8 +173,6 @@ export default function App() {
   useEffect(() => {
     if (DEV_ROOM == null || devAutoStartedRef.current) return;
     devAutoStartedRef.current = true;
-    // Try to create the room; if it already exists the relay will error
-    // and we'll fall back to joining.
     const url = `ws://${relayHost}:${relayPort}`;
     const transport = new WebSocketTransport(url);
     transportRef.current = transport;
@@ -126,7 +184,6 @@ export default function App() {
           break;
         case 'lobby-update': {
           setLobbyPlayers(msg.players as LobbyPlayer[]);
-          // Auto-start when 2 players (host only)
           const players = msg.players as LobbyPlayer[];
           const myPeerId = myPeerIdRef.current;
           const me = players.find(p => p.peerId === myPeerId);
@@ -136,12 +193,13 @@ export default function App() {
           break;
         }
         case 'game-started':
+          createClient(transport, (state, pid) => {
+            setInitialGameState({ state, playerId: pid });
+          });
           setScreen({ type: 'game', serverPeerId: msg.serverPeerId as string });
           break;
         case 'room-error':
-          // Room already exists or other error — try joining
           if (msg.message === 'Room not found') {
-            // Room doesn't exist yet; create it
             transport.sendRaw({ type: 'create-room', playerName });
           } else {
             setLobbyError(msg.message as string);
@@ -152,18 +210,19 @@ export default function App() {
 
     transport.ready.then((peerId) => {
       myPeerIdRef.current = peerId;
-      // Try joining first (another sim may have created it)
       transport.sendRaw({ type: 'join-room', roomCode: DEV_ROOM, playerName });
       setScreen({ type: 'lobby', roomCode: DEV_ROOM, isHost: false });
     });
   }, []);
 
   const handleNewGame = useCallback(() => connectAndDo('create'), [connectAndDo]);
+
   const handleJoinNav = useCallback(() => {
-    setJoinRoomCode('');
     setLobbyError(null);
+    setJoinError(null);
     setScreen({ type: 'join' });
   }, []);
+
   const handleJoinSubmit = useCallback((code: number) => connectAndDo({ join: code }), [connectAndDo]);
   const handleSettings = useCallback(() => setScreen({ type: 'settings' }), []);
 
@@ -194,11 +253,9 @@ export default function App() {
       case 'join':
         return (
           <JoinGameScreen
-            roomCode={joinRoomCode}
-            onRoomCodeChange={setJoinRoomCode}
             onSubmit={handleJoinSubmit}
-            onBack={() => { disconnect(); setScreen({ type: 'menu' }); }}
-            error={lobbyError}
+            onBack={() => setScreen({ type: 'menu' })}
+            error={joinError}
           />
         );
       case 'lobby':
@@ -209,6 +266,7 @@ export default function App() {
             isHost={screen.isHost}
             onStart={handleStartGame}
             onLeave={handleLeave}
+            error={lobbyError}
           />
         );
       case 'game':
@@ -216,6 +274,8 @@ export default function App() {
           <NetworkedGame
             transport={transportRef.current}
             serverPeerId={screen.serverPeerId}
+            initialState={initialGameState}
+            peerDisconnected={peerDisconnected}
             onLeave={handleGameLeave}
           />
         ) : null;

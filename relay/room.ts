@@ -20,7 +20,7 @@ export interface Room {
 // --- In-process server transport (no loopback WS) ---
 
 export class RoomServerTransport implements Transport {
-  private connectCbs: ((peerId: string) => void)[] = [];
+  private connectCbs: ((peerId: string, playerName?: string) => void)[] = [];
   private disconnectCbs: ((peerId: string) => void)[] = [];
   private messageCbs: ((peerId: string, message: string) => void)[] = [];
 
@@ -36,8 +36,8 @@ export class RoomServerTransport implements Transport {
   }
 
   /** Called by relay when a peer connects (game already started). */
-  notifyConnect(peerId: string): void {
-    this.connectCbs.forEach(cb => cb(peerId));
+  notifyConnect(peerId: string, playerName?: string): void {
+    this.connectCbs.forEach(cb => cb(peerId, playerName));
   }
 
   /** Called by relay when a peer disconnects during game phase. */
@@ -58,7 +58,7 @@ export class RoomServerTransport implements Transport {
     }
   }
 
-  onPeerConnected(cb: (peerId: string) => void): void { this.connectCbs.push(cb); }
+  onPeerConnected(cb: (peerId: string, playerName?: string) => void): void { this.connectCbs.push(cb); }
   onPeerDisconnected(cb: (peerId: string) => void): void { this.disconnectCbs.push(cb); }
   onMessage(cb: (peerId: string, message: string) => void): void { this.messageCbs.push(cb); }
 }

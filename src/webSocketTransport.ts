@@ -11,16 +11,25 @@ interface RelayMessage {
 
 export class WebSocketTransport implements Transport {
   private ws: WebSocket;
-  private connectCbs: ((peerId: string) => void)[] = [];
+  private connectCbs: ((peerId: string, playerName?: string) => void)[] = [];
   private disconnectCbs: ((peerId: string) => void)[] = [];
   private messageCbs: ((peerId: string, message: string) => void)[] = [];
   private rawMessageCbs: ((msg: Record<string, unknown>) => void)[] = [];
+  private errorCbs: ((err: string) => void)[] = [];
 
   /** Resolves with this peer's assigned ID once the relay sends "welcome". */
   readonly ready: Promise<string>;
 
   constructor(url: string) {
     this.ws = new WebSocket(url);
+    this.ws.onerror = () => {
+      this.errorCbs.forEach(cb => cb('Could not connect to relay'));
+    };
+    this.ws.onclose = (event) => {
+      if (event.code !== 1000) {
+        this.errorCbs.forEach(cb => cb('Connection to relay lost'));
+      }
+    };
     this.ready = new Promise(resolve => {
       this.ws.onmessage = (event: MessageEvent) => {
         const msg: RelayMessage = JSON.parse(String(event.data));
@@ -72,7 +81,7 @@ export class WebSocketTransport implements Transport {
     this.rawMessageCbs.push(cb);
   }
 
-  onPeerConnected(cb: (peerId: string) => void): void {
+  onPeerConnected(cb: (peerId: string, playerName?: string) => void): void {
     this.connectCbs.push(cb);
   }
 
@@ -82,5 +91,10 @@ export class WebSocketTransport implements Transport {
 
   onMessage(cb: (peerId: string, message: string) => void): void {
     this.messageCbs.push(cb);
+  }
+
+  /** Register a callback for connection errors. */
+  onError(cb: (err: string) => void): void {
+    this.errorCbs.push(cb);
   }
 }

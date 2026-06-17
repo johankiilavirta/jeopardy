@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -11,12 +12,11 @@ interface JoinGameScreenProps {
   onSubmit: (roomCode: number) => void;
   onBack: () => void;
   error: string | null;
-  roomCode: string;
-  onRoomCodeChange: (code: string) => void;
 }
 
 export function JoinGameScreen(props: JoinGameScreenProps) {
-  const valid = /^\d{3}$/.test(props.roomCode);
+  const [code, setCode] = useState('');
+  const valid = /^\d{3}$/.test(code);
 
   return (
     <View style={styles.root}>
@@ -30,10 +30,9 @@ export function JoinGameScreen(props: JoinGameScreenProps) {
 
       <TextInput
         style={styles.codeInput}
-        value={props.roomCode}
+        value={code}
         onChangeText={text => {
-          const digits = text.replace(/\D/g, '').slice(0, 3);
-          props.onRoomCodeChange(digits);
+          setCode(text.replace(/\D/g, '').slice(0, 3));
         }}
         keyboardType="number-pad"
         maxLength={3}
@@ -42,17 +41,21 @@ export function JoinGameScreen(props: JoinGameScreenProps) {
         autoFocus
       />
 
-      {props.error && <Text style={styles.error}>{props.error}</Text>}
-
       <Pressable
         style={[styles.joinButton, !valid && styles.joinButtonDisabled]}
-        onPress={() => valid && props.onSubmit(Number(props.roomCode))}
+        onPress={() => valid && props.onSubmit(Number(code))}
         disabled={!valid}
       >
         <Text style={[styles.joinButtonText, !valid && styles.joinButtonTextDisabled]}>
           JOIN
         </Text>
       </Pressable>
+
+      {props.error && (
+        <View style={styles.statusLineWrap}>
+          <Text style={styles.statusLine}>{props.error}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -70,6 +73,7 @@ const styles = StyleSheet.create({
     top: 16,
     left: 16,
     padding: 8,
+    zIndex: 1,
   },
   backText: {
     fontFamily: typeTokens.ui500,
@@ -101,11 +105,18 @@ const styles = StyleSheet.create({
     letterSpacing: 16,
     width: 200,
   },
-  error: {
+  statusLineWrap: {
+    position: 'absolute',
+    left: 24,
+    bottom: 20,
+    height: 40,
+    justifyContent: 'center',
+  },
+  statusLine: {
     fontFamily: typeTokens.ui500,
-    fontSize: 14,
-    color: '#E55',
-    marginTop: 12,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    color: 'rgba(255,255,255,0.65)',
   },
   joinButton: {
     marginTop: 24,

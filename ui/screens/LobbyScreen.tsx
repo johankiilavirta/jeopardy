@@ -18,10 +18,15 @@ interface LobbyScreenProps {
   isHost: boolean;
   onStart: () => void;
   onLeave: () => void;
+  error?: string | null;
 }
 
+const MAX_PLAYERS = 2;
+
 export function LobbyScreen(props: LobbyScreenProps) {
-  const canStart = props.isHost && props.players.length >= 2;
+  const canStart = props.isHost && props.players.length >= MAX_PLAYERS;
+
+  const slots = Array.from({ length: MAX_PLAYERS }, (_, i) => props.players[i] ?? null);
 
   return (
     <View style={styles.root}>
@@ -29,21 +34,32 @@ export function LobbyScreen(props: LobbyScreenProps) {
         <Text style={styles.leaveText}>← LEAVE</Text>
       </Pressable>
 
-      <Text style={styles.roomCode}>{props.roomCode}</Text>
-      <Text style={styles.subtitle}>Share this code with your friend</Text>
+      {props.roomCode > 0 ? (
+        <>
+          <Text style={styles.roomCode}>{props.roomCode}</Text>
+          <Text style={styles.subtitle}>Share this code with your friend</Text>
+        </>
+      ) : (
+        <>
+          <Text style={styles.creatingText}>Creating room...</Text>
+          <Text style={styles.subtitle}> </Text>
+        </>
+      )}
 
       <View style={styles.playerList}>
-        {props.players.map(p => (
-          <View key={p.peerId} style={styles.playerRow}>
-            <Text style={styles.playerName}>{p.name}</Text>
-            {p.isHost && <Text style={styles.hostBadge}>HOST</Text>}
+        {slots.map((player, i) => (
+          <View key={player?.peerId ?? `empty-${i}`} style={styles.playerRow}>
+            <Text style={styles.slotLabel}>P{i + 1}</Text>
+            {player ? (
+              <>
+                <Text style={styles.playerName}>{player.name}</Text>
+                {player.isHost && <Text style={styles.hostBadge}>HOST</Text>}
+              </>
+            ) : (
+              <Text style={styles.emptySlot}>Open</Text>
+            )}
           </View>
         ))}
-        {props.players.length < 2 && (
-          <View style={styles.playerRow}>
-            <Text style={styles.waitingText}>Waiting for player...</Text>
-          </View>
-        )}
       </View>
 
       {props.isHost && (
@@ -56,6 +72,12 @@ export function LobbyScreen(props: LobbyScreenProps) {
             START GAME
           </Text>
         </Pressable>
+      )}
+
+      {props.error && (
+        <View style={styles.statusLineWrap}>
+          <Text style={styles.statusLine}>{props.error}</Text>
+        </View>
       )}
     </View>
   );
@@ -74,6 +96,7 @@ const styles = StyleSheet.create({
     top: 16,
     left: 16,
     padding: 8,
+    zIndex: 1,
   },
   leaveText: {
     fontFamily: typeTokens.ui500,
@@ -105,10 +128,23 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 6,
   },
+  slotLabel: {
+    fontFamily: typeTokens.ui700,
+    fontSize: 14,
+    color: '#555',
+    marginRight: 12,
+  },
   playerName: {
     fontFamily: typeTokens.ui500,
     fontSize: 18,
     color: '#fff',
+    flex: 1,
+  },
+  emptySlot: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 18,
+    color: '#444',
+    fontStyle: 'italic',
     flex: 1,
   },
   hostBadge: {
@@ -120,11 +156,24 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 4,
   },
-  waitingText: {
+  creatingText: {
+    fontFamily: typeTokens.board,
+    fontSize: 36,
+    color: colors.gold,
+    marginBottom: 4,
+  },
+  statusLineWrap: {
+    position: 'absolute',
+    left: 24,
+    bottom: 20,
+    height: 40,
+    justifyContent: 'center',
+  },
+  statusLine: {
     fontFamily: typeTokens.ui500,
-    fontSize: 16,
-    color: '#555',
-    fontStyle: 'italic',
+    fontSize: 13,
+    letterSpacing: 0.5,
+    color: 'rgba(255,255,255,0.65)',
   },
   startButton: {
     backgroundColor: colors.cell,

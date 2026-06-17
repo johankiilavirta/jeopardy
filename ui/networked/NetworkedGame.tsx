@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { createClient, sendAction } from '../../src/client';
+import { sendAction } from '../../src/client';
 import { getBuzz, judgedPlayerId } from '../../src/reducer';
 import type { WebSocketTransport } from '../../src/webSocketTransport';
 import type { Action, GameState, GameStatus } from '../../src/types';
@@ -13,6 +13,8 @@ import { colors, type as typeTokens } from '../theme/tokens';
 interface NetworkedGameProps {
   transport: WebSocketTransport;
   serverPeerId: string;
+  initialState?: { state: GameState; playerId: string | null } | null;
+  peerDisconnected?: boolean;
   onLeave?: () => void;
 }
 
@@ -49,18 +51,14 @@ function statusLine(
   }
 }
 
-export function NetworkedGame({ transport, serverPeerId, onLeave }: NetworkedGameProps) {
-  const [gameState, setGameState] = useState<GameState | null>(null);
-  const [playerId, setPlayerId] = useState<string | null>(null);
+export function NetworkedGame({ transport, serverPeerId, initialState, peerDisconnected, onLeave }: NetworkedGameProps) {
+  // createClient is called in App.tsx before this component mounts, so
+  // STATE_UPDATE messages are never lost. App.tsx passes the latest state
+  // down as initialState (updated on every STATE_UPDATE from the server).
+  const gameState = initialState?.state ?? null;
+  const playerId = initialState?.playerId ?? null;
   const [countdown, setCountdown] = useState<number | null>(null);
   const [personalCountdown, setPersonalCountdown] = useState<number | null>(null);
-
-  useEffect(() => {
-    createClient(transport, (state, pid) => {
-      setGameState(state);
-      setPlayerId(pid);
-    });
-  }, [transport]);
 
   const dispatch = (action: Action) => {
     sendAction(transport, serverPeerId, action as unknown as Record<string, unknown>);
@@ -127,6 +125,12 @@ export function NetworkedGame({ transport, serverPeerId, onLeave }: NetworkedGam
         }}
       />
 
+      {peerDisconnected && !gameState.activeClue && (
+        <View style={styles.statusLineWrap}>
+          <Text style={styles.statusLine}>Opponent disconnected</Text>
+        </View>
+      )}
+
       {gameState.activeClue && (
         <View style={StyleSheet.absoluteFill}>
           <ClueScreen
@@ -161,6 +165,20 @@ export function NetworkedGame({ transport, serverPeerId, onLeave }: NetworkedGam
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  statusLineWrap: {
+    position: 'absolute',
+    left: 24,
+    bottom: 20,
+    height: 40,
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  statusLine: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    color: 'rgba(255,255,255,0.65)',
   },
   connecting: {
     flex: 1,

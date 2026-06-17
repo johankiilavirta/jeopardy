@@ -124,15 +124,19 @@ function startServer(portIndex: number): void {
           break;
         }
 
+        case 'check-room': {
+          const code = Number(msg.roomCode);
+          const room = rooms.get(code);
+          const joinable = !!room && room.players.length < 2;
+          relaySend(ws, { type: 'room-check', roomCode: code, exists: joinable });
+          break;
+        }
+
         case 'join-room': {
           const code = Number(msg.roomCode);
           const room = rooms.get(code);
           if (!room) {
             relaySend(ws, { type: 'room-error', message: 'Room not found' });
-            return;
-          }
-          if (room.phase !== 'lobby') {
-            relaySend(ws, { type: 'room-error', message: 'Game already in progress' });
             return;
           }
           if (room.players.length >= 2) {
@@ -142,7 +146,22 @@ function startServer(portIndex: number): void {
           room.players.push({ peerId, name: String(msg.playerName ?? 'Guest'), ws });
           peerToRoom.set(peerId, code);
           console.log(`  ${peerId} joined room ${code}`);
-          broadcastLobbyUpdate(room);
+
+          if (room.phase === 'playing') {
+            // Rejoin a game in progress — skip lobby, go straight to game
+            const playerName = String(msg.playerName ?? 'Guest');
+            const serverPeerId = 'server';
+            relaySend(ws, { type: 'game-started', serverPeerId });
+            room.serverTransport?.notifyConnect(peerId, playerName);
+            // Notify existing players that someone reconnected
+            for (const p of room.players) {
+              if (p.peerId !== peerId) {
+                relaySend(p.ws, { type: 'peer-connected', peerId });
+              }
+            }
+          } else {
+            broadcastLobbyUpdate(room);
+          }
           break;
         }
 
@@ -175,7 +194,7 @@ function startServer(portIndex: number): void {
             relaySend(p.ws, { type: 'game-started', serverPeerId });
           }
           for (const p of room.players) {
-            serverTransport.notifyConnect(p.peerId);
+            serverTransport.notifyConnect(p.peerId, p.name);
           }
           break;
         }
