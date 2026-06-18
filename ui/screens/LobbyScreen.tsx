@@ -4,6 +4,9 @@ import {
   Text,
   View,
 } from 'react-native';
+import { SwipeUpMenu } from '../components/SwipeUpMenu';
+import { MainMenuScreen } from './MainMenuScreen';
+import { SettingsScreen } from './SettingsScreen';
 import { colors, type as typeTokens } from '../theme/tokens';
 
 export interface LobbyPlayer {
@@ -18,6 +21,14 @@ interface LobbyScreenProps {
   isHost: boolean;
   onStart: () => void;
   onLeave: () => void;
+  onNewGame?: () => void;
+  onJoinGame?: () => void;
+  playerName?: string;
+  onNameChange?: (name: string) => void;
+  relayHost?: string;
+  onRelayHostChange?: (host: string) => void;
+  relayPort?: string;
+  onRelayPortChange?: (port: string) => void;
   error?: string | null;
 }
 
@@ -29,57 +40,78 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const slots = Array.from({ length: MAX_PLAYERS }, (_, i) => props.players[i] ?? null);
 
   return (
-    <View style={styles.root}>
-      <Pressable style={styles.leaveButton} onPress={props.onLeave}>
-        <Text style={styles.leaveText}>← LEAVE</Text>
-      </Pressable>
-
-      {props.roomCode > 0 ? (
-        <>
-          <Text style={styles.roomCode}>{props.roomCode}</Text>
-          <Text style={styles.subtitle}>Share this code with your friend</Text>
-        </>
-      ) : (
-        <>
-          <Text style={styles.creatingText}>Creating room...</Text>
-          <Text style={styles.subtitle}> </Text>
-        </>
+    <SwipeUpMenu
+      renderMenu={showSettings => (
+        <MainMenuScreen
+          onNewGame={props.onNewGame ?? props.onLeave}
+          onJoinGame={props.onJoinGame ?? props.onLeave}
+          onSettings={showSettings}
+        />
       )}
-
-      <View style={styles.playerList}>
-        {slots.map((player, i) => (
-          <View key={player?.peerId ?? `empty-${i}`} style={styles.playerRow}>
-            <Text style={styles.slotLabel}>P{i + 1}</Text>
-            {player ? (
-              <>
-                <Text style={styles.playerName}>{player.name}</Text>
-                {player.isHost && <Text style={styles.hostBadge}>HOST</Text>}
-              </>
-            ) : (
-              <Text style={styles.emptySlot}>Open</Text>
-            )}
-          </View>
-        ))}
-      </View>
-
-      {props.isHost && (
-        <Pressable
-          style={[styles.startButton, !canStart && styles.startButtonDisabled]}
-          onPress={props.onStart}
-          disabled={!canStart}
-        >
-          <Text style={[styles.startButtonText, !canStart && styles.startButtonTextDisabled]}>
-            START GAME
-          </Text>
+      renderSettings={goBack => (
+        <SettingsScreen
+          playerName={props.playerName ?? ''}
+          onNameChange={props.onNameChange ?? (() => {})}
+          relayHost={props.relayHost ?? 'localhost'}
+          onRelayHostChange={props.onRelayHostChange ?? (() => {})}
+          relayPort={props.relayPort ?? '8787'}
+          onRelayPortChange={props.onRelayPortChange ?? (() => {})}
+          onBack={goBack}
+        />
+      )}
+    >
+      <View style={styles.root}>
+        <Pressable style={styles.leaveButton} onPress={props.onLeave}>
+          <Text style={styles.leaveText}>← LEAVE</Text>
         </Pressable>
-      )}
 
-      {props.error && (
-        <View style={styles.statusLineWrap}>
-          <Text style={styles.statusLine}>{props.error}</Text>
+        {props.roomCode > 0 ? (
+          <>
+            <Text style={styles.roomCode}>{props.roomCode}</Text>
+            <Text style={styles.subtitle}>Share this code with your friend</Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.creatingText}>Creating room...</Text>
+            <Text style={styles.subtitle}> </Text>
+          </>
+        )}
+
+        <View style={styles.playerList}>
+          {slots.map((player, i) => (
+            <View key={player?.peerId ?? `empty-${i}`} style={styles.playerRow}>
+              <Text style={styles.slotLabel}>P{i + 1}</Text>
+              {player ? (
+                <>
+                  <Text style={styles.playerName}>{player.name}</Text>
+                  {player.isHost && <Text style={styles.hostBadge}>HOST</Text>}
+                </>
+              ) : (
+                <Text style={styles.emptySlot}>Open</Text>
+              )}
+            </View>
+          ))}
         </View>
-      )}
-    </View>
+
+        {props.isHost && (
+          <Pressable
+            style={[styles.startButton, !canStart && styles.startButtonDisabled]}
+            onPress={props.onStart}
+            disabled={!canStart}
+          >
+            <Text style={[styles.startButtonText, !canStart && styles.startButtonTextDisabled]}>
+              START GAME
+            </Text>
+          </Pressable>
+        )}
+
+        {props.error && (
+          <View style={styles.statusLineWrap}>
+            <Text style={styles.statusLine}>{props.error}</Text>
+          </View>
+        )}
+      </View>
+    </SwipeUpMenu>
   );
 }
 

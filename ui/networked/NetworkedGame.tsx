@@ -4,8 +4,11 @@ import { sendAction } from '../../src/client';
 import { getBuzz, judgedPlayerId } from '../../src/reducer';
 import type { WebSocketTransport } from '../../src/webSocketTransport';
 import type { Action, GameState, GameStatus } from '../../src/types';
+import { SwipeUpMenu } from '../components/SwipeUpMenu';
 import { demoBoard } from '../fixtures/board';
 import { getClueContent } from '../fixtures/clues';
+import { MainMenuScreen } from '../screens/MainMenuScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
 import { ChooseClueScreen } from '../screens/ChooseClueScreen';
 import { ClueScreen } from '../screens/ClueScreen';
 import { colors, type as typeTokens } from '../theme/tokens';
@@ -19,6 +22,14 @@ interface NetworkedGameProps {
   relayHost?: string;
   relayPort?: string;
   onLeave?: () => void;
+  onNewGame?: () => void;
+  onJoinGame?: () => void;
+  playerName?: string;
+  onNameChange?: (name: string) => void;
+  relayHostSetting?: string;
+  onRelayHostChange?: (host: string) => void;
+  relayPortSetting?: string;
+  onRelayPortChange?: (port: string) => void;
 }
 
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
@@ -54,7 +65,7 @@ function statusLine(
   }
 }
 
-export function NetworkedGame({ transport, serverPeerId, initialState, peerDisconnected, roomCode, relayHost, relayPort, onLeave }: NetworkedGameProps) {
+export function NetworkedGame({ transport, serverPeerId, initialState, peerDisconnected, roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange }: NetworkedGameProps) {
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
@@ -118,57 +129,79 @@ export function NetworkedGame({ transport, serverPeerId, initialState, peerDisco
     : null;
 
   return (
-    <View style={styles.root}>
-      <ChooseClueScreen
-        state={gameState}
-        localPlayerId={playerId}
-        board={demoBoard}
-        disconnectedPlayerId={disconnectedPlayerId}
-        onSelectClue={clueId => {
-          dispatch({
-            type: 'SELECT_CLUE',
-            playerId,
-            clue: getClueContent(clueId),
-          });
-        }}
-      />
-
-      {peerDisconnected && !gameState.activeClue && (
-        <View style={[styles.statusLineWrap, styles.rejoinWrap]}>
-          <Text style={styles.statusLine}>
-            {`${relayHost ?? 'localhost'}:${relayPort ?? '8787'} @ ${roomCode ?? '???'}`}
-          </Text>
-        </View>
+    <SwipeUpMenu
+      disabled={!!gameState.activeClue}
+      renderMenu={showSettings => (
+        <MainMenuScreen
+          onNewGame={onNewGame ?? onLeave ?? (() => {})}
+          onJoinGame={onJoinGame ?? onLeave ?? (() => {})}
+          onSettings={showSettings}
+        />
       )}
-
-      {gameState.activeClue && (
-        <View style={StyleSheet.absoluteFill}>
-          <ClueScreen
-            clue={gameState.activeClue}
-            statusText={statusLine(gameState, playerId, countdown, typing ? personalCountdown : null)}
-            canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz}
-            showKeyboard={typing}
-            canJudge={gameState.status === 'REVEAL'}
-            onBuzz={() => dispatch({ type: 'BUZZ', playerId })}
-            onJudge={correct => {
-              if (onStand) dispatch({ type: 'JUDGE_ANSWER', playerId: onStand, correct });
-            }}
-            answer={localBuzz?.answer ?? ''}
-            onAnswerChange={text =>
-              dispatch({ type: 'SET_ANSWER', playerId, text })
-            }
-            onLockAnswer={text =>
-              dispatch({ type: 'LOCK_ANSWER', playerId, answer: text })
-            }
-            reveal={
-              gameState.status === 'REVEAL' || gameState.status === 'CLUE_EXPIRED'
-                ? { correctAnswer: gameState.activeClue.answer }
-                : undefined
-            }
-          />
-        </View>
+      renderSettings={goBack => (
+        <SettingsScreen
+          playerName={playerName ?? ''}
+          onNameChange={onNameChange ?? (() => {})}
+          relayHost={relayHostSetting ?? relayHost ?? 'localhost'}
+          onRelayHostChange={onRelayHostChange ?? (() => {})}
+          relayPort={relayPortSetting ?? relayPort ?? '8787'}
+          onRelayPortChange={onRelayPortChange ?? (() => {})}
+          onBack={goBack}
+        />
       )}
-    </View>
+    >
+      <View style={styles.root}>
+        <ChooseClueScreen
+          state={gameState}
+          localPlayerId={playerId}
+          board={demoBoard}
+          disconnectedPlayerId={disconnectedPlayerId}
+          onSelectClue={clueId => {
+            dispatch({
+              type: 'SELECT_CLUE',
+              playerId,
+              clue: getClueContent(clueId),
+            });
+          }}
+        />
+
+        {peerDisconnected && !gameState.activeClue && (
+          <View style={[styles.statusLineWrap, styles.rejoinWrap]}>
+            <Text style={styles.statusLine}>
+              {`${relayHost ?? 'localhost'}:${relayPort ?? '8787'} @ ${roomCode ?? '???'}`}
+            </Text>
+          </View>
+        )}
+
+        {gameState.activeClue && (
+          <View style={StyleSheet.absoluteFill}>
+            <ClueScreen
+              clue={gameState.activeClue}
+              statusText={statusLine(gameState, playerId, countdown, typing ? personalCountdown : null)}
+              canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz}
+              showKeyboard={typing}
+              canJudge={gameState.status === 'REVEAL'}
+              onBuzz={() => dispatch({ type: 'BUZZ', playerId })}
+              onJudge={correct => {
+                if (onStand) dispatch({ type: 'JUDGE_ANSWER', playerId: onStand, correct });
+              }}
+              answer={localBuzz?.answer ?? ''}
+              onAnswerChange={text =>
+                dispatch({ type: 'SET_ANSWER', playerId, text })
+              }
+              onLockAnswer={text =>
+                dispatch({ type: 'LOCK_ANSWER', playerId, answer: text })
+              }
+              reveal={
+                gameState.status === 'REVEAL' || gameState.status === 'CLUE_EXPIRED'
+                  ? { correctAnswer: gameState.activeClue.answer }
+                  : undefined
+              }
+            />
+          </View>
+        )}
+      </View>
+    </SwipeUpMenu>
   );
 }
 

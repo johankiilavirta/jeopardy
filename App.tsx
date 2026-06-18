@@ -244,6 +244,19 @@ export default function App() {
     setScreen({ type: 'menu' });
   }, [disconnect]);
 
+  // Menu-overlay actions: disconnect the current session, then do the action.
+  const handleOverlayNewGame = useCallback(() => {
+    disconnect();
+    connectAndDo('create');
+  }, [disconnect, connectAndDo]);
+
+  const handleOverlayJoinGame = useCallback(() => {
+    disconnect();
+    setJoinError(null);
+    setScreen({ type: 'join' });
+  }, [disconnect]);
+
+
   function renderScreen() {
     switch (screen.type) {
       case 'menu':
@@ -270,6 +283,14 @@ export default function App() {
             isHost={screen.isHost}
             onStart={handleStartGame}
             onLeave={handleLeave}
+            onNewGame={handleOverlayNewGame}
+            onJoinGame={handleOverlayJoinGame}
+            playerName={playerName}
+            onNameChange={setPlayerName}
+            relayHost={relayHost}
+            onRelayHostChange={setRelayHost}
+            relayPort={relayPort}
+            onRelayPortChange={setRelayPort}
             error={lobbyError}
           />
         );
@@ -284,6 +305,14 @@ export default function App() {
             relayHost={relayHost}
             relayPort={relayPort}
             onLeave={handleGameLeave}
+            onNewGame={handleOverlayNewGame}
+            onJoinGame={handleOverlayJoinGame}
+            playerName={playerName}
+            onNameChange={setPlayerName}
+            relayHostSetting={relayHost}
+            onRelayHostChange={setRelayHost}
+            relayPortSetting={relayPort}
+            onRelayPortChange={setRelayPort}
           />
         ) : null;
       case 'settings':
