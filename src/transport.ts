@@ -15,7 +15,7 @@ export interface Transport {
   broadcast(message: string): void;
 
   // Event callbacks
-  onPeerConnected(cb: (peerId: string) => void): void;
+  onPeerConnected(cb: (peerId: string, playerName?: string) => void): void;
   onPeerDisconnected(cb: (peerId: string) => void): void;
   onMessage(cb: (peerId: string, message: string) => void): void;
 }

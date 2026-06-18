@@ -140,10 +140,15 @@ export function createServer(
   /** Peers that connected but couldn't get a player slot yet. */
   const waitingPeers = new Set<string>();
 
-  function tryAssign(peerId: string): void {
-    const playerIds = Object.keys(server.history.current.players);
+  function tryAssign(peerId: string, playerName?: string): void {
+    const players = server.history.current.players;
+    const playerIds = Object.keys(players);
     const assignedIds = new Set(server.playerPeers.values());
-    const available = playerIds.find(id => !assignedIds.has(id));
+    // Try to match by name first (reconnecting player keeps their stats)
+    const byName = playerName
+      ? playerIds.find(id => !assignedIds.has(id) && players[id]?.name === playerName)
+      : undefined;
+    const available = byName ?? playerIds.find(id => !assignedIds.has(id));
     if (available) {
       server.playerPeers.set(peerId, available);
       waitingPeers.delete(peerId);
@@ -164,9 +169,9 @@ export function createServer(
     }
   });
 
-  transport.onPeerConnected((peerId) => {
+  transport.onPeerConnected((peerId, playerName) => {
     waitingPeers.add(peerId);
-    tryAssign(peerId);
+    tryAssign(peerId, playerName);
   });
 
   transport.onMessage((peerId, message) => {

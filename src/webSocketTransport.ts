@@ -1,24 +1,35 @@
 import type { Transport } from './transport.js';
 
 interface RelayMessage {
-  type: 'welcome' | 'peer-connected' | 'peer-disconnected' | 'message';
+  type: string;
   peerId?: string;
   existingPeers?: string[];
   from?: string;
   payload?: string;
+  [key: string]: unknown;
 }
 
 export class WebSocketTransport implements Transport {
   private ws: WebSocket;
-  private connectCbs: ((peerId: string) => void)[] = [];
+  private connectCbs: ((peerId: string, playerName?: string) => void)[] = [];
   private disconnectCbs: ((peerId: string) => void)[] = [];
   private messageCbs: ((peerId: string, message: string) => void)[] = [];
+  private rawMessageCbs: ((msg: Record<string, unknown>) => void)[] = [];
+  private errorCbs: ((err: string) => void)[] = [];
 
   /** Resolves with this peer's assigned ID once the relay sends "welcome". */
   readonly ready: Promise<string>;
 
   constructor(url: string) {
     this.ws = new WebSocket(url);
+    this.ws.onerror = () => {
+      this.errorCbs.forEach(cb => cb('Could not connect to relay'));
+    };
+    this.ws.onclose = (event) => {
+      if (event.code !== 1000) {
+        this.errorCbs.forEach(cb => cb('Connection to relay lost'));
+      }
+    };
     this.ready = new Promise(resolve => {
       this.ws.onmessage = (event: MessageEvent) => {
         const msg: RelayMessage = JSON.parse(String(event.data));
@@ -40,6 +51,9 @@ export class WebSocketTransport implements Transport {
           case 'message':
             this.messageCbs.forEach(cb => cb(msg.from!, msg.payload!));
             break;
+          default:
+            this.rawMessageCbs.forEach(cb => cb(msg as Record<string, unknown>));
+            break;
         }
       };
     });
@@ -57,7 +71,17 @@ export class WebSocketTransport implements Transport {
     this.ws.send(JSON.stringify({ type: 'send', to: '*', payload: message }));
   }
 
-  onPeerConnected(cb: (peerId: string) => void): void {
+  /** Send a raw lobby/control message to the relay. */
+  sendRaw(msg: object): void {
+    this.ws.send(JSON.stringify(msg));
+  }
+
+  /** Register a callback for non-standard relay messages (lobby protocol). */
+  onRawMessage(cb: (msg: Record<string, unknown>) => void): void {
+    this.rawMessageCbs.push(cb);
+  }
+
+  onPeerConnected(cb: (peerId: string, playerName?: string) => void): void {
     this.connectCbs.push(cb);
   }
 
@@ -67,5 +91,10 @@ export class WebSocketTransport implements Transport {
 
   onMessage(cb: (peerId: string, message: string) => void): void {
     this.messageCbs.push(cb);
+  }
+
+  /** Register a callback for connection errors. */
+  onError(cb: (err: string) => void): void {
+    this.errorCbs.push(cb);
   }
 }

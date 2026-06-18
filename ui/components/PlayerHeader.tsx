@@ -8,9 +8,11 @@ interface PlayerHeaderProps {
   currentTurnPlayerId: string | null;
   /** Local player shown first so each device's owner is top-left. */
   localPlayerId?: string | undefined;
+  /** Id of a player who has disconnected. */
+  disconnectedPlayerId?: string | null | undefined;
 }
 
-export function PlayerHeader({ players, currentTurnPlayerId, localPlayerId }: PlayerHeaderProps) {
+export function PlayerHeader({ players, currentTurnPlayerId, localPlayerId, disconnectedPlayerId }: PlayerHeaderProps) {
   const sorted = localPlayerId
     ? [...players].sort((a, b) =>
         a.id === localPlayerId ? -1 : b.id === localPlayerId ? 1 : 0,
@@ -25,6 +27,7 @@ export function PlayerHeader({ players, currentTurnPlayerId, localPlayerId }: Pl
           name={player.name}
           score={player.score}
           activeTurn={player.id === currentTurnPlayerId}
+          disconnected={player.id === disconnectedPlayerId}
         />
       ))}
     </View>
