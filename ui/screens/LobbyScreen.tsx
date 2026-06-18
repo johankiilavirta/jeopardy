@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SwipeUpMenu } from '../components/SwipeUpMenu';
@@ -29,6 +31,8 @@ interface LobbyScreenProps {
   onRelayHostChange?: (host: string) => void;
   relayPort?: string;
   onRelayPortChange?: (port: string) => void;
+  gameId?: string;
+  onGameIdChange?: (id: string) => void;
   error?: string | null;
 }
 
@@ -36,6 +40,7 @@ const MAX_PLAYERS = 2;
 
 export function LobbyScreen(props: LobbyScreenProps) {
   const canStart = props.isHost && props.players.length >= MAX_PLAYERS;
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const slots = Array.from({ length: MAX_PLAYERS }, (_, i) => props.players[i] ?? null);
 
@@ -94,15 +99,40 @@ export function LobbyScreen(props: LobbyScreenProps) {
         </View>
 
         {props.isHost && (
-          <Pressable
-            style={[styles.startButton, !canStart && styles.startButtonDisabled]}
-            onPress={props.onStart}
-            disabled={!canStart}
-          >
-            <Text style={[styles.startButtonText, !canStart && styles.startButtonTextDisabled]}>
-              START GAME
-            </Text>
-          </Pressable>
+          <>
+            <Pressable
+              style={[styles.startButton, !canStart && styles.startButtonDisabled]}
+              onPress={props.onStart}
+              disabled={!canStart}
+            >
+              <Text style={[styles.startButtonText, !canStart && styles.startButtonTextDisabled]}>
+                START GAME
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.advancedToggle}
+              onPress={() => setShowAdvanced(!showAdvanced)}
+            >
+              <Text style={styles.advancedToggleText}>
+                {showAdvanced ? '▾ Advanced' : '▸ Advanced'}
+              </Text>
+            </Pressable>
+
+            {showAdvanced && (
+              <View style={styles.advancedSection}>
+                <Text style={styles.label}>Game #</Text>
+                <TextInput
+                  style={styles.input}
+                  value={props.gameId ?? ''}
+                  onChangeText={props.onGameIdChange ?? (() => {})}
+                  placeholder="Random"
+                  placeholderTextColor="#666"
+                  keyboardType="number-pad"
+                />
+              </View>
+            )}
+          </>
         )}
 
         {props.error && (
@@ -206,6 +236,34 @@ const styles = StyleSheet.create({
     fontSize: 13,
     letterSpacing: 0.5,
     color: 'rgba(255,255,255,0.65)',
+  },
+  advancedToggle: {
+    marginTop: 24,
+  },
+  advancedToggleText: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 14,
+    color: '#888',
+  },
+  advancedSection: {
+    width: '100%',
+    maxWidth: 280,
+    marginBottom: 16,
+  },
+  label: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 13,
+    color: '#888',
+    marginBottom: 4,
+  },
+  input: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 16,
+    color: '#fff',
+    borderWidth: 1,
+    borderColor: '#444',
+    borderRadius: 6,
+    padding: 10,
   },
   startButton: {
     backgroundColor: colors.cell,
