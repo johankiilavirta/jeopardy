@@ -1,0 +1,215 @@
+{
+  "totalGames": 7322,
+  "seasons": [
+    {
+      "file": "season-1984.json",
+      "startGame": 1,
+      "endGame": 17
+    },
+    {
+      "file": "season-1985.json",
+      "startGame": 18,
+      "endGame": 91
+    },
+    {
+      "file": "season-1986.json",
+      "startGame": 92,
+      "endGame": 198
+    },
+    {
+      "file": "season-1987.json",
+      "startGame": 199,
+      "endGame": 337
+    },
+    {
+      "file": "season-1988.json",
+      "startGame": 338,
+      "endGame": 488
+    },
+    {
+      "file": "season-1989.json",
+      "startGame": 489,
+      "endGame": 647
+    },
+    {
+      "file": "season-1990.json",
+      "startGame": 648,
+      "endGame": 822
+    },
+    {
+      "file": "season-1991.json",
+      "startGame": 823,
+      "endGame": 1038
+    },
+    {
+      "file": "season-1992.json",
+      "startGame": 1039,
+      "endGame": 1222
+    },
+    {
+      "file": "season-1993.json",
+      "startGame": 1223,
+      "endGame": 1448
+    },
+    {
+      "file": "season-1994.json",
+      "startGame": 1449,
+      "endGame": 1677
+    },
+    {
+      "file": "season-1995.json",
+      "startGame": 1678,
+      "endGame": 1885
+    },
+    {
+      "file": "season-1996.json",
+      "startGame": 1886,
+      "endGame": 2094
+    },
+    {
+      "file": "season-1997.json",
+      "startGame": 2095,
+      "endGame": 2290
+    },
+    {
+      "file": "season-1998.json",
+      "startGame": 2291,
+      "endGame": 2417
+    },
+    {
+      "file": "season-1999.json",
+      "startGame": 2418,
+      "endGame": 2598
+    },
+    {
+      "file": "season-2000.json",
+      "startGame": 2599,
+      "endGame": 2755
+    },
+    {
+      "file": "season-2001.json",
+      "startGame": 2756,
+      "endGame": 2887
+    },
+    {
+      "file": "season-2002.json",
+      "startGame": 2888,
+      "endGame": 3059
+    },
+    {
+      "file": "season-2003.json",
+      "startGame": 3060,
+      "endGame": 3225
+    },
+    {
+      "file": "season-2004.json",
+      "startGame": 3226,
+      "endGame": 3410
+    },
+    {
+      "file": "season-2005.json",
+      "startGame": 3411,
+      "endGame": 3604
+    },
+    {
+      "file": "season-2006.json",
+      "startGame": 3605,
+      "endGame": 3788
+    },
+    {
+      "file": "season-2007.json",
+      "startGame": 3789,
+      "endGame": 3981
+    },
+    {
+      "file": "season-2008.json",
+      "startGame": 3982,
+      "endGame": 4192
+    },
+    {
+      "file": "season-2009.json",
+      "startGame": 4193,
+      "endGame": 4392
+    },
+    {
+      "file": "season-2010.json",
+      "startGame": 4393,
+      "endGame": 4595
+    },
+    {
+      "file": "season-2011.json",
+      "startGame": 4596,
+      "endGame": 4792
+    },
+    {
+      "file": "season-2012.json",
+      "startGame": 4793,
+      "endGame": 4983
+    },
+    {
+      "file": "season-2013.json",
+      "startGame": 4984,
+      "endGame": 5183
+    },
+    {
+      "file": "season-2014.json",
+      "startGame": 5184,
+      "endGame": 5372
+    },
+    {
+      "file": "season-2015.json",
+      "startGame": 5373,
+      "endGame": 5535
+    },
+    {
+      "file": "season-2016.json",
+      "startGame": 5536,
+      "endGame": 5688
+    },
+    {
+      "file": "season-2017.json",
+      "startGame": 5689,
+      "endGame": 5856
+    },
+    {
+      "file": "season-2018.json",
+      "startGame": 5857,
+      "endGame": 6022
+    },
+    {
+      "file": "season-2019.json",
+      "startGame": 6023,
+      "endGame": 6207
+    },
+    {
+      "file": "season-2020.json",
+      "startGame": 6208,
+      "endGame": 6345
+    },
+    {
+      "file": "season-2021.json",
+      "startGame": 6346,
+      "endGame": 6551
+    },
+    {
+      "file": "season-2022.json",
+      "startGame": 6552,
+      "endGame": 6744
+    },
+    {
+      "file": "season-2023.json",
+      "startGame": 6745,
+      "endGame": 6953
+    },
+    {
+      "file": "season-2024.json",
+      "startGame": 6954,
+      "endGame": 7177
+    },
+    {
+      "file": "season-2025.json",
+      "startGame": 7178,
+      "endGame": 7322
+    }
+  ]
+}
