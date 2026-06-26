@@ -252,14 +252,20 @@ function handleDismissClue(state: GameState): GameState {
 }
 
 function handleSkipClue(state: GameState, action: Extract<Action, { type: 'SKIP_CLUE' }>): GameState {
-  if (state.status !== 'CHOOSE_CLUE') return state;
+  if (state.status !== 'CHOOSE_CLUE' && state.status !== 'CLUE_READING') return state;
   if (state.currentTurnPlayerId && action.playerId !== state.currentTurnPlayerId) return state;
-  if (state.burnedClueIds.includes(action.clueId)) return state;
+
+  const clueId = state.status === 'CLUE_READING' ? (state.activeClue?.id ?? action.clueId) : action.clueId;
+  if (state.burnedClueIds.includes(clueId)) return state;
 
   return {
     ...state,
-    status: checkGameOverWith(state, action.clueId) ? 'GAME_OVER' : 'CHOOSE_CLUE',
-    burnedClueIds: [...state.burnedClueIds, action.clueId],
+    status: checkGameOverWith(state, clueId) ? 'GAME_OVER' : 'CHOOSE_CLUE',
+    activeClue: null,
+    buzzes: [],
+    clueSelectPlayerId: null,
+    currentTurnPlayerId: state.clueSelectPlayerId,
+    burnedClueIds: [...state.burnedClueIds, clueId],
   };
 }
 

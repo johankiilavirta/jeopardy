@@ -56,6 +56,8 @@ interface ClueScreenProps {
   onLockAnswer?: ((answer: string) => void) | undefined;
   /** Set during REVEAL: the correct answer plus the judged player's attempt. */
   reveal?: RevealInfo | undefined;
+  /** P key: skip this clue and return to the board without answering. */
+  onSkip?: (() => void) | undefined;
 }
 
 export function ClueScreen({
@@ -70,6 +72,7 @@ export function ClueScreen({
   onAnswerChange,
   onLockAnswer,
   reveal,
+  onSkip,
 }: ClueScreenProps) {
   const { width } = useWindowDimensions();
   const pan = useRef(new Animated.Value(0)).current;
@@ -214,6 +217,7 @@ export function ClueScreen({
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const handler = (e: KeyboardEvent) => {
+      if ((e.key === 'p' || e.key === 'P') && onSkip) { e.preventDefault(); onSkip(); return; }
       if (canBuzz && onBuzz && e.key === ' ') {
         e.preventDefault();
         onBuzz();
@@ -233,7 +237,7 @@ export function ClueScreen({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [canBuzz, onBuzz, judgeActive, commitJudge, onLockAnswer, answer, showKeyboard, onAnswerChange, dismissed]);
+  }, [canBuzz, onBuzz, judgeActive, commitJudge, onLockAnswer, answer, showKeyboard, onAnswerChange, dismissed, onSkip]);
 
   const correctOpacity = pan.interpolate({
     inputRange: [0, SWIPE_THRESHOLD],
