@@ -18,7 +18,7 @@ interface GameIndex {
 
 const DATA_DIR = path.resolve('data/seasons');
 let _gameIndex: GameIndex | null = null;
-const _seasonCache = new Map<string, { gameNumber: number; categories: { name: string }[] }[]>();
+const _seasonCache = new Map<string, { gameNumber: number; airDate: string; categories: { name: string }[] }[]>();
 
 function getGameIndex(): GameIndex {
   if (!_gameIndex) {
@@ -27,7 +27,12 @@ function getGameIndex(): GameIndex {
   return _gameIndex!;
 }
 
-function lookupCategories(gameNumber: number): string[] | null {
+interface GameInfo {
+  airDate: string;
+  categories: string[];
+}
+
+function lookupGame(gameNumber: number): GameInfo | null {
   try {
     const index = getGameIndex();
     const season = index.seasons.find(s => gameNumber >= s.startGame && gameNumber <= s.endGame);
@@ -40,7 +45,8 @@ function lookupCategories(gameNumber: number): string[] | null {
 
     const games = _seasonCache.get(season.file)!;
     const game = games.find(g => g.gameNumber === gameNumber);
-    return game?.categories.map((c: { name: string }) => c.name) ?? null;
+    if (!game) return null;
+    return { airDate: game.airDate, categories: game.categories.map((c: { name: string }) => c.name) };
   } catch {
     return null;
   }
@@ -132,9 +138,9 @@ function startServer(portIndex: number): void {
     const match = req.url?.match(/^\/game-info\/(\d+)$/);
     if (match) {
       const gameNumber = parseInt(match[1], 10);
-      const categories = lookupCategories(gameNumber);
-      res.writeHead(categories ? 200 : 404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ categories }));
+      const info = lookupGame(gameNumber);
+      res.writeHead(info ? 200 : 404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(info));
       return;
     }
 
