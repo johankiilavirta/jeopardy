@@ -14,9 +14,13 @@ import { colors, shadow, type as typeTokens } from '../theme/tokens';
 
 /** Horizontal drag (px) past which a release commits the judgement. */
 const SWIPE_THRESHOLD = 110;
+/** Horizontal velocity (px/ms) that commits even below SWIPE_THRESHOLD. */
+const SWIPE_VELOCITY = 0.5;
 
 /** Downward drag (px) on the keyboard past which a release locks the answer. */
 const LOCK_THRESHOLD = 80;
+/** Downward velocity (px/ms) that commits even below LOCK_THRESHOLD. */
+const LOCK_VELOCITY = 0.5;
 
 /** How long the CORRECT/WRONG verdict color holds before committing. */
 const VERDICT_HOLD_MS = 500;
@@ -149,7 +153,7 @@ export function ClueScreen({
         g.dy > 12 && g.dy > Math.abs(g.dx) * 1.5,
       onPanResponderMove: (_e, g) => kbDrag.setValue(Math.max(0, g.dy)),
       onPanResponderRelease: (_e, g) => {
-        if (g.dy > LOCK_THRESHOLD) {
+        if (g.dy > LOCK_THRESHOLD || (g.dy > 50 && g.vy > LOCK_VELOCITY)) {
           if (answer) {
             onLockAnswer(answer);
           } else {
@@ -179,7 +183,7 @@ export function ClueScreen({
         useNativeDriver: false,
       }),
       onPanResponderRelease: (_e, g) => {
-        if (Math.abs(g.dx) > SWIPE_THRESHOLD) {
+        if (Math.abs(g.dx) > SWIPE_THRESHOLD || (Math.abs(g.dx) > 50 && Math.abs(g.vx) > SWIPE_VELOCITY)) {
           const correct = g.dx > 0;
           // Slide the card off, hold on the verdict color for a beat, then
           // commit. On a wrong answer the clue stays live (the next buzzer's

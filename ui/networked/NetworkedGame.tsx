@@ -1,22 +1,36 @@
-import Constants from 'expo-constants';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { createClient, sendAction } from '../../src/client';
+import { sendAction } from '../../src/client';
 import { getBuzz, judgedPlayerId } from '../../src/reducer';
-import { WebSocketTransport } from '../../src/webSocketTransport';
+import type { WebSocketTransport } from '../../src/webSocketTransport';
 import type { Action, GameState, GameStatus } from '../../src/types';
+import { SwipeUpMenu } from '../components/SwipeUpMenu';
 import { demoBoard } from '../fixtures/board';
 import { getClueContent } from '../fixtures/clues';
+import { MainMenuScreen } from '../screens/MainMenuScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
 import { ChooseClueScreen } from '../screens/ChooseClueScreen';
 import { ClueScreen } from '../screens/ClueScreen';
 import { colors, type as typeTokens } from '../theme/tokens';
 
-const extra = Constants.expoConfig?.extra as { relayHost?: string } | undefined;
-const RELAY_HOST = extra?.relayHost ?? 'localhost';
-const RELAY_URL = `ws://${RELAY_HOST}:8787`;
-
-/** The server is always the first peer to connect to the relay. */
-const SERVER_PEER_ID = 'peer-1';
+interface NetworkedGameProps {
+  transport: WebSocketTransport;
+  serverPeerId: string;
+  initialState?: { state: GameState; playerId: string | null } | null;
+  peerDisconnected?: boolean;
+  roomCode?: number;
+  relayHost?: string;
+  relayPort?: string;
+  onLeave?: () => void;
+  onNewGame?: () => void;
+  onJoinGame?: () => void;
+  playerName?: string;
+  onNameChange?: (name: string) => void;
+  relayHostSetting?: string;
+  onRelayHostChange?: (host: string) => void;
+  relayPortSetting?: string;
+  onRelayPortChange?: (port: string) => void;
+}
 
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
   CLUE_READING: { ms: 5000 },
@@ -51,29 +65,17 @@ function statusLine(
   }
 }
 
-export function NetworkedGame() {
-  const [gameState, setGameState] = useState<GameState | null>(null);
-  const [playerId, setPlayerId] = useState<string | null>(null);
+export function NetworkedGame({ transport, serverPeerId, initialState, peerDisconnected, roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange }: NetworkedGameProps) {
+  // createClient is called in App.tsx before this component mounts, so
+  // STATE_UPDATE messages are never lost. App.tsx passes the latest state
+  // down as initialState (updated on every STATE_UPDATE from the server).
+  const gameState = initialState?.state ?? null;
+  const playerId = initialState?.playerId ?? null;
   const [countdown, setCountdown] = useState<number | null>(null);
   const [personalCountdown, setPersonalCountdown] = useState<number | null>(null);
-  const transportRef = useRef<WebSocketTransport | null>(null);
-
-  useEffect(() => {
-    const transport = new WebSocketTransport(RELAY_URL);
-    transportRef.current = transport;
-
-    createClient(transport, (state, pid) => {
-      setGameState(state);
-      setPlayerId(pid);
-    });
-
-    return () => { transport.stop(); };
-  }, []);
 
   const dispatch = (action: Action) => {
-    if (transportRef.current) {
-      sendAction(transportRef.current, SERVER_PEER_ID, action as unknown as Record<string, unknown>);
-    }
+    sendAction(transport, serverPeerId, action as unknown as Record<string, unknown>);
   };
 
   // Phase countdown timers (display-only, server is authoritative).
@@ -122,55 +124,110 @@ export function NetworkedGame() {
 
   const onStand = judgedPlayerId(gameState);
 
-  return (
-    <View style={styles.root}>
-      <ChooseClueScreen
-        state={gameState}
-        localPlayerId={playerId}
-        board={demoBoard}
-        onSelectClue={clueId => {
-          dispatch({
-            type: 'SELECT_CLUE',
-            playerId,
-            clue: getClueContent(clueId),
-          });
-        }}
-      />
+  const disconnectedPlayerId = peerDisconnected
+    ? Object.keys(gameState.players).find(id => id !== playerId) ?? null
+    : null;
 
-      {gameState.activeClue && (
-        <View style={StyleSheet.absoluteFill}>
-          <ClueScreen
-            clue={gameState.activeClue}
-            statusText={statusLine(gameState, playerId, countdown, typing ? personalCountdown : null)}
-            canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz}
-            showKeyboard={typing}
-            canJudge={gameState.status === 'REVEAL'}
-            onBuzz={() => dispatch({ type: 'BUZZ', playerId })}
-            onJudge={correct => {
-              if (onStand) dispatch({ type: 'JUDGE_ANSWER', playerId: onStand, correct });
-            }}
-            answer={localBuzz?.answer ?? ''}
-            onAnswerChange={text =>
-              dispatch({ type: 'SET_ANSWER', playerId, text })
-            }
-            onLockAnswer={text =>
-              dispatch({ type: 'LOCK_ANSWER', playerId, answer: text })
-            }
-            reveal={
-              gameState.status === 'REVEAL' || gameState.status === 'CLUE_EXPIRED'
-                ? { correctAnswer: gameState.activeClue.answer }
-                : undefined
-            }
-          />
-        </View>
+  return (
+    <SwipeUpMenu
+      disabled={!!gameState.activeClue}
+      renderMenu={showSettings => (
+        <MainMenuScreen
+          onNewGame={onNewGame ?? onLeave ?? (() => {})}
+          onJoinGame={onJoinGame ?? onLeave ?? (() => {})}
+          onSettings={showSettings}
+        />
       )}
-    </View>
+      renderSettings={goBack => (
+        <SettingsScreen
+          playerName={playerName ?? ''}
+          onNameChange={onNameChange ?? (() => {})}
+          relayHost={relayHostSetting ?? relayHost ?? 'localhost'}
+          onRelayHostChange={onRelayHostChange ?? (() => {})}
+          relayPort={relayPortSetting ?? relayPort ?? '8787'}
+          onRelayPortChange={onRelayPortChange ?? (() => {})}
+          onBack={goBack}
+        />
+      )}
+    >
+      <View style={styles.root}>
+        <ChooseClueScreen
+          state={gameState}
+          localPlayerId={playerId}
+          board={demoBoard}
+          disconnectedPlayerId={disconnectedPlayerId}
+          onSelectClue={clueId => {
+            dispatch({
+              type: 'SELECT_CLUE',
+              playerId,
+              clue: getClueContent(clueId),
+            });
+          }}
+        />
+
+        {peerDisconnected && !gameState.activeClue && (
+          <View style={[styles.statusLineWrap, styles.rejoinWrap]}>
+            <Text style={styles.statusLine}>
+              {`${relayHost ?? 'localhost'}:${relayPort ?? '8787'} @ ${roomCode ?? '???'}`}
+            </Text>
+          </View>
+        )}
+
+        {gameState.activeClue && (
+          <View style={StyleSheet.absoluteFill}>
+            <ClueScreen
+              clue={gameState.activeClue}
+              statusText={statusLine(gameState, playerId, countdown, typing ? personalCountdown : null)}
+              canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz}
+              showKeyboard={typing}
+              canJudge={gameState.status === 'REVEAL'}
+              onBuzz={() => dispatch({ type: 'BUZZ', playerId })}
+              onJudge={correct => {
+                if (onStand) dispatch({ type: 'JUDGE_ANSWER', playerId: onStand, correct });
+              }}
+              answer={localBuzz?.answer ?? ''}
+              onAnswerChange={text =>
+                dispatch({ type: 'SET_ANSWER', playerId, text })
+              }
+              onLockAnswer={text =>
+                dispatch({ type: 'LOCK_ANSWER', playerId, answer: text })
+              }
+              reveal={
+                gameState.status === 'REVEAL' || gameState.status === 'CLUE_EXPIRED'
+                  ? { correctAnswer: gameState.activeClue.answer }
+                  : undefined
+              }
+            />
+          </View>
+        )}
+      </View>
+    </SwipeUpMenu>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  statusLineWrap: {
+    position: 'absolute',
+    left: 24,
+    bottom: 20,
+    height: 40,
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  statusLine: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    color: 'rgba(255,255,255,0.65)',
+  },
+  rejoinWrap: {
+    backgroundColor: colors.bg,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 4,
   },
   connecting: {
     flex: 1,

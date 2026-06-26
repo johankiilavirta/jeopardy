@@ -2,7 +2,7 @@ import type { Transport } from './transport.js';
 
 export class MockTransport implements Transport {
   private peers: Map<string, MockTransport> = new Map();
-  private connectCbs: ((peerId: string) => void)[] = [];
+  private connectCbs: ((peerId: string, playerName?: string) => void)[] = [];
   private disconnectCbs: ((peerId: string) => void)[] = [];
   private messageCbs: ((peerId: string, message: string) => void)[] = [];
 
@@ -41,7 +41,7 @@ export class MockTransport implements Transport {
     }
   }
 
-  onPeerConnected(cb: (peerId: string) => void): void {
+  onPeerConnected(cb: (peerId: string, playerName?: string) => void): void {
     this.connectCbs.push(cb);
   }
 
