@@ -29,6 +29,7 @@ function getGameIndex(): GameIndex {
 
 interface GameInfo {
   airDate: string;
+  season: number;
   categories: string[];
 }
 
@@ -46,7 +47,12 @@ function lookupGame(gameNumber: number): GameInfo | null {
     const games = _seasonCache.get(season.file)!;
     const game = games.find(g => g.gameNumber === gameNumber);
     if (!game) return null;
-    return { airDate: game.airDate, categories: game.categories.map((c: { name: string }) => c.name) };
+
+    // Season number: current Jeopardy! debuted in 1984 as Season 1.
+    const year = parseInt(season.file.replace('season-', '').replace('.json', ''), 10);
+    const seasonNumber = year - 1983;
+
+    return { airDate: game.airDate, season: seasonNumber, categories: game.categories.map((c: { name: string }) => c.name) };
   } catch {
     return null;
   }

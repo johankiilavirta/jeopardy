@@ -46,6 +46,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const [showRound2, setShowRound2] = useState(false);
   const [round1Categories, setRound1Categories] = useState<string[] | null>(null);
   const [airDate, setAirDate] = useState<string | null>(null);
+  const [seasonNumber, setSeasonNumber] = useState<number | null>(null);
   const [gameInfoStatus, setGameInfoStatus] = useState<'idle' | 'loading' | 'not-found'>('idle');
 
   useEffect(() => {
@@ -53,6 +54,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
     if (!id || !/^\d+$/.test(id) || Number(id) < 1) {
       setRound1Categories(null);
       setAirDate(null);
+      setSeasonNumber(null);
       setGameInfoStatus('idle');
       return;
     }
@@ -62,14 +64,16 @@ export function LobbyScreen(props: LobbyScreenProps) {
         const host = props.relayHost ?? 'localhost';
         const port = props.relayPort ?? '8787';
         const res = await fetch(`http://${host}:${port}/game-info/${id}`);
-        if (!res.ok) { setRound1Categories(null); setAirDate(null); setGameInfoStatus('not-found'); return; }
-        const data = await res.json() as { categories: string[]; airDate: string };
+        if (!res.ok) { setRound1Categories(null); setAirDate(null); setSeasonNumber(null); setGameInfoStatus('not-found'); return; }
+        const data = await res.json() as { categories: string[]; airDate: string; season: number };
         setRound1Categories(data.categories ?? null);
         setAirDate(data.airDate ?? null);
+        setSeasonNumber(data.season ?? null);
         setGameInfoStatus(data.categories ? 'idle' : 'not-found');
       } catch {
         setRound1Categories(null);
         setAirDate(null);
+        setSeasonNumber(null);
         setGameInfoStatus('not-found');
       }
     }, 400);
@@ -175,7 +179,8 @@ export function LobbyScreen(props: LobbyScreenProps) {
                 {round1Categories && (
                   <>
                     {airDate && (
-                      <Text style={styles.airDate}>
+                      <Text style={styles.gameMetadata}>
+                        {seasonNumber != null ? `Season ${seasonNumber}  ·  ` : ''}
                         Aired {new Date(airDate + 'T12:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                       </Text>
                     )}
@@ -345,12 +350,11 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     padding: 10,
   },
-  airDate: {
+  gameMetadata: {
     fontFamily: typeTokens.ui500,
     fontSize: 12,
-    color: colors.gold,
+    color: '#666',
     marginTop: 10,
-    opacity: 0.8,
   },
   roundToggle: {
     marginTop: 14,
