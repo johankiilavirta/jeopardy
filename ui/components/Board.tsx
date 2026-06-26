@@ -29,16 +29,16 @@ export function Board({ board, burnedClueIds, locked, onSelectClue }: BoardProps
       {/* Value rows */}
       {Array.from({ length: ROW_COUNT }, (_, row) => (
         <View key={row} style={styles.row}>
-          {board.categories.map(category => {
+          {board.categories.map((category, col) => {
             const clue = category.clues[row];
-            if (!clue) return null;
             return (
               <BoardCell
-                key={clue.id}
-                value={clue.value}
-                burned={burned.has(clue.id)}
+                key={clue?.id ?? `empty-${col}-${row}`}
+                value={clue?.value ?? 0}
+                burned={clue ? burned.has(clue.id) : false}
                 disabled={locked}
-                onPress={() => onSelectClue?.(clue.id)}
+                empty={!clue}
+                onPress={() => clue && onSelectClue?.(clue.id)}
               />
             );
           })}

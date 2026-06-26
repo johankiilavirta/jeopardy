@@ -6,7 +6,10 @@ import type { WebSocketTransport } from '../../src/webSocketTransport';
 import type { Action, GameState, GameStatus } from '../../src/types';
 import { SwipeUpMenu } from '../components/SwipeUpMenu';
 import { demoBoard } from '../fixtures/board';
+import type { BoardDefinition } from '../fixtures/board';
 import { getClueContent } from '../fixtures/clues';
+import { toBoardDefinition, makeClueGetter } from '../../data/gameLoader';
+import type { GameData } from '../../data/gameLoader';
 import { MainMenuScreen } from '../screens/MainMenuScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { ChooseClueScreen } from '../screens/ChooseClueScreen';
@@ -17,6 +20,7 @@ interface NetworkedGameProps {
   transport: WebSocketTransport;
   serverPeerId: string;
   initialState?: { state: GameState; playerId: string | null } | null;
+  boardData?: GameData | null;
   peerDisconnected?: boolean;
   roomCode?: number;
   relayHost?: string;
@@ -65,7 +69,21 @@ function statusLine(
   }
 }
 
-export function NetworkedGame({ transport, serverPeerId, initialState, peerDisconnected, roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange }: NetworkedGameProps) {
+/** Returns a 5-category visible board from a 6-category full board.
+ *  When the first cleared column is found in burnedClueIds, the 6th category
+ *  slides in to replace it. */
+function getVisibleBoard(full: BoardDefinition, burnedClueIds: number[]): BoardDefinition {
+  const sixth = full.categories[5];
+  if (!sixth) return { categories: full.categories.slice(0, 5) };
+  const visible = full.categories.slice(0, 5);
+  const clearedIdx = visible.findIndex(cat => cat.clues.every(c => burnedClueIds.includes(c.id)));
+  if (clearedIdx === -1) return { categories: visible };
+  const replaced = [...visible];
+  replaced[clearedIdx] = sixth;
+  return { categories: replaced };
+}
+
+export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange }: NetworkedGameProps) {
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
@@ -128,6 +146,10 @@ export function NetworkedGame({ transport, serverPeerId, initialState, peerDisco
     ? Object.keys(gameState.players).find(id => id !== playerId) ?? null
     : null;
 
+  const fullBoard = boardData ? toBoardDefinition(boardData) : demoBoard;
+  const getClue = boardData ? makeClueGetter(boardData) : getClueContent;
+  const visibleBoard = getVisibleBoard(fullBoard, gameState.burnedClueIds);
+
   return (
     <SwipeUpMenu
       disabled={!!gameState.activeClue}
@@ -154,13 +176,13 @@ export function NetworkedGame({ transport, serverPeerId, initialState, peerDisco
         <ChooseClueScreen
           state={gameState}
           localPlayerId={playerId}
-          board={demoBoard}
+          board={visibleBoard}
           disconnectedPlayerId={disconnectedPlayerId}
           onSelectClue={clueId => {
             dispatch({
               type: 'SELECT_CLUE',
               playerId,
-              clue: getClueContent(clueId),
+              clue: getClue(clueId),
             });
           }}
         />
