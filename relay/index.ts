@@ -18,7 +18,15 @@ interface GameIndex {
 
 const DATA_DIR = path.resolve('data/seasons');
 let _gameIndex: GameIndex | null = null;
-const _seasonCache = new Map<string, { gameNumber: number; airDate: string; categories: { name: string }[] }[]>();
+const _seasonCache = new Map<string, { gameNumber: number; airDate: string; categories: { name: string; clues: { text: string }[] }[] }[]>();
+
+// Clues that require a visual shown on screen — unanswerable without the image.
+// Curly apostrophe (U+2019) is used in the dataset, not a straight apostrophe.
+const IMAGE_CLUE_RE = /^(Here (are|is|[’']s)|Seen here|Pictured here|This (map|flag|photo|picture|image|seal|logo|coat of arms))/i;
+
+function countImageClues(clues: { text: string }[]): number {
+  return clues.filter(cl => IMAGE_CLUE_RE.test(cl.text)).length;
+}
 
 function getGameIndex(): GameIndex {
   if (!_gameIndex) {
@@ -30,7 +38,7 @@ function getGameIndex(): GameIndex {
 interface GameInfo {
   airDate: string;
   season: number;
-  categories: string[];
+  categories: { name: string; imageClues: number }[];
 }
 
 function lookupGame(gameNumber: number): GameInfo | null {
@@ -52,7 +60,14 @@ function lookupGame(gameNumber: number): GameInfo | null {
     const year = parseInt(season.file.replace('season-', '').replace('.json', ''), 10);
     const seasonNumber = year - 1983;
 
-    return { airDate: game.airDate, season: seasonNumber, categories: game.categories.map((c: { name: string }) => c.name) };
+    return {
+      airDate: game.airDate,
+      season: seasonNumber,
+      categories: game.categories.map((c: { name: string; clues: { text: string }[] }) => ({
+        name: c.name,
+        imageClues: countImageClues(c.clues),
+      })),
+    };
   } catch {
     return null;
   }

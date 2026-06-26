@@ -44,7 +44,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showRound1, setShowRound1] = useState(false);
   const [showRound2, setShowRound2] = useState(false);
-  const [round1Categories, setRound1Categories] = useState<string[] | null>(null);
+  const [round1Categories, setRound1Categories] = useState<{ name: string; imageClues: number }[] | null>(null);
   const [airDate, setAirDate] = useState<string | null>(null);
   const [seasonNumber, setSeasonNumber] = useState<number | null>(null);
   const [gameInfoStatus, setGameInfoStatus] = useState<'idle' | 'loading' | 'not-found'>('idle');
@@ -65,7 +65,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
         const port = props.relayPort ?? '8787';
         const res = await fetch(`http://${host}:${port}/game-info/${id}`);
         if (!res.ok) { setRound1Categories(null); setAirDate(null); setSeasonNumber(null); setGameInfoStatus('not-found'); return; }
-        const data = await res.json() as { categories: string[]; airDate: string; season: number };
+        const data = await res.json() as { categories: { name: string; imageClues: number }[]; airDate: string; season: number };
         setRound1Categories(data.categories ?? null);
         setAirDate(data.airDate ?? null);
         setSeasonNumber(data.season ?? null);
@@ -196,8 +196,13 @@ export function LobbyScreen(props: LobbyScreenProps) {
                     </Pressable>
                     {showRound1 && (
                       <ScrollView style={styles.categoryList} nestedScrollEnabled>
-                        {round1Categories.map(name => (
-                          <Text key={name} style={styles.categoryName}>{name}</Text>
+                        {round1Categories.map(({ name, imageClues }) => (
+                          <View key={name} style={styles.categoryRow}>
+                            <Text style={styles.categoryName}>{name}</Text>
+                            {imageClues > 0 && (
+                              <Text style={styles.imageClueCount}>{imageClues}/5</Text>
+                            )}
+                          </View>
                         ))}
                       </ScrollView>
                     )}
@@ -370,11 +375,21 @@ const styles = StyleSheet.create({
     maxHeight: 160,
     marginTop: 4,
   },
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 2,
+  },
   categoryName: {
     fontFamily: typeTokens.ui500,
     fontSize: 13,
     color: '#bbb',
-    paddingVertical: 2,
+  },
+  imageClueCount: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 12,
+    color: '#e87c1e',
   },
   gameInfoNote: {
     fontFamily: typeTokens.ui500,
