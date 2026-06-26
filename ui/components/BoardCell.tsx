@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { burnedValueOpacity, colors, radius, shadow, type as typeTokens } from '../theme/tokens';
 
@@ -10,19 +11,30 @@ interface BoardCellProps {
   onPress: () => void;
   /** No clue exists for this position — renders an empty grid-colored slot. */
   empty?: boolean;
-  /** Clue id stamped as data-clue-id for the board's contextmenu delegation. */
-  clueId?: number;
+  /** Web: right-click (contextmenu) burns this clue without playing it. */
+  onSkip?: (() => void) | undefined;
 }
 
-export function BoardCell({ value, burned, disabled, onPress, empty, clueId }: BoardCellProps) {
-  // nativeID renders as the DOM id attribute in RN Web, giving the board's
-  // contextmenu handler a reliable hook to identify which clue was right-clicked.
-  const nativeIDProps = Platform.OS === 'web' && clueId != null && !burned && !empty
-    ? ({ nativeID: `clue-${clueId}` } as object)
-    : {};
+export function BoardCell({ value, burned, disabled, onPress, empty, onSkip }: BoardCellProps) {
+  const wrapRef = useRef<View>(null);
+
+  // Web only: attach a native contextmenu (right-click) listener directly to
+  // this cell's DOM node. The handler closes over onSkip, so there's no need
+  // to stamp/parse any id — right-clicking the cell burns exactly this clue.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !onSkip || burned || empty) return;
+    const node = wrapRef.current as unknown as HTMLElement | null;
+    if (!node || typeof node.addEventListener !== 'function') return;
+    const handler = (e: Event) => {
+      e.preventDefault();
+      onSkip();
+    };
+    node.addEventListener('contextmenu', handler);
+    return () => node.removeEventListener('contextmenu', handler);
+  }, [onSkip, burned, empty]);
 
   return (
-    <View style={styles.cellWrap} {...nativeIDProps}>
+    <View ref={wrapRef} style={styles.cellWrap}>
       <Pressable
         style={({ pressed }) => [
           styles.cell,

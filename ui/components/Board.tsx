@@ -1,5 +1,4 @@
-import { useEffect, useRef } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import type { BoardDefinition } from '../fixtures/board';
 import { colors, grid } from '../theme/tokens';
 import { BoardCell } from './BoardCell';
@@ -18,28 +17,9 @@ const ROW_COUNT = 5;
 
 export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue }: BoardProps) {
   const burned = new Set(burnedClueIds);
-  const boardRef = useRef<View>(null);
-
-  // Attach to document (guaranteed to fire) and scope to the board element.
-  // Prevents the native context menu anywhere on the board, and dispatches
-  // skip when a cell with data-clue-id is right-clicked.
-  useEffect(() => {
-    if (Platform.OS !== 'web' || !onSkipClue) return;
-    const handler = (e: MouseEvent) => {
-      const board = boardRef.current as unknown as HTMLElement | null;
-      if (!board?.contains(e.target as Node)) return;
-      e.preventDefault();
-      const cell = (e.target as HTMLElement | null)?.closest('[id^="clue-"]');
-      if (!cell) return;
-      const clueId = parseInt(cell.id.replace('clue-', ''), 10);
-      if (!isNaN(clueId)) onSkipClue(clueId);
-    };
-    document.addEventListener('contextmenu', handler);
-    return () => document.removeEventListener('contextmenu', handler);
-  }, [onSkipClue]);
 
   return (
-    <View ref={boardRef} style={styles.board}>
+    <View style={styles.board}>
       {/* Category header row */}
       <View style={styles.categoryRow}>
         {board.categories.map(category => (
@@ -59,8 +39,8 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue }
                 burned={clue ? burned.has(clue.id) : false}
                 disabled={locked}
                 empty={!clue}
-                {...(clue ? { clueId: clue.id } : {})}
                 onPress={() => clue && onSelectClue?.(clue.id)}
+                onSkip={clue && onSkipClue ? () => onSkipClue(clue.id) : undefined}
               />
             );
           })}
