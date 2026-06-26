@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   PanResponder,
@@ -169,6 +169,24 @@ export function ClueScreen({
 
   // Swiping judges the answer on the stand, only once the reveal is up.
   const judgeActive = !!onJudge && !!canJudge;
+
+  const commitJudge = useCallback((correct: boolean) => {
+    if (!onJudge) return;
+    const snapBack = () =>
+      Animated.spring(pan, { toValue: 0, useNativeDriver: false }).start();
+    Animated.sequence([
+      Animated.timing(pan, {
+        toValue: correct ? width : -width,
+        duration: 160,
+        useNativeDriver: false,
+      }),
+      Animated.delay(VERDICT_HOLD_MS),
+    ]).start(() => {
+      onJudge(correct);
+      if (!correct) snapBack();
+    });
+  }, [onJudge, pan, width]);
+
   const panResponder = useMemo(() => {
     if (!judgeActive || !onJudge) return null;
     const snapBack = () =>
@@ -184,28 +202,36 @@ export function ClueScreen({
       }),
       onPanResponderRelease: (_e, g) => {
         if (Math.abs(g.dx) > SWIPE_THRESHOLD || (Math.abs(g.dx) > 50 && Math.abs(g.vx) > SWIPE_VELOCITY)) {
-          const correct = g.dx > 0;
-          // Slide the card off, hold on the verdict color for a beat, then
-          // commit. On a wrong answer the clue stays live (the next buzzer's
-          // answer goes up), so the same card springs back in — no remount.
-          Animated.sequence([
-            Animated.timing(pan, {
-              toValue: correct ? width : -width,
-              duration: 160,
-              useNativeDriver: false,
-            }),
-            Animated.delay(VERDICT_HOLD_MS),
-          ]).start(() => {
-            onJudge(correct);
-            if (!correct) snapBack();
-          });
+          commitJudge(g.dx > 0);
         } else {
           snapBack();
         }
       },
       onPanResponderTerminate: snapBack,
     });
-  }, [judgeActive, onJudge, pan, width]);
+  }, [judgeActive, onJudge, pan, commitJudge]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = (e: KeyboardEvent) => {
+      if (canBuzz && onBuzz && e.key === ' ') {
+        e.preventDefault();
+        onBuzz();
+        return;
+      }
+      if (judgeActive && e.key === 'ArrowRight') { commitJudge(true); return; }
+      if (judgeActive && e.key === 'ArrowLeft') { commitJudge(false); return; }
+      if (onLockAnswer && answer && e.key === 'Enter') { onLockAnswer(answer); return; }
+      if (showKeyboard && onAnswerChange) {
+        if (e.key === 'Backspace') { e.preventDefault(); onAnswerChange((answer ?? '').slice(0, -1)); return; }
+        if (e.key.length === 1 && /[a-zA-Z0-9 ',.!?-]/.test(e.key)) {
+          onAnswerChange((answer ?? '') + e.key.toUpperCase());
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [canBuzz, onBuzz, judgeActive, commitJudge, onLockAnswer, answer, showKeyboard, onAnswerChange]);
 
   const correctOpacity = pan.interpolate({
     inputRange: [0, SWIPE_THRESHOLD],
