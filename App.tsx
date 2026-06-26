@@ -12,6 +12,7 @@ import {
 } from 'react-native-safe-area-context';
 import { createClient } from './src/client';
 import type { GameState } from './src/types';
+import type { GameData } from './data/gameLoader';
 import { WebSocketTransport } from './src/webSocketTransport';
 import { DemoHarness } from './ui/demo/DemoHarness';
 import { NetworkedGame } from './ui/networked/NetworkedGame';
@@ -60,6 +61,7 @@ export default function App() {
   const [lobbyError, setLobbyError] = useState<string | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [initialGameState, setInitialGameState] = useState<{ state: GameState; playerId: string | null } | null>(null);
+  const [boardData, setBoardData] = useState<GameData | null>(null);
   const [peerDisconnected, setPeerDisconnected] = useState(false);
   const transportRef = useRef<WebSocketTransport | null>(null);
   const myPeerIdRef = useRef<string | null>(null);
@@ -147,6 +149,7 @@ export default function App() {
           createClient(transport, (state, pid) => {
             setInitialGameState({ state, playerId: pid });
           });
+          setBoardData((msg.board as GameData) ?? null);
           setScreen({
             type: 'game',
             serverPeerId: msg.serverPeerId as string,
@@ -201,6 +204,7 @@ export default function App() {
           createClient(transport, (state, pid) => {
             setInitialGameState({ state, playerId: pid });
           });
+          setBoardData((msg.board as GameData) ?? null);
           setScreen({ type: 'game', serverPeerId: msg.serverPeerId as string, roomCode: DEV_ROOM });
           break;
         case 'room-error':
@@ -237,8 +241,9 @@ export default function App() {
   }, [disconnect]);
 
   const handleStartGame = useCallback(() => {
-    transportRef.current?.sendRaw({ type: 'start-game' });
-  }, []);
+    const id = gameId ? Number(gameId) : null;
+    transportRef.current?.sendRaw({ type: 'start-game', ...(id ? { gameId: id } : {}) });
+  }, [gameId]);
 
   const handleGameLeave = useCallback(() => {
     disconnect();
@@ -303,6 +308,7 @@ export default function App() {
             transport={transportRef.current}
             serverPeerId={screen.serverPeerId}
             initialState={initialGameState}
+            boardData={boardData}
             peerDisconnected={peerDisconnected}
             roomCode={screen.roomCode}
             relayHost={relayHost}

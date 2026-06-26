@@ -5,10 +5,10 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from '../src/server.js';
 import { Room, RoomPlayer, RoomServerTransport } from './room.js';
 
-const PLAYER_NAMES = ['Player 1', 'Player 2'];
-const TOTAL_CLUES = 25; // 5×5 board
+const TOTAL_CLUES_DEMO = 25; // 5×5 fallback board
+const TOTAL_CLUES_REAL = 30; // 6×5 real board
 
-// --- Game category lookup (runs server-side, loads files on demand) ---
+// --- Game data lookup (runs server-side, loads files on demand) ---
 // Assumes the relay is started from the project root (npm run relay).
 
 interface GameIndex {
@@ -19,7 +19,8 @@ interface GameIndex {
 const DATA_DIR = path.resolve('data/seasons');
 let _gameIndex: GameIndex | null = null;
 
-interface RawCategory { name: string; clues: unknown[] }
+interface RawClue { value: number; text: string; answer: string }
+interface RawCategory { name: string; clues: RawClue[] }
 interface RawGame { gameNumber: number; airDate: string; round1: RawCategory[]; round2: RawCategory[] }
 const _seasonCache = new Map<string, RawGame[]>();
 
@@ -28,6 +29,22 @@ function getGameIndex(): GameIndex {
     _gameIndex = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'index.json'), 'utf8'));
   }
   return _gameIndex!;
+}
+
+function getRawGame(gameNumber: number): RawGame | null {
+  try {
+    const index = getGameIndex();
+    const season = index.seasons.find(s => gameNumber >= s.startGame && gameNumber <= s.endGame);
+    if (!season) return null;
+
+    if (!_seasonCache.has(season.file)) {
+      _seasonCache.set(season.file, JSON.parse(fs.readFileSync(path.join(DATA_DIR, season.file), 'utf8')));
+    }
+
+    return _seasonCache.get(season.file)!.find(g => g.gameNumber === gameNumber) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 interface CategoryInfo { name: string; clueCount: number }
@@ -39,25 +56,25 @@ interface GameInfo {
   round2: CategoryInfo[];
 }
 
+export interface CategoryData { name: string; clues: RawClue[] }
+
+export interface FullGameData {
+  gameNumber: number;
+  airDate: string;
+  season: number;
+  round1: CategoryData[];
+  round2: CategoryData[];
+}
+
 function lookupGame(gameNumber: number): GameInfo | null {
+  const game = getRawGame(gameNumber);
+  if (!game) return null;
+
   try {
     const index = getGameIndex();
-    const season = index.seasons.find(s => gameNumber >= s.startGame && gameNumber <= s.endGame);
-    if (!season) return null;
-
-    if (!_seasonCache.has(season.file)) {
-      const games = JSON.parse(fs.readFileSync(path.join(DATA_DIR, season.file), 'utf8'));
-      _seasonCache.set(season.file, games);
-    }
-
-    const games = _seasonCache.get(season.file)!;
-    const game = games.find(g => g.gameNumber === gameNumber);
-    if (!game) return null;
-
-    // Season number: current Jeopardy! debuted in 1984 as Season 1.
+    const season = index.seasons.find(s => gameNumber >= s.startGame && gameNumber <= s.endGame)!;
     const year = parseInt(season.file.replace('season-', '').replace('.json', ''), 10);
     const seasonNumber = year - 1983;
-
     const toInfo = (c: RawCategory): CategoryInfo => ({ name: c.name, clueCount: c.clues.length });
 
     return {
@@ -65,6 +82,28 @@ function lookupGame(gameNumber: number): GameInfo | null {
       season: seasonNumber,
       round1: game.round1.map(toInfo),
       round2: game.round2.map(toInfo),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function lookupFullGame(gameNumber: number): FullGameData | null {
+  const game = getRawGame(gameNumber);
+  if (!game) return null;
+
+  try {
+    const index = getGameIndex();
+    const season = index.seasons.find(s => gameNumber >= s.startGame && gameNumber <= s.endGame)!;
+    const year = parseInt(season.file.replace('season-', '').replace('.json', ''), 10);
+    const seasonNumber = year - 1983;
+
+    return {
+      gameNumber: game.gameNumber,
+      airDate: game.airDate,
+      season: seasonNumber,
+      round1: game.round1,
+      round2: game.round2,
     };
   } catch {
     return null;
@@ -270,19 +309,23 @@ function startServer(portIndex: number): void {
             return;
           }
 
+          const gameId = msg.gameId ? Number(msg.gameId) : null;
+          const gameData = gameId ? lookupFullGame(gameId) : null;
+          const totalClues = gameData ? TOTAL_CLUES_REAL : TOTAL_CLUES_DEMO;
+
           room.phase = 'playing';
           const serverTransport = new RoomServerTransport(room);
           room.serverTransport = serverTransport;
 
           const playerNames = room.players.map(p => p.name);
-          createServer(serverTransport, playerNames, { totalClues: TOTAL_CLUES });
+          createServer(serverTransport, playerNames, { totalClues });
 
           const serverPeerId = 'server';
-          console.log(`  Room ${roomCode} game started`);
+          console.log(`  Room ${roomCode} game started (game #${gameId ?? 'demo'})`);
 
           // Notify all players, then simulate connections
           for (const p of room.players) {
-            relaySend(p.ws, { type: 'game-started', serverPeerId });
+            relaySend(p.ws, { type: 'game-started', serverPeerId, board: gameData ?? null });
           }
           for (const p of room.players) {
             serverTransport.notifyConnect(p.peerId, p.name);

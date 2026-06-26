@@ -8,27 +8,32 @@ interface BoardCellProps {
   /** Disables presses (e.g. when it is not the local player's turn). */
   disabled: boolean;
   onPress: () => void;
+  /** No clue exists for this position — renders an empty grid-colored slot. */
+  empty?: boolean;
 }
 
-export function BoardCell({ value, burned, disabled, onPress }: BoardCellProps) {
+export function BoardCell({ value, burned, disabled, onPress, empty }: BoardCellProps) {
   return (
     <Pressable
       style={({ pressed }) => [
         styles.cell,
-        burned && styles.cellBurned,
-        pressed && !burned && !disabled && styles.cellPressed,
+        empty && styles.cellEmpty,
+        burned && !empty && styles.cellBurned,
+        pressed && !burned && !disabled && !empty && styles.cellPressed,
       ]}
       onPress={onPress}
-      disabled={burned || disabled}
+      disabled={burned || disabled || empty}
     >
-      <Text
-        style={[styles.value, burned && styles.valueBurned]}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        allowFontScaling={false}
-      >
-        ${value}
-      </Text>
+      {!empty && (
+        <Text
+          style={[styles.value, burned && styles.valueBurned]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          allowFontScaling={false}
+        >
+          ${value}
+        </Text>
+      )}
     </Pressable>
   );
 }
@@ -41,6 +46,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
+  },
+  cellEmpty: {
+    backgroundColor: colors.grid,
   },
   cellBurned: {
     backgroundColor: colors.cellBurned,
