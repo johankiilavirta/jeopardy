@@ -12,6 +12,7 @@ interface ChooseClueScreenProps {
   localPlayerId: string;
   board: BoardDefinition;
   onSelectClue?: ((clueId: number) => void) | undefined;
+  onSkipClue?: ((clueId: number) => void) | undefined;
   /** Id of a player who has disconnected. */
   disconnectedPlayerId?: string | null;
 }
@@ -21,6 +22,7 @@ export function ChooseClueScreen({
   localPlayerId,
   board,
   onSelectClue,
+  onSkipClue,
   disconnectedPlayerId,
 }: ChooseClueScreenProps) {
   // null currentTurnPlayerId means anyone may pick the first clue.
@@ -56,6 +58,7 @@ export function ChooseClueScreen({
             burnedClueIds={state.burnedClueIds}
             locked={locked}
             onSelectClue={onSelectClue}
+            onSkipClue={onSkipClue}
           />
         )}
       </View>

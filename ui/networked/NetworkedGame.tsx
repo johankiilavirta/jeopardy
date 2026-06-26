@@ -185,6 +185,9 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               clue: getClue(clueId),
             });
           }}
+          onSkipClue={clueId => {
+            dispatch({ type: 'SKIP_CLUE', playerId, clueId });
+          }}
         />
 
         {peerDisconnected && !gameState.activeClue && (

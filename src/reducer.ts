@@ -57,6 +57,8 @@ export function reducer(state: GameState, action: Action): GameState {
       return handleDismissClue(state);
     case 'LOCK_ANSWER':
       return handleLockAnswer(state, action);
+    case 'SKIP_CLUE':
+      return handleSkipClue(state, action);
     default:
       return state;
   }
@@ -246,6 +248,18 @@ function handleDismissClue(state: GameState): GameState {
     buzzes: [],
     clueSelectPlayerId: null,
     burnedClueIds: [...state.burnedClueIds, state.activeClue.id],
+  };
+}
+
+function handleSkipClue(state: GameState, action: Extract<Action, { type: 'SKIP_CLUE' }>): GameState {
+  if (state.status !== 'CHOOSE_CLUE') return state;
+  if (state.currentTurnPlayerId && action.playerId !== state.currentTurnPlayerId) return state;
+  if (state.burnedClueIds.includes(action.clueId)) return state;
+
+  return {
+    ...state,
+    status: checkGameOverWith(state, action.clueId) ? 'GAME_OVER' : 'CHOOSE_CLUE',
+    burnedClueIds: [...state.burnedClueIds, action.clueId],
   };
 }
 

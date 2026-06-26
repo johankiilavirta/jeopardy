@@ -223,6 +223,8 @@ export function ClueScreen({
       if (judgeActive && e.key === 'ArrowLeft') { commitJudge(false); return; }
       if (onLockAnswer && answer && e.key === 'Enter') { onLockAnswer(answer); return; }
       if (showKeyboard && onAnswerChange) {
+        if (e.key === 'ArrowDown' && !dismissed) { e.preventDefault(); setDismissed(true); return; }
+        if (e.key === 'ArrowUp' && dismissed) { e.preventDefault(); setDismissed(false); return; }
         if (e.key === 'Backspace') { e.preventDefault(); onAnswerChange((answer ?? '').slice(0, -1)); return; }
         if (e.key.length === 1 && /[a-zA-Z0-9 ',.!?-]/.test(e.key)) {
           onAnswerChange((answer ?? '') + e.key.toUpperCase());
@@ -231,7 +233,7 @@ export function ClueScreen({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [canBuzz, onBuzz, judgeActive, commitJudge, onLockAnswer, answer, showKeyboard, onAnswerChange]);
+  }, [canBuzz, onBuzz, judgeActive, commitJudge, onLockAnswer, answer, showKeyboard, onAnswerChange, dismissed]);
 
   const correctOpacity = pan.interpolate({
     inputRange: [0, SWIPE_THRESHOLD],

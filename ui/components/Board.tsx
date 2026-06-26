@@ -10,11 +10,12 @@ interface BoardProps {
   /** True when the local player may not pick (dims the board, blocks touches). */
   locked: boolean;
   onSelectClue?: ((clueId: number) => void) | undefined;
+  onSkipClue?: ((clueId: number) => void) | undefined;
 }
 
 const ROW_COUNT = 5;
 
-export function Board({ board, burnedClueIds, locked, onSelectClue }: BoardProps) {
+export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue }: BoardProps) {
   const burned = new Set(burnedClueIds);
 
   return (
@@ -39,6 +40,7 @@ export function Board({ board, burnedClueIds, locked, onSelectClue }: BoardProps
                 disabled={locked}
                 empty={!clue}
                 onPress={() => clue && onSelectClue?.(clue.id)}
+                {...(clue ? { onSkip: (): void => { onSkipClue?.(clue.id); } } : {})}
               />
             );
           })}

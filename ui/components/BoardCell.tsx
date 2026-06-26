@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text } from 'react-native';
 import { burnedValueOpacity, colors, radius, shadow, type as typeTokens } from '../theme/tokens';
 
 interface BoardCellProps {
@@ -10,11 +10,18 @@ interface BoardCellProps {
   onPress: () => void;
   /** No clue exists for this position — renders an empty grid-colored slot. */
   empty?: boolean;
+  /** Right-click (web) to burn this clue without entering the reading flow. */
+  onSkip?: () => void;
 }
 
-export function BoardCell({ value, burned, disabled, onPress, empty }: BoardCellProps) {
+export function BoardCell({ value, burned, disabled, onPress, empty, onSkip }: BoardCellProps) {
+  const skipProps = Platform.OS === 'web' && onSkip && !burned && !empty && !disabled
+    ? { onContextMenu: (e: Event) => { e.preventDefault(); onSkip(); } }
+    : {};
+
   return (
     <Pressable
+      {...(skipProps as object)}
       style={({ pressed }) => [
         styles.cell,
         empty && styles.cellEmpty,
@@ -48,7 +55,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   cellEmpty: {
-    backgroundColor: colors.grid,
+    backgroundColor: '#1C1C1C',
   },
   cellBurned: {
     backgroundColor: colors.cellBurned,
