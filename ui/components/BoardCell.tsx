@@ -1,5 +1,4 @@
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useEffect, useRef } from 'react';
 import { burnedValueOpacity, colors, radius, shadow, type as typeTokens } from '../theme/tokens';
 
 interface BoardCellProps {
@@ -11,24 +10,18 @@ interface BoardCellProps {
   onPress: () => void;
   /** No clue exists for this position — renders an empty grid-colored slot. */
   empty?: boolean;
-  /** Right-click (web) to burn this clue without entering the reading flow. */
-  onSkip?: () => void;
+  /** Clue id stamped as data-clue-id for the board's contextmenu delegation. */
+  clueId?: number;
 }
 
-export function BoardCell({ value, burned, disabled, onPress, empty, onSkip }: BoardCellProps) {
-  const wrapRef = useRef<View>(null);
-
-  useEffect(() => {
-    if (Platform.OS !== 'web' || !onSkip || burned || empty) return;
-    const el = wrapRef.current as unknown as HTMLElement | null;
-    if (!el) return;
-    const handler = (e: MouseEvent) => { e.preventDefault(); onSkip(); };
-    el.addEventListener('contextmenu', handler);
-    return () => el.removeEventListener('contextmenu', handler);
-  }, [onSkip, burned, empty]);
+export function BoardCell({ value, burned, disabled, onPress, empty, clueId }: BoardCellProps) {
+  // On web, stamp the clue id so the board's contextmenu handler can find it.
+  const dataProps = Platform.OS === 'web' && clueId != null && !burned && !empty
+    ? ({ 'data-clue-id': String(clueId) } as object)
+    : {};
 
   return (
-    <View ref={wrapRef} style={styles.cellWrap}>
+    <View style={styles.cellWrap} {...dataProps}>
       <Pressable
         style={({ pressed }) => [
           styles.cell,

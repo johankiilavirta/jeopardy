@@ -1,4 +1,5 @@
-import { StyleSheet, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Platform, StyleSheet, View } from 'react-native';
 import type { BoardDefinition } from '../fixtures/board';
 import { colors, grid } from '../theme/tokens';
 import { BoardCell } from './BoardCell';
@@ -17,9 +18,30 @@ const ROW_COUNT = 5;
 
 export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue }: BoardProps) {
   const burned = new Set(burnedClueIds);
+  const boardRef = useRef<View>(null);
+
+  // Event delegation: one contextmenu listener on the board container.
+  // Each live cell carries a data-clue-id attribute; we walk up from the
+  // click target to find it, then dispatch the skip.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !onSkipClue) return;
+    const el = boardRef.current as unknown as HTMLElement | null;
+    if (!el) return;
+    const handler = (e: MouseEvent) => {
+      const target = (e.target as HTMLElement | null)?.closest('[data-clue-id]');
+      if (!target) return;
+      const clueId = parseInt(target.getAttribute('data-clue-id') ?? '', 10);
+      if (!isNaN(clueId)) {
+        e.preventDefault();
+        onSkipClue(clueId);
+      }
+    };
+    el.addEventListener('contextmenu', handler);
+    return () => el.removeEventListener('contextmenu', handler);
+  }, [onSkipClue]);
 
   return (
-    <View style={styles.board}>
+    <View ref={boardRef} style={styles.board}>
       {/* Category header row */}
       <View style={styles.categoryRow}>
         {board.categories.map(category => (
@@ -39,14 +61,13 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue }
                 burned={clue ? burned.has(clue.id) : false}
                 disabled={locked}
                 empty={!clue}
+                {...(clue ? { clueId: clue.id } : {})}
                 onPress={() => clue && onSelectClue?.(clue.id)}
-                {...(clue ? { onSkip: (): void => { onSkipClue?.(clue.id); } } : {})}
               />
             );
           })}
         </View>
       ))}
-
     </View>
   );
 }
@@ -55,7 +76,6 @@ const styles = StyleSheet.create({
   board: {
     flex: 1,
     width: '100%',
-    // Black container + gaps between cells reveal crisp 2px grid lines.
     backgroundColor: colors.grid,
     gap: grid.lineWidth,
   },
