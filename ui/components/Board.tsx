@@ -29,9 +29,9 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue }
       const board = boardRef.current as unknown as HTMLElement | null;
       if (!board?.contains(e.target as Node)) return;
       e.preventDefault();
-      const cell = (e.target as HTMLElement | null)?.closest('[data-clue-id]');
+      const cell = (e.target as HTMLElement | null)?.closest('[id^="clue-"]');
       if (!cell) return;
-      const clueId = parseInt(cell.getAttribute('data-clue-id') ?? '', 10);
+      const clueId = parseInt(cell.id.replace('clue-', ''), 10);
       if (!isNaN(clueId)) onSkipClue(clueId);
     };
     document.addEventListener('contextmenu', handler);

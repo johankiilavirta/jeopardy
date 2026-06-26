@@ -15,14 +15,14 @@ interface BoardCellProps {
 }
 
 export function BoardCell({ value, burned, disabled, onPress, empty, clueId }: BoardCellProps) {
-  // On web, stamp the clue id via dataSet so RN Web renders it as data-clue-id
-  // on the underlying div, letting the board's contextmenu handler find it.
-  const dataProps = Platform.OS === 'web' && clueId != null && !burned && !empty
-    ? ({ dataSet: { clueId: String(clueId) } } as object)
+  // nativeID renders as the DOM id attribute in RN Web, giving the board's
+  // contextmenu handler a reliable hook to identify which clue was right-clicked.
+  const nativeIDProps = Platform.OS === 'web' && clueId != null && !burned && !empty
+    ? ({ nativeID: `clue-${clueId}` } as object)
     : {};
 
   return (
-    <View style={styles.cellWrap} {...dataProps}>
+    <View style={styles.cellWrap} {...nativeIDProps}>
       <Pressable
         style={({ pressed }) => [
           styles.cell,
