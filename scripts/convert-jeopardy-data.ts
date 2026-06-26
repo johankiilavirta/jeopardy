@@ -4,12 +4,14 @@
  * Usage:
  *   npx tsx scripts/convert-jeopardy-data.ts
  *
- * Downloads the dataset zip from GitHub, extracts TSVs, converts to JSON,
- * and writes season files to data/seasons/ (committed with the app).
- *
  * TSV columns (tab-separated):
  *   round | clue_value | daily_double_value | category | comments |
  *   answer (= clue text) | question (= correct response) | air_date | notes
+ *
+ * Rounds in the dataset:
+ *   1 = Jeopardy! round     ($200/$400/$600/$800/$1000, normalized)
+ *   2 = Double Jeopardy!    ($400/$800/$1200/$1600/$2000, normalized)
+ *   3 = Final Jeopardy!     (single clue, skipped)
  */
 
 import * as fs from 'node:fs';
@@ -19,7 +21,7 @@ import { execSync } from 'node:child_process';
 // ── Types ──────────────────────────────────────────────────────────
 
 interface RawClue {
-  round: string;
+  round: '1' | '2';
   clueValue: number;
   category: string;
   text: string;      // "answer" column = clue text shown to players
@@ -27,13 +29,16 @@ interface RawClue {
   airDate: string;
 }
 
+interface CategoryData {
+  name: string;
+  clues: { value: number; text: string; answer: string }[];
+}
+
 interface GameData {
   gameNumber: number;
   airDate: string;
-  categories: {
-    name: string;
-    clues: { value: number; text: string; answer: string }[];
-  }[];
+  round1: CategoryData[];
+  round2: CategoryData[];
 }
 
 interface SeasonIndex {
@@ -47,74 +52,75 @@ const DATASET_URL = 'https://github.com/jwolle1/jeopardy_clue_dataset/releases/d
 const RAW_DIR = path.join(__dirname, 'raw');
 const OUT_DIR = path.join(__dirname, '..', 'data', 'seasons');
 
-const VALUE_TIERS = [200, 400, 600, 800, 1000];
-const MIN_CATEGORIES = 5; // games need at least 5 complete categories
+// Standard value tiers per round (position-based normalization handles
+// early seasons that used different dollar amounts).
+const R1_VALUE_TIERS = [200, 400, 600, 800, 1000];
+const R2_VALUE_TIERS = [400, 800, 1200, 1600, 2000];
+
+// Minimum complete clues required to keep a category. 4 instead of 5
+// because jwolle1 omits clues that were pure image links on J!Archive,
+// leaving otherwise valid categories one clue short.
+const MIN_CLUES_PER_CATEGORY = 4;
+
+// A game must have at least this many round-1 categories to be kept.
+const MIN_R1_CATEGORIES = 5;
 
 // ── Download ───────────────────────────────────────────────────────
 
 function download() {
   fs.mkdirSync(RAW_DIR, { recursive: true });
 
-  const zipPath = path.join(RAW_DIR, 'dataset.zip');
-
-  // Check if TSVs already exist
-  const existing = fs.readdirSync(RAW_DIR).filter(f => f.endsWith('.tsv'));
+  // Only look for per-season TSVs (season1.tsv … season41.tsv).
+  // The zip also contains combined_season1-41.tsv and other files —
+  // we ignore those to avoid double-counting clues.
+  const existing = fs.readdirSync(RAW_DIR).filter(f => /^season\d+\.tsv$/.test(f));
   if (existing.length > 0) {
-    console.log(`Found ${existing.length} existing TSV file(s), skipping download`);
+    console.log(`Found ${existing.length} existing season TSV(s), skipping download`);
     return;
   }
 
+  const zipPath = path.join(RAW_DIR, 'dataset.zip');
   console.log('Downloading dataset...');
   execSync(`curl -L -o "${zipPath}" "${DATASET_URL}"`, { stdio: 'inherit' });
 
   console.log('Extracting...');
   execSync(`unzip -o "${zipPath}" -d "${RAW_DIR}"`, { stdio: 'inherit' });
+  fs.unlinkSync(zipPath);
 
-  // The zip may contain a subdirectory — move TSVs to RAW_DIR root
-  const findTsvs = (dir: string): string[] => {
+  // Move only the per-season TSVs out of the nested subdirectory.
+  const findSeasonTsvs = (dir: string): string[] => {
     const results: string[] = [];
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        results.push(...findTsvs(fullPath));
-      } else if (entry.name.endsWith('.tsv')) {
-        results.push(fullPath);
-      }
+      if (entry.isDirectory()) results.push(...findSeasonTsvs(fullPath));
+      else if (/^season\d+\.tsv$/.test(entry.name)) results.push(fullPath);
     }
     return results;
   };
 
-  const tsvPaths = findTsvs(RAW_DIR);
+  const tsvPaths = findSeasonTsvs(RAW_DIR);
   for (const tsvPath of tsvPaths) {
     const dest = path.join(RAW_DIR, path.basename(tsvPath));
-    if (tsvPath !== dest) {
-      fs.renameSync(tsvPath, dest);
-    }
+    if (tsvPath !== dest) fs.renameSync(tsvPath, dest);
   }
 
-  // Clean up zip
-  fs.unlinkSync(zipPath);
-  console.log(`Extracted ${tsvPaths.length} TSV file(s)`);
+  console.log(`Extracted ${tsvPaths.length} season TSV(s)`);
 }
 
 // ── Parsing ────────────────────────────────────────────────────────
-
-function parseTsvLine(line: string): string[] {
-  return line.split('\t');
-}
 
 function parseClue(fields: string[]): RawClue | null {
   const [round, clueValue, _dailyDouble, category, _comments, answer, question, airDate] = fields;
   if (!round || !category || !answer || !question || !airDate) return null;
 
-  // Only Jeopardy round (round 1)
-  if (round.trim() !== '1') return null;
+  const r = round.trim();
+  if (r !== '1' && r !== '2') return null; // skip Final Jeopardy (round 3)
 
   const value = parseInt(clueValue ?? '', 10);
   if (!Number.isFinite(value) || value <= 0) return null;
 
   return {
-    round: round.trim(),
+    round: r as '1' | '2',
     clueValue: value,
     category: category.trim(),
     text: answer.trim(),
@@ -123,166 +129,142 @@ function parseClue(fields: string[]): RawClue | null {
   };
 }
 
+// ── Category building ──────────────────────────────────────────────
+
+function buildCategories(
+  clues: RawClue[],
+  round: '1' | '2',
+  valueTiers: number[],
+): CategoryData[] {
+  const byCat = new Map<string, RawClue[]>();
+  for (const clue of clues) {
+    if (clue.round !== round) continue;
+    const arr = byCat.get(clue.category) ?? [];
+    arr.push(clue);
+    byCat.set(clue.category, arr);
+  }
+
+  const categories: CategoryData[] = [];
+  for (const [name, catClues] of byCat) {
+    const sorted = [...catClues].sort((a, b) => a.clueValue - b.clueValue);
+
+    // Deduplicate by value (daily doubles can create two entries at the same tier).
+    const tierClues: CategoryData['clues'] = [];
+    const usedValues = new Set<number>();
+    for (const clue of sorted) {
+      if (usedValues.has(clue.clueValue)) continue;
+      usedValues.add(clue.clueValue);
+      if (tierClues.length < 5) {
+        tierClues.push({
+          value: valueTiers[tierClues.length]!,
+          text: clue.text,
+          answer: clue.answer,
+        });
+      }
+    }
+
+    if (tierClues.length >= MIN_CLUES_PER_CATEGORY) {
+      categories.push({ name, clues: tierClues });
+    }
+  }
+
+  return categories;
+}
+
 // ── Main ───────────────────────────────────────────────────────────
 
 function main() {
-  // 0. Download if needed
   download();
 
-  // 1. Find TSV files
   const tsvFiles = fs.readdirSync(RAW_DIR)
-    .filter(f => f.endsWith('.tsv'))
-    .sort();
+    .filter(f => /^season\d+\.tsv$/.test(f))
+    .sort((a, b) => {
+      const n = (s: string) => parseInt(s.replace(/\D/g, ''), 10);
+      return n(a) - n(b);
+    });
 
   if (tsvFiles.length === 0) {
-    console.error('No TSV files found after download. Something went wrong.');
+    console.error('No season TSV files found. Something went wrong with the download.');
     process.exit(1);
   }
 
-  console.log(`Found ${tsvFiles.length} TSV file(s)`);
+  console.log(`Processing ${tsvFiles.length} season TSV(s)...`);
 
-  // 2. Parse all clues across all season files
+  // Parse all clues from all seasons.
   const allClues: RawClue[] = [];
-
   for (const file of tsvFiles) {
     const content = fs.readFileSync(path.join(RAW_DIR, file), 'utf-8');
     const lines = content.split('\n');
-
-    // Skip header line
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i]!.trim();
       if (!line) continue;
-      const fields = parseTsvLine(line);
-      const clue = parseClue(fields);
+      const clue = parseClue(line.split('\t'));
       if (clue) allClues.push(clue);
     }
   }
 
-  console.log(`Parsed ${allClues.length} round-1 clues`);
+  console.log(`Parsed ${allClues.length} clues (rounds 1 & 2)`);
 
-  // 3. Group clues by air_date (one game per date)
+  // Group by air date.
   const byDate = new Map<string, RawClue[]>();
   for (const clue of allClues) {
-    let arr = byDate.get(clue.airDate);
-    if (!arr) {
-      arr = [];
-      byDate.set(clue.airDate, arr);
-    }
+    const arr = byDate.get(clue.airDate) ?? [];
     arr.push(clue);
+    byDate.set(clue.airDate, arr);
   }
 
-  // 4. Build games from each date
+  // Build game objects.
   const games: GameData[] = [];
-
-  const sortedDates = [...byDate.keys()].sort();
-
-  for (const airDate of sortedDates) {
+  for (const airDate of [...byDate.keys()].sort()) {
     const clues = byDate.get(airDate)!;
 
-    // Group by category
-    const byCat = new Map<string, RawClue[]>();
-    for (const clue of clues) {
-      let arr = byCat.get(clue.category);
-      if (!arr) {
-        arr = [];
-        byCat.set(clue.category, arr);
-      }
-      arr.push(clue);
-    }
+    const round1 = buildCategories(clues, '1', R1_VALUE_TIERS);
+    const round2 = buildCategories(clues, '2', R2_VALUE_TIERS);
 
-    // Need at least 5 categories to be usable
-    if (byCat.size < MIN_CATEGORIES) continue;
+    if (round1.length < MIN_R1_CATEGORIES) continue;
 
-    // Build category objects, keeping only those with all 5 value tiers
-    const categories: GameData['categories'] = [];
-
-    for (const [catName, catClues] of byCat) {
-      // Map clue values to standard tiers
-      // Early seasons used $100-$500, later $200-$1000
-      const sortedClues = [...catClues].sort((a, b) => a.clueValue - b.clueValue);
-
-      if (sortedClues.length < 5) continue;
-
-      // Take the first 5 unique values (sorted ascending) and assign standard values
-      const tierClues: { value: number; text: string; answer: string }[] = [];
-      const usedValues = new Set<number>();
-
-      for (const clue of sortedClues) {
-        if (usedValues.has(clue.clueValue)) continue;
-        usedValues.add(clue.clueValue);
-        if (tierClues.length < 5) {
-          tierClues.push({
-            value: VALUE_TIERS[tierClues.length]!,
-            text: clue.text,
-            answer: clue.answer,
-          });
-        }
-      }
-
-      if (tierClues.length === 5) {
-        categories.push({ name: catName, clues: tierClues });
-      }
-    }
-
-    // Keep all complete categories — the game decides how many to use
-    if (categories.length < MIN_CATEGORIES) continue;
-
-    games.push({
-      gameNumber: 0, // assigned below
-      airDate,
-      categories,
-    });
+    games.push({ gameNumber: 0, airDate, round1, round2 });
   }
 
-  // 5. Assign sequential game numbers
-  for (let i = 0; i < games.length; i++) {
-    games[i]!.gameNumber = i + 1;
-  }
+  // Assign sequential game numbers by air date.
+  for (let i = 0; i < games.length; i++) games[i]!.gameNumber = i + 1;
 
-  console.log(`Built ${games.length} complete games`);
+  console.log(`Built ${games.length} games`);
 
-  // 6. Group games by season (based on air date year)
+  // Group by calendar year for per-season output files.
   const bySeason = new Map<number, GameData[]>();
-
   for (const game of games) {
     const year = parseInt(game.airDate.substring(0, 4), 10);
     if (!Number.isFinite(year)) continue;
-    let arr = bySeason.get(year);
-    if (!arr) {
-      arr = [];
-      bySeason.set(year, arr);
-    }
+    const arr = bySeason.get(year) ?? [];
     arr.push(game);
+    bySeason.set(year, arr);
   }
 
-  // 7. Write output files
+  // Write output.
   fs.mkdirSync(OUT_DIR, { recursive: true });
-
   const seasonKeys = [...bySeason.keys()].sort((a, b) => a - b);
   const index: SeasonIndex = { totalGames: games.length, seasons: [] };
 
   for (const year of seasonKeys) {
     const seasonGames = bySeason.get(year)!;
     const fileName = `season-${year}.json`;
-    const filePath = path.join(OUT_DIR, fileName);
+    fs.writeFileSync(path.join(OUT_DIR, fileName), JSON.stringify(seasonGames));
 
-    fs.writeFileSync(filePath, JSON.stringify(seasonGames));
-
-    const startGame = seasonGames[0]!.gameNumber;
-    const endGame = seasonGames[seasonGames.length - 1]!.gameNumber;
-
-    index.seasons.push({ file: fileName, startGame, endGame });
+    index.seasons.push({
+      file: fileName,
+      startGame: seasonGames[0]!.gameNumber,
+      endGame: seasonGames[seasonGames.length - 1]!.gameNumber,
+    });
 
     const sizeMB = (Buffer.byteLength(JSON.stringify(seasonGames)) / 1024 / 1024).toFixed(2);
-    console.log(`  ${fileName}: ${seasonGames.length} games (${sizeMB} MB)`);
+    const r1total = seasonGames.reduce((s, g) => s + g.round1.length, 0);
+    const r2total = seasonGames.reduce((s, g) => s + g.round2.length, 0);
+    console.log(`  ${fileName}: ${seasonGames.length} games, ${r1total} R1 cats, ${r2total} R2 cats (${sizeMB} MB)`);
   }
 
-  const indexPath = path.join(OUT_DIR, 'index.json');
-  fs.writeFileSync(indexPath, JSON.stringify(index, null, 2));
-
-  console.log(`\nWrote index.json with ${index.seasons.length} season files`);
-  const totalClues = games.reduce((sum, g) => sum + g.categories.length * 5, 0);
-  console.log(`Total: ${games.length} games, ${totalClues} clues`);
+  fs.writeFileSync(path.join(OUT_DIR, 'index.json'), JSON.stringify(index, null, 2));
+  console.log(`\nWrote index.json with ${index.seasons.length} seasons`);
 }
 
 main();

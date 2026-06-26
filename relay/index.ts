@@ -1,9 +1,75 @@
+import * as fs from 'fs';
+import * as http from 'http';
+import * as path from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from '../src/server.js';
 import { Room, RoomPlayer, RoomServerTransport } from './room.js';
 
 const PLAYER_NAMES = ['Player 1', 'Player 2'];
 const TOTAL_CLUES = 25; // 5×5 board
+
+// --- Game category lookup (runs server-side, loads files on demand) ---
+// Assumes the relay is started from the project root (npm run relay).
+
+interface GameIndex {
+  totalGames: number;
+  seasons: { file: string; startGame: number; endGame: number }[];
+}
+
+const DATA_DIR = path.resolve('data/seasons');
+let _gameIndex: GameIndex | null = null;
+
+interface RawCategory { name: string; clues: unknown[] }
+interface RawGame { gameNumber: number; airDate: string; round1: RawCategory[]; round2: RawCategory[] }
+const _seasonCache = new Map<string, RawGame[]>();
+
+function getGameIndex(): GameIndex {
+  if (!_gameIndex) {
+    _gameIndex = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'index.json'), 'utf8'));
+  }
+  return _gameIndex!;
+}
+
+interface CategoryInfo { name: string; clueCount: number }
+
+interface GameInfo {
+  airDate: string;
+  season: number;
+  round1: CategoryInfo[];
+  round2: CategoryInfo[];
+}
+
+function lookupGame(gameNumber: number): GameInfo | null {
+  try {
+    const index = getGameIndex();
+    const season = index.seasons.find(s => gameNumber >= s.startGame && gameNumber <= s.endGame);
+    if (!season) return null;
+
+    if (!_seasonCache.has(season.file)) {
+      const games = JSON.parse(fs.readFileSync(path.join(DATA_DIR, season.file), 'utf8'));
+      _seasonCache.set(season.file, games);
+    }
+
+    const games = _seasonCache.get(season.file)!;
+    const game = games.find(g => g.gameNumber === gameNumber);
+    if (!game) return null;
+
+    // Season number: current Jeopardy! debuted in 1984 as Season 1.
+    const year = parseInt(season.file.replace('season-', '').replace('.json', ''), 10);
+    const seasonNumber = year - 1983;
+
+    const toInfo = (c: RawCategory): CategoryInfo => ({ name: c.name, clueCount: c.clues.length });
+
+    return {
+      airDate: game.airDate,
+      season: seasonNumber,
+      round1: game.round1.map(toInfo),
+      round2: game.round2.map(toInfo),
+    };
+  } catch {
+    return null;
+  }
+}
 
 // --- Rooms ---
 
@@ -71,26 +137,51 @@ function removeFromRoom(peerId: string): void {
   }
 }
 
-// --- WebSocket Server with dynamic port ---
+// --- HTTP + WebSocket Server with dynamic port ---
 
 const TRY_PORTS = [8787, 8788, 8789, 0];
 
 function startServer(portIndex: number): void {
   const port = TRY_PORTS[portIndex];
-  const wss = new WebSocketServer({ port });
 
-  wss.on('error', (err: NodeJS.ErrnoException) => {
+  const httpServer = http.createServer((req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET');
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    const match = req.url?.match(/^\/game-info\/(\d+)$/);
+    if (match) {
+      const gameNumber = parseInt(match[1], 10);
+      const info = lookupGame(gameNumber);
+      res.writeHead(info ? 200 : 404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(info));
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+
+  const wss = new WebSocketServer({ server: httpServer });
+
+  httpServer.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE' && portIndex < TRY_PORTS.length - 1) {
       console.log(`Port ${port} in use, trying next...`);
+      httpServer.close();
       startServer(portIndex + 1);
     } else {
       throw err;
     }
   });
 
-  wss.on('listening', () => {
-    const addr = wss.address();
-    const actualPort = typeof addr === 'object' ? addr.port : port;
+  httpServer.listen(port, () => {
+    const addr = httpServer.address();
+    const actualPort = typeof addr === 'object' ? addr?.port : port;
     console.log(`Relay listening on ws://localhost:${actualPort}`);
   });
 

@@ -1,215 +1,215 @@
 {
-  "totalGames": 7322,
+  "totalGames": 8781,
   "seasons": [
     {
       "file": "season-1984.json",
       "startGame": 1,
-      "endGame": 17
+      "endGame": 35
     },
     {
       "file": "season-1985.json",
-      "startGame": 18,
-      "endGame": 91
+      "startGame": 36,
+      "endGame": 164
     },
     {
       "file": "season-1986.json",
-      "startGame": 92,
-      "endGame": 198
+      "startGame": 165,
+      "endGame": 320
     },
     {
       "file": "season-1987.json",
-      "startGame": 199,
-      "endGame": 337
+      "startGame": 321,
+      "endGame": 514
     },
     {
       "file": "season-1988.json",
-      "startGame": 338,
-      "endGame": 488
+      "startGame": 515,
+      "endGame": 718
     },
     {
       "file": "season-1989.json",
-      "startGame": 489,
-      "endGame": 647
+      "startGame": 719,
+      "endGame": 913
     },
     {
       "file": "season-1990.json",
-      "startGame": 648,
-      "endGame": 822
+      "startGame": 914,
+      "endGame": 1110
     },
     {
       "file": "season-1991.json",
-      "startGame": 823,
-      "endGame": 1038
+      "startGame": 1111,
+      "endGame": 1332
     },
     {
       "file": "season-1992.json",
-      "startGame": 1039,
-      "endGame": 1222
+      "startGame": 1333,
+      "endGame": 1518
     },
     {
       "file": "season-1993.json",
-      "startGame": 1223,
-      "endGame": 1448
+      "startGame": 1519,
+      "endGame": 1745
     },
     {
       "file": "season-1994.json",
-      "startGame": 1449,
-      "endGame": 1677
+      "startGame": 1746,
+      "endGame": 1975
     },
     {
       "file": "season-1995.json",
-      "startGame": 1678,
-      "endGame": 1885
+      "startGame": 1976,
+      "endGame": 2184
     },
     {
       "file": "season-1996.json",
-      "startGame": 1886,
-      "endGame": 2094
+      "startGame": 2185,
+      "endGame": 2398
     },
     {
       "file": "season-1997.json",
-      "startGame": 2095,
-      "endGame": 2290
+      "startGame": 2399,
+      "endGame": 2620
     },
     {
       "file": "season-1998.json",
-      "startGame": 2291,
-      "endGame": 2417
+      "startGame": 2621,
+      "endGame": 2828
     },
     {
       "file": "season-1999.json",
-      "startGame": 2418,
-      "endGame": 2598
+      "startGame": 2829,
+      "endGame": 3049
     },
     {
       "file": "season-2000.json",
-      "startGame": 2599,
-      "endGame": 2755
+      "startGame": 3050,
+      "endGame": 3273
     },
     {
       "file": "season-2001.json",
-      "startGame": 2756,
-      "endGame": 2887
+      "startGame": 3274,
+      "endGame": 3489
     },
     {
       "file": "season-2002.json",
-      "startGame": 2888,
-      "endGame": 3059
+      "startGame": 3490,
+      "endGame": 3712
     },
     {
       "file": "season-2003.json",
-      "startGame": 3060,
-      "endGame": 3225
+      "startGame": 3713,
+      "endGame": 3932
     },
     {
       "file": "season-2004.json",
-      "startGame": 3226,
-      "endGame": 3410
+      "startGame": 3933,
+      "endGame": 4155
     },
     {
       "file": "season-2005.json",
-      "startGame": 3411,
-      "endGame": 3604
+      "startGame": 4156,
+      "endGame": 4377
     },
     {
       "file": "season-2006.json",
-      "startGame": 3605,
-      "endGame": 3788
+      "startGame": 4378,
+      "endGame": 4597
     },
     {
       "file": "season-2007.json",
-      "startGame": 3789,
-      "endGame": 3981
+      "startGame": 4598,
+      "endGame": 4826
     },
     {
       "file": "season-2008.json",
-      "startGame": 3982,
-      "endGame": 4192
+      "startGame": 4827,
+      "endGame": 5054
     },
     {
       "file": "season-2009.json",
-      "startGame": 4193,
-      "endGame": 4392
+      "startGame": 5055,
+      "endGame": 5274
     },
     {
       "file": "season-2010.json",
-      "startGame": 4393,
-      "endGame": 4595
+      "startGame": 5275,
+      "endGame": 5502
     },
     {
       "file": "season-2011.json",
-      "startGame": 4596,
-      "endGame": 4792
+      "startGame": 5503,
+      "endGame": 5723
     },
     {
       "file": "season-2012.json",
-      "startGame": 4793,
-      "endGame": 4983
+      "startGame": 5724,
+      "endGame": 5946
     },
     {
       "file": "season-2013.json",
-      "startGame": 4984,
-      "endGame": 5183
+      "startGame": 5947,
+      "endGame": 6173
     },
     {
       "file": "season-2014.json",
-      "startGame": 5184,
-      "endGame": 5372
+      "startGame": 6174,
+      "endGame": 6397
     },
     {
       "file": "season-2015.json",
-      "startGame": 5373,
-      "endGame": 5535
+      "startGame": 6398,
+      "endGame": 6619
     },
     {
       "file": "season-2016.json",
-      "startGame": 5536,
-      "endGame": 5688
+      "startGame": 6620,
+      "endGame": 6840
     },
     {
       "file": "season-2017.json",
-      "startGame": 5689,
-      "endGame": 5856
+      "startGame": 6841,
+      "endGame": 7068
     },
     {
       "file": "season-2018.json",
-      "startGame": 5857,
-      "endGame": 6022
+      "startGame": 7069,
+      "endGame": 7294
     },
     {
       "file": "season-2019.json",
-      "startGame": 6023,
-      "endGame": 6207
+      "startGame": 7295,
+      "endGame": 7523
     },
     {
       "file": "season-2020.json",
-      "startGame": 6208,
-      "endGame": 6345
+      "startGame": 7524,
+      "endGame": 7701
     },
     {
       "file": "season-2021.json",
-      "startGame": 6346,
-      "endGame": 6551
+      "startGame": 7702,
+      "endGame": 7941
     },
     {
       "file": "season-2022.json",
-      "startGame": 6552,
-      "endGame": 6744
+      "startGame": 7942,
+      "endGame": 8171
     },
     {
       "file": "season-2023.json",
-      "startGame": 6745,
-      "endGame": 6953
+      "startGame": 8172,
+      "endGame": 8401
     },
     {
       "file": "season-2024.json",
-      "startGame": 6954,
-      "endGame": 7177
+      "startGame": 8402,
+      "endGame": 8633
     },
     {
       "file": "season-2025.json",
-      "startGame": 7178,
-      "endGame": 7322
+      "startGame": 8634,
+      "endGame": 8781
     }
   ]
 }

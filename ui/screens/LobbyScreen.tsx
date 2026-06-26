@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -41,6 +42,54 @@ const MAX_PLAYERS = 2;
 export function LobbyScreen(props: LobbyScreenProps) {
   const canStart = props.isHost && props.players.length >= MAX_PLAYERS;
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showRound1, setShowRound1] = useState(false);
+  const [showRound2, setShowRound2] = useState(false);
+  const [round1Categories, setRound1Categories] = useState<{ name: string; clueCount: number }[] | null>(null);
+  const [round2Categories, setRound2Categories] = useState<{ name: string; clueCount: number }[] | null>(null);
+  const [airDate, setAirDate] = useState<string | null>(null);
+  const [seasonNumber, setSeasonNumber] = useState<number | null>(null);
+  const [gameInfoStatus, setGameInfoStatus] = useState<'idle' | 'loading' | 'not-found'>('idle');
+
+  useEffect(() => {
+    const id = props.gameId;
+    if (!id || !/^\d+$/.test(id) || Number(id) < 1) {
+      setRound1Categories(null);
+      setRound2Categories(null);
+      setAirDate(null);
+      setSeasonNumber(null);
+      setGameInfoStatus('idle');
+      return;
+    }
+    setGameInfoStatus('loading');
+    const timer = setTimeout(async () => {
+      try {
+        const host = props.relayHost ?? 'localhost';
+        const port = props.relayPort ?? '8787';
+        const res = await fetch(`http://${host}:${port}/game-info/${id}`);
+        if (!res.ok) {
+          setRound1Categories(null); setRound2Categories(null);
+          setAirDate(null); setSeasonNumber(null);
+          setGameInfoStatus('not-found'); return;
+        }
+        const data = await res.json() as {
+          round1: { name: string; clueCount: number }[];
+          round2: { name: string; clueCount: number }[];
+          airDate: string;
+          season: number;
+        };
+        setRound1Categories(data.round1 ?? null);
+        setRound2Categories(data.round2 ?? null);
+        setAirDate(data.airDate ?? null);
+        setSeasonNumber(data.season ?? null);
+        setGameInfoStatus(data.round1 ? 'idle' : 'not-found');
+      } catch {
+        setRound1Categories(null); setRound2Categories(null);
+        setAirDate(null); setSeasonNumber(null);
+        setGameInfoStatus('not-found');
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [props.gameId, props.relayHost, props.relayPort]);
 
   const slots = Array.from({ length: MAX_PLAYERS }, (_, i) => props.players[i] ?? null);
 
@@ -130,6 +179,75 @@ export function LobbyScreen(props: LobbyScreenProps) {
                   placeholderTextColor="#666"
                   keyboardType="number-pad"
                 />
+
+                {gameInfoStatus === 'loading' && (
+                  <Text style={styles.gameInfoNote}>Loading…</Text>
+                )}
+                {gameInfoStatus === 'not-found' && (
+                  <Text style={styles.gameInfoNote}>Game not found</Text>
+                )}
+
+                {round1Categories && (
+                  <>
+                    {seasonNumber != null && (
+                      <Text style={styles.gameMetadata}>Season {seasonNumber}</Text>
+                    )}
+                    {airDate && (
+                      <Text style={styles.gameMetadata}>
+                        {new Date(airDate + 'T12:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                      </Text>
+                    )}
+                    <Pressable
+                      style={styles.roundToggle}
+                      onPress={() => setShowRound1(v => !v)}
+                    >
+                      <Text style={styles.roundToggleText}>
+                        {showRound1 ? '▾ ' : '▸ '}
+                        Jeopardy!
+                        {round1Categories.some(c => c.clueCount < 5) && (
+                          <Text style={styles.clueCount}> *</Text>
+                        )}
+                      </Text>
+                    </Pressable>
+                    {showRound1 && (
+                      <ScrollView style={styles.categoryList} nestedScrollEnabled>
+                        {round1Categories.map(({ name, clueCount }) => (
+                          <View key={name} style={styles.categoryRow}>
+                            <Text style={styles.categoryName}>{name}</Text>
+                            {clueCount < 5 && (
+                              <Text style={styles.clueCount}>{clueCount}/5</Text>
+                            )}
+                          </View>
+                        ))}
+                      </ScrollView>
+                    )}
+
+                    <Pressable
+                      style={styles.roundToggle}
+                      onPress={() => setShowRound2(v => !v)}
+                    >
+                      <Text style={styles.roundToggleText}>
+                        {showRound2 ? '▾ ' : '▸ '}
+                        Double Jeopardy!
+                        {round2Categories?.some(c => c.clueCount < 5) && (
+                          <Text style={styles.clueCount}> *</Text>
+                        )}
+                      </Text>
+                    </Pressable>
+                    {showRound2 && round2Categories && (
+                      <ScrollView style={styles.categoryList} nestedScrollEnabled>
+                        {round2Categories.map(({ name, clueCount }) => (
+                          <View key={name} style={styles.categoryRow}>
+                            <Text style={styles.categoryName}>{name}</Text>
+                            {clueCount < 5 && (
+                              <Text style={styles.clueCount}>{clueCount}/5</Text>
+                            )}
+                          </View>
+                        ))}
+                      </ScrollView>
+                    )}
+                  </>
+                )}
               </View>
             )}
           </>
@@ -264,6 +382,47 @@ const styles = StyleSheet.create({
     borderColor: '#444',
     borderRadius: 6,
     padding: 10,
+  },
+  gameMetadata: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 12,
+    color: '#666',
+    marginTop: 10,
+  },
+  roundToggle: {
+    marginTop: 14,
+  },
+  roundToggleText: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 13,
+    color: '#888',
+  },
+  categoryList: {
+    maxHeight: 160,
+    marginTop: 4,
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 2,
+  },
+  categoryName: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 13,
+    color: '#bbb',
+  },
+  clueCount: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 12,
+    color: '#e87c1e',
+  },
+  gameInfoNote: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 12,
+    color: '#666',
+    marginTop: 6,
+    fontStyle: 'italic',
   },
   startButton: {
     backgroundColor: colors.cell,
