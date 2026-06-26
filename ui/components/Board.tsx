@@ -20,24 +20,22 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue }
   const burned = new Set(burnedClueIds);
   const boardRef = useRef<View>(null);
 
-  // Event delegation: one contextmenu listener on the board container.
-  // Each live cell carries a data-clue-id attribute; we walk up from the
-  // click target to find it, then dispatch the skip.
+  // Attach to document (guaranteed to fire) and scope to the board element.
+  // Prevents the native context menu anywhere on the board, and dispatches
+  // skip when a cell with data-clue-id is right-clicked.
   useEffect(() => {
     if (Platform.OS !== 'web' || !onSkipClue) return;
-    const el = boardRef.current as unknown as HTMLElement | null;
-    if (!el) return;
     const handler = (e: MouseEvent) => {
-      const target = (e.target as HTMLElement | null)?.closest('[data-clue-id]');
-      if (!target) return;
-      const clueId = parseInt(target.getAttribute('data-clue-id') ?? '', 10);
-      if (!isNaN(clueId)) {
-        e.preventDefault();
-        onSkipClue(clueId);
-      }
+      const board = boardRef.current as unknown as HTMLElement | null;
+      if (!board?.contains(e.target as Node)) return;
+      e.preventDefault();
+      const cell = (e.target as HTMLElement | null)?.closest('[data-clue-id]');
+      if (!cell) return;
+      const clueId = parseInt(cell.getAttribute('data-clue-id') ?? '', 10);
+      if (!isNaN(clueId)) onSkipClue(clueId);
     };
-    el.addEventListener('contextmenu', handler);
-    return () => el.removeEventListener('contextmenu', handler);
+    document.addEventListener('contextmenu', handler);
+    return () => document.removeEventListener('contextmenu', handler);
   }, [onSkipClue]);
 
   return (
