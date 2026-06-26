@@ -103,6 +103,28 @@ describe('GameServer', () => {
     expect(p2State.playerId).toBe('bob');
   });
 
+  it('lets a client SKIP_CLUE — burns it and broadcasts to both players', () => {
+    const host = new MockTransport('host');
+    createServer(host, ['Alice', 'Bob']);
+
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    const p1Messages = captureMessages(p1);
+    const p2Messages = captureMessages(p2);
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    // Right-click / P key on the board sends SKIP_CLUE with a clue id.
+    p1.send('host', JSON.stringify({ type: 'SKIP_CLUE', clueId: 7 }));
+
+    const p1State = lastStateFrom(p1Messages);
+    const p2State = lastStateFrom(p2Messages);
+    expect(p1State.state.status).toBe('CHOOSE_CLUE');
+    expect(p1State.state.burnedClueIds).toContain(7);
+    // Server-authoritative: the burn reaches the *other* player too.
+    expect(p2State.state.burnedClueIds).toContain(7);
+  });
+
   it('injects playerId from peer mapping, ignores client-provided playerId', () => {
     const host = new MockTransport('host');
     createServer(host, ['Alice', 'Bob']);
