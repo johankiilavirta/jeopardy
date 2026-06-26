@@ -178,9 +178,11 @@ export function LobbyScreen(props: LobbyScreenProps) {
 
                 {round1Categories && (
                   <>
+                    {seasonNumber != null && (
+                      <Text style={styles.gameMetadata}>Season {seasonNumber}</Text>
+                    )}
                     {airDate && (
                       <Text style={styles.gameMetadata}>
-                        {seasonNumber != null ? `Season ${seasonNumber}  ·  ` : ''}
                         Aired {new Date(airDate + 'T12:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                       </Text>
                     )}
