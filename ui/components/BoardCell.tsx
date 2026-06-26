@@ -1,4 +1,5 @@
-import { Platform, Pressable, StyleSheet, Text } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef } from 'react';
 import { burnedValueOpacity, colors, radius, shadow, type as typeTokens } from '../theme/tokens';
 
 interface BoardCellProps {
@@ -15,13 +16,20 @@ interface BoardCellProps {
 }
 
 export function BoardCell({ value, burned, disabled, onPress, empty, onSkip }: BoardCellProps) {
-  const skipProps = Platform.OS === 'web' && onSkip && !burned && !empty && !disabled
-    ? { onContextMenu: (e: Event) => { e.preventDefault(); onSkip(); } }
-    : {};
+  const ref = useRef<View>(null);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !onSkip || burned || empty || disabled) return;
+    const el = ref.current as unknown as HTMLElement | null;
+    if (!el) return;
+    const handler = (e: MouseEvent) => { e.preventDefault(); onSkip(); };
+    el.addEventListener('contextmenu', handler);
+    return () => el.removeEventListener('contextmenu', handler);
+  }, [onSkip, burned, empty, disabled]);
 
   return (
     <Pressable
-      {...(skipProps as object)}
+      ref={ref}
       style={({ pressed }) => [
         styles.cell,
         empty && styles.cellEmpty,
