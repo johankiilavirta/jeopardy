@@ -1,4 +1,4 @@
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text } from 'react-native';
 import { useEffect, useRef } from 'react';
 import { burnedValueOpacity, colors, radius, shadow, type as typeTokens } from '../theme/tokens';
 
