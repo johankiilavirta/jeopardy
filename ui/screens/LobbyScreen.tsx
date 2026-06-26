@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -41,6 +42,35 @@ const MAX_PLAYERS = 2;
 export function LobbyScreen(props: LobbyScreenProps) {
   const canStart = props.isHost && props.players.length >= MAX_PLAYERS;
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showRound1, setShowRound1] = useState(false);
+  const [showRound2, setShowRound2] = useState(false);
+  const [round1Categories, setRound1Categories] = useState<string[] | null>(null);
+  const [gameInfoStatus, setGameInfoStatus] = useState<'idle' | 'loading' | 'not-found'>('idle');
+
+  useEffect(() => {
+    const id = props.gameId;
+    if (!id || !/^\d+$/.test(id) || Number(id) < 1) {
+      setRound1Categories(null);
+      setGameInfoStatus('idle');
+      return;
+    }
+    setGameInfoStatus('loading');
+    const timer = setTimeout(async () => {
+      try {
+        const host = props.relayHost ?? 'localhost';
+        const port = props.relayPort ?? '8787';
+        const res = await fetch(`http://${host}:${port}/game-info/${id}`);
+        if (!res.ok) { setRound1Categories(null); setGameInfoStatus('not-found'); return; }
+        const data = await res.json() as { categories: string[] | null };
+        setRound1Categories(data.categories ?? null);
+        setGameInfoStatus(data.categories ? 'idle' : 'not-found');
+      } catch {
+        setRound1Categories(null);
+        setGameInfoStatus('not-found');
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [props.gameId, props.relayHost, props.relayPort]);
 
   const slots = Array.from({ length: MAX_PLAYERS }, (_, i) => props.players[i] ?? null);
 
@@ -130,6 +160,47 @@ export function LobbyScreen(props: LobbyScreenProps) {
                   placeholderTextColor="#666"
                   keyboardType="number-pad"
                 />
+
+                {gameInfoStatus === 'loading' && (
+                  <Text style={styles.gameInfoNote}>Loading…</Text>
+                )}
+                {gameInfoStatus === 'not-found' && (
+                  <Text style={styles.gameInfoNote}>Game not found</Text>
+                )}
+
+                {round1Categories && (
+                  <>
+                    <Pressable
+                      style={styles.roundToggle}
+                      onPress={() => setShowRound1(v => !v)}
+                    >
+                      <Text style={styles.roundToggleText}>
+                        {showRound1 ? '▾ First Round' : '▸ First Round'}
+                      </Text>
+                    </Pressable>
+                    {showRound1 && (
+                      <ScrollView style={styles.categoryList} nestedScrollEnabled>
+                        {round1Categories.map(name => (
+                          <Text key={name} style={styles.categoryName}>{name}</Text>
+                        ))}
+                      </ScrollView>
+                    )}
+
+                    <Pressable
+                      style={styles.roundToggle}
+                      onPress={() => setShowRound2(v => !v)}
+                    >
+                      <Text style={styles.roundToggleText}>
+                        {showRound2 ? '▾ Second Round' : '▸ Second Round'}
+                      </Text>
+                    </Pressable>
+                    {showRound2 && (
+                      <Text style={styles.gameInfoNote}>
+                        Double Jeopardy categories not yet in dataset
+                      </Text>
+                    )}
+                  </>
+                )}
               </View>
             )}
           </>
@@ -264,6 +335,31 @@ const styles = StyleSheet.create({
     borderColor: '#444',
     borderRadius: 6,
     padding: 10,
+  },
+  roundToggle: {
+    marginTop: 14,
+  },
+  roundToggleText: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 13,
+    color: '#888',
+  },
+  categoryList: {
+    maxHeight: 160,
+    marginTop: 4,
+  },
+  categoryName: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 13,
+    color: '#bbb',
+    paddingVertical: 2,
+  },
+  gameInfoNote: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 12,
+    color: '#666',
+    marginTop: 6,
+    fontStyle: 'italic',
   },
   startButton: {
     backgroundColor: colors.cell,
