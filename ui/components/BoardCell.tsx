@@ -15,9 +15,10 @@ interface BoardCellProps {
 }
 
 export function BoardCell({ value, burned, disabled, onPress, empty, clueId }: BoardCellProps) {
-  // On web, stamp the clue id so the board's contextmenu handler can find it.
+  // On web, stamp the clue id via dataSet so RN Web renders it as data-clue-id
+  // on the underlying div, letting the board's contextmenu handler find it.
   const dataProps = Platform.OS === 'web' && clueId != null && !burned && !empty
-    ? ({ 'data-clue-id': String(clueId) } as object)
+    ? ({ dataSet: { clueId: String(clueId) } } as object)
     : {};
 
   return (
