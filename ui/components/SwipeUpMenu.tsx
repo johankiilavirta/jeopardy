@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   PanResponder,
@@ -33,7 +33,7 @@ export function SwipeUpMenu({ children, renderMenu, renderSettings, disabled }: 
   const [menuVisible, setMenuVisible] = useState(false);
   const [overlayPage, setOverlayPage] = useState<OverlayPage>('menu');
 
-  const openMenu = () => {
+  const openMenu = useCallback(() => {
     setMenuVisible(true);
     Animated.spring(menuY, {
       toValue: 0,
@@ -41,7 +41,7 @@ export function SwipeUpMenu({ children, renderMenu, renderSettings, disabled }: 
       bounciness: 4,
       useNativeDriver: true,
     }).start();
-  };
+  }, [menuY]);
 
   const closeMenu = useCallback(() => {
     Animated.spring(menuY, {
@@ -59,6 +59,19 @@ export function SwipeUpMenu({ children, renderMenu, renderSettings, disabled }: 
 
   const showSettings = useCallback(() => setOverlayPage('settings'), []);
   const showMenu = useCallback(() => setOverlayPage('menu'), []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = (e: KeyboardEvent) => {
+      if (menuVisible) {
+        if (e.key === 'Escape' || e.key === 'm' || e.key === 'M') closeMenu();
+      } else if (!disabled && (e.key === 'm' || e.key === 'M')) {
+        openMenu();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [menuVisible, disabled, openMenu, closeMenu]);
 
   // Swipe-up on the children area to open the menu.
   const openResponder = useMemo(() => {
