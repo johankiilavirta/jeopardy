@@ -1,4 +1,4 @@
-import { Platform, Pressable, StyleSheet, Text } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useEffect, useRef } from 'react';
 import { burnedValueOpacity, colors, radius, shadow, type as typeTokens } from '../theme/tokens';
 
@@ -16,44 +16,48 @@ interface BoardCellProps {
 }
 
 export function BoardCell({ value, burned, disabled, onPress, empty, onSkip }: BoardCellProps) {
-  const ref = useRef<View>(null);
+  const wrapRef = useRef<View>(null);
 
   useEffect(() => {
-    if (Platform.OS !== 'web' || !onSkip || burned || empty || disabled) return;
-    const el = ref.current as unknown as HTMLElement | null;
+    if (Platform.OS !== 'web' || !onSkip || burned || empty) return;
+    const el = wrapRef.current as unknown as HTMLElement | null;
     if (!el) return;
     const handler = (e: MouseEvent) => { e.preventDefault(); onSkip(); };
     el.addEventListener('contextmenu', handler);
     return () => el.removeEventListener('contextmenu', handler);
-  }, [onSkip, burned, empty, disabled]);
+  }, [onSkip, burned, empty]);
 
   return (
-    <Pressable
-      ref={ref}
-      style={({ pressed }) => [
-        styles.cell,
-        empty && styles.cellEmpty,
-        burned && !empty && styles.cellBurned,
-        pressed && !burned && !disabled && !empty && styles.cellPressed,
-      ]}
-      onPress={onPress}
-      disabled={burned || disabled || empty}
-    >
-      {!empty && (
-        <Text
-          style={[styles.value, burned && styles.valueBurned]}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          allowFontScaling={false}
-        >
-          ${value}
-        </Text>
-      )}
-    </Pressable>
+    <View ref={wrapRef} style={styles.cellWrap}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.cell,
+          empty && styles.cellEmpty,
+          burned && !empty && styles.cellBurned,
+          pressed && !burned && !disabled && !empty && styles.cellPressed,
+        ]}
+        onPress={onPress}
+        disabled={burned || disabled || empty}
+      >
+        {!empty && (
+          <Text
+            style={[styles.value, burned && styles.valueBurned]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            allowFontScaling={false}
+          >
+            ${value}
+          </Text>
+        )}
+      </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  cellWrap: {
+    flex: 1,
+  },
   cell: {
     flex: 1,
     backgroundColor: colors.cell,
