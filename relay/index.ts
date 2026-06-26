@@ -18,15 +18,10 @@ interface GameIndex {
 
 const DATA_DIR = path.resolve('data/seasons');
 let _gameIndex: GameIndex | null = null;
-const _seasonCache = new Map<string, { gameNumber: number; airDate: string; categories: { name: string; clues: { text: string }[] }[] }[]>();
 
-// Clues that require a visual shown on screen — unanswerable without the image.
-// Curly apostrophe (U+2019) is used in the dataset, not a straight apostrophe.
-const IMAGE_CLUE_RE = /^(Here (are|is|[’']s)|Seen here|Pictured here|This (map|flag|photo|picture|image|seal|logo|coat of arms))/i;
-
-function countImageClues(clues: { text: string }[]): number {
-  return clues.filter(cl => IMAGE_CLUE_RE.test(cl.text)).length;
-}
+interface RawCategory { name: string; clues: unknown[] }
+interface RawGame { gameNumber: number; airDate: string; round1: RawCategory[]; round2: RawCategory[] }
+const _seasonCache = new Map<string, RawGame[]>();
 
 function getGameIndex(): GameIndex {
   if (!_gameIndex) {
@@ -35,10 +30,13 @@ function getGameIndex(): GameIndex {
   return _gameIndex!;
 }
 
+interface CategoryInfo { name: string; clueCount: number }
+
 interface GameInfo {
   airDate: string;
   season: number;
-  categories: { name: string; imageClues: number }[];
+  round1: CategoryInfo[];
+  round2: CategoryInfo[];
 }
 
 function lookupGame(gameNumber: number): GameInfo | null {
@@ -60,13 +58,13 @@ function lookupGame(gameNumber: number): GameInfo | null {
     const year = parseInt(season.file.replace('season-', '').replace('.json', ''), 10);
     const seasonNumber = year - 1983;
 
+    const toInfo = (c: RawCategory): CategoryInfo => ({ name: c.name, clueCount: c.clues.length });
+
     return {
       airDate: game.airDate,
       season: seasonNumber,
-      categories: game.categories.map((c: { name: string; clues: { text: string }[] }) => ({
-        name: c.name,
-        imageClues: countImageClues(c.clues),
-      })),
+      round1: game.round1.map(toInfo),
+      round2: game.round2.map(toInfo),
     };
   } catch {
     return null;

@@ -44,7 +44,8 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showRound1, setShowRound1] = useState(false);
   const [showRound2, setShowRound2] = useState(false);
-  const [round1Categories, setRound1Categories] = useState<{ name: string; imageClues: number }[] | null>(null);
+  const [round1Categories, setRound1Categories] = useState<{ name: string; clueCount: number }[] | null>(null);
+  const [round2Categories, setRound2Categories] = useState<{ name: string; clueCount: number }[] | null>(null);
   const [airDate, setAirDate] = useState<string | null>(null);
   const [seasonNumber, setSeasonNumber] = useState<number | null>(null);
   const [gameInfoStatus, setGameInfoStatus] = useState<'idle' | 'loading' | 'not-found'>('idle');
@@ -53,6 +54,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
     const id = props.gameId;
     if (!id || !/^\d+$/.test(id) || Number(id) < 1) {
       setRound1Categories(null);
+      setRound2Categories(null);
       setAirDate(null);
       setSeasonNumber(null);
       setGameInfoStatus('idle');
@@ -64,16 +66,25 @@ export function LobbyScreen(props: LobbyScreenProps) {
         const host = props.relayHost ?? 'localhost';
         const port = props.relayPort ?? '8787';
         const res = await fetch(`http://${host}:${port}/game-info/${id}`);
-        if (!res.ok) { setRound1Categories(null); setAirDate(null); setSeasonNumber(null); setGameInfoStatus('not-found'); return; }
-        const data = await res.json() as { categories: { name: string; imageClues: number }[]; airDate: string; season: number };
-        setRound1Categories(data.categories ?? null);
+        if (!res.ok) {
+          setRound1Categories(null); setRound2Categories(null);
+          setAirDate(null); setSeasonNumber(null);
+          setGameInfoStatus('not-found'); return;
+        }
+        const data = await res.json() as {
+          round1: { name: string; clueCount: number }[];
+          round2: { name: string; clueCount: number }[];
+          airDate: string;
+          season: number;
+        };
+        setRound1Categories(data.round1 ?? null);
+        setRound2Categories(data.round2 ?? null);
         setAirDate(data.airDate ?? null);
         setSeasonNumber(data.season ?? null);
-        setGameInfoStatus(data.categories ? 'idle' : 'not-found');
+        setGameInfoStatus(data.round1 ? 'idle' : 'not-found');
       } catch {
-        setRound1Categories(null);
-        setAirDate(null);
-        setSeasonNumber(null);
+        setRound1Categories(null); setRound2Categories(null);
+        setAirDate(null); setSeasonNumber(null);
         setGameInfoStatus('not-found');
       }
     }, 400);
@@ -191,16 +202,20 @@ export function LobbyScreen(props: LobbyScreenProps) {
                       onPress={() => setShowRound1(v => !v)}
                     >
                       <Text style={styles.roundToggleText}>
-                        {showRound1 ? '▾ First Round' : '▸ First Round'}
+                        {showRound1 ? '▾ ' : '▸ '}
+                        Jeopardy!
+                        {round1Categories.some(c => c.clueCount < 5) && (
+                          <Text style={styles.clueCount}> *</Text>
+                        )}
                       </Text>
                     </Pressable>
                     {showRound1 && (
                       <ScrollView style={styles.categoryList} nestedScrollEnabled>
-                        {round1Categories.map(({ name, imageClues }) => (
+                        {round1Categories.map(({ name, clueCount }) => (
                           <View key={name} style={styles.categoryRow}>
                             <Text style={styles.categoryName}>{name}</Text>
-                            {imageClues > 0 && (
-                              <Text style={styles.imageClueCount}>{imageClues}/5</Text>
+                            {clueCount < 5 && (
+                              <Text style={styles.clueCount}>{clueCount}/5</Text>
                             )}
                           </View>
                         ))}
@@ -212,13 +227,24 @@ export function LobbyScreen(props: LobbyScreenProps) {
                       onPress={() => setShowRound2(v => !v)}
                     >
                       <Text style={styles.roundToggleText}>
-                        {showRound2 ? '▾ Second Round' : '▸ Second Round'}
+                        {showRound2 ? '▾ ' : '▸ '}
+                        Double Jeopardy!
+                        {round2Categories?.some(c => c.clueCount < 5) && (
+                          <Text style={styles.clueCount}> *</Text>
+                        )}
                       </Text>
                     </Pressable>
-                    {showRound2 && (
-                      <Text style={styles.gameInfoNote}>
-                        Double Jeopardy categories not yet in dataset
-                      </Text>
+                    {showRound2 && round2Categories && (
+                      <ScrollView style={styles.categoryList} nestedScrollEnabled>
+                        {round2Categories.map(({ name, clueCount }) => (
+                          <View key={name} style={styles.categoryRow}>
+                            <Text style={styles.categoryName}>{name}</Text>
+                            {clueCount < 5 && (
+                              <Text style={styles.clueCount}>{clueCount}/5</Text>
+                            )}
+                          </View>
+                        ))}
+                      </ScrollView>
                     )}
                   </>
                 )}
@@ -386,7 +412,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#bbb',
   },
-  imageClueCount: {
+  clueCount: {
     fontFamily: typeTokens.ui500,
     fontSize: 12,
     color: '#e87c1e',

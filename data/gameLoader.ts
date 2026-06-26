@@ -13,13 +13,16 @@ import type { ClueContent } from '../ui/fixtures/clues';
 
 // ── Types ──────────────────────────────────────────────────────────
 
+export interface CategoryData {
+  name: string;
+  clues: { value: number; text: string; answer: string }[];
+}
+
 export interface GameData {
   gameNumber: number;
   airDate: string;
-  categories: {
-    name: string;
-    clues: { value: number; text: string; answer: string }[];
-  }[];
+  round1: CategoryData[];
+  round2: CategoryData[];
 }
 
 export interface GameIndex {
@@ -94,7 +97,7 @@ export function getRandomGameNumber(total: number): number {
  */
 export function toBoardDefinition(game: GameData): BoardDefinition {
   return {
-    categories: game.categories.map((cat, col) => ({
+    categories: game.round1.map((cat, col) => ({
       name: cat.name,
       clues: cat.clues.map((clue, row) => ({
         id: clueIdAt(col, row),
@@ -112,7 +115,7 @@ export function makeClueGetter(game: GameData): (id: number) => ClueContent {
   return (id: number): ClueContent => {
     const col = Math.floor(id / 5);
     const row = id % 5;
-    const category = game.categories[col];
+    const category = game.round1[col];
     const clue = category?.clues[row];
 
     if (!category || !clue) {
