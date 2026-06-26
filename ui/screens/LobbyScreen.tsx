@@ -183,7 +183,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                     )}
                     {airDate && (
                       <Text style={styles.gameMetadata}>
-                        Aired {new Date(airDate + 'T12:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                        {new Date(airDate + 'T12:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                       </Text>
                     )}
                     <Pressable
