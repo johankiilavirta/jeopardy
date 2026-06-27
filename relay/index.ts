@@ -239,7 +239,29 @@ function startServer(portIndex: number): void {
 
       switch (msg.type) {
         case 'create-room': {
-          const code = generateRoomCode();
+          // Optional fixed code (dev auto-launch). If that room already
+          // exists, join it instead of creating — makes two clients sent to
+          // the same code self-pair (relay processes messages serially, so
+          // the first becomes host, the second joins; no race).
+          const requested = msg.roomCode != null ? Number(msg.roomCode) : null;
+          if (requested != null && rooms.has(requested)) {
+            const room = rooms.get(requested)!;
+            if (room.phase !== 'lobby') {
+              relaySend(ws, { type: 'room-error', message: 'Game already started' });
+              break;
+            }
+            if (room.players.length >= 2) {
+              relaySend(ws, { type: 'room-error', message: 'Room is full' });
+              break;
+            }
+            room.players.push({ peerId, name: String(msg.playerName ?? 'Guest'), ws });
+            peerToRoom.set(peerId, requested);
+            console.log(`  ${peerId} joined existing room ${requested} (create-or-join)`);
+            broadcastLobbyUpdate(room);
+            break;
+          }
+
+          const code = requested ?? generateRoomCode();
           const room: Room = {
             code,
             hostPeerId: peerId,
