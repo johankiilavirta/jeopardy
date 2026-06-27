@@ -127,16 +127,30 @@ export function getVisibleBoard(full: BoardDefinition, burnedClueIds: number[]):
   return { categories: replaced };
 }
 
+export type RoundNumber = 1 | 2;
+
 /**
- * Convert a GameData object into the BoardDefinition used by the UI.
- * Clue IDs are laid out column-major: col * 5 + row.
+ * Clue-id space reserved per round: 6 categories × 5 rows. Round 1 owns ids
+ * 0..29, round 2 owns 30..59, so a clue id encodes which round it belongs to
+ * and the two rounds never collide in `burnedClueIds`.
  */
-export function toBoardDefinition(game: GameData): BoardDefinition {
+export const ROUND_STRIDE = 30;
+
+function roundCategories(game: GameData, round: RoundNumber): CategoryData[] {
+  return round === 2 ? (game.round2 ?? []) : game.round1;
+}
+
+/**
+ * Convert one round of a GameData object into the BoardDefinition used by the
+ * UI. Clue IDs are laid out column-major (col * 5 + row) and offset by round.
+ */
+export function toBoardDefinition(game: GameData, round: RoundNumber = 1): BoardDefinition {
+  const offset = (round - 1) * ROUND_STRIDE;
   return {
-    categories: game.round1.map((cat, col) => ({
+    categories: roundCategories(game, round).map((cat, col) => ({
       name: cat.name,
       clues: cat.clues.map((clue, row) => ({
-        id: clueIdAt(col, row),
+        id: offset + clueIdAt(col, row),
         value: clue.value,
       })),
     })),
@@ -144,14 +158,16 @@ export function toBoardDefinition(game: GameData): BoardDefinition {
 }
 
 /**
- * Build a clue-content getter matching the `getClueContent` signature.
- * The returned function looks up clue data from the provided game.
+ * Build a clue-content getter matching the `getClueContent` signature. The
+ * clue id's range selects the round, so a single getter serves both rounds.
  */
 export function makeClueGetter(game: GameData): (id: number) => ClueContent {
   return (id: number): ClueContent => {
-    const col = Math.floor(id / 5);
-    const row = id % 5;
-    const category = game.round1[col];
+    const round: RoundNumber = id >= ROUND_STRIDE ? 2 : 1;
+    const localId = id - (round - 1) * ROUND_STRIDE;
+    const col = Math.floor(localId / 5);
+    const row = localId % 5;
+    const category = roundCategories(game, round)[col];
     const clue = category?.clues[row];
 
     if (!category || !clue) {

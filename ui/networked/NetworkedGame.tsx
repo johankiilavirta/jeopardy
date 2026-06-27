@@ -131,7 +131,17 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     ? Object.keys(gameState.players).find(id => id !== playerId) ?? null
     : null;
 
-  const fullBoard = boardData ? toBoardDefinition(boardData) : demoBoard;
+  // Round transition: once every Jeopardy! (round 1) clue is burned, switch
+  // the board to Double Jeopardy! (round 2). Round 2 clue ids live in their
+  // own range, so the two never collide and round 1 stays fully burned.
+  const round1Board = boardData ? toBoardDefinition(boardData, 1) : demoBoard;
+  const round1Ids = round1Board.categories.flatMap(c => c.clues.map(cl => cl.id));
+  const round1Done =
+    round1Ids.length > 0 && round1Ids.every(id => gameState.burnedClueIds.includes(id));
+  const round2Available = !!boardData && boardData.round2.length > 0;
+  const round = round1Done && round2Available ? 2 : 1;
+
+  const fullBoard = boardData ? toBoardDefinition(boardData, round) : demoBoard;
   const getClue = boardData ? makeClueGetter(boardData) : getClueContent;
   const visibleBoard = getVisibleBoard(fullBoard, gameState.burnedClueIds);
 
