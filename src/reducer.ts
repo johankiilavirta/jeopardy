@@ -57,6 +57,8 @@ export function reducer(state: GameState, action: Action): GameState {
       return handleDismissClue(state);
     case 'LOCK_ANSWER':
       return handleLockAnswer(state, action);
+    case 'SKIP_CLUE':
+      return handleSkipClue(state, action);
     default:
       return state;
   }
@@ -246,6 +248,30 @@ function handleDismissClue(state: GameState): GameState {
     buzzes: [],
     clueSelectPlayerId: null,
     burnedClueIds: [...state.burnedClueIds, state.activeClue.id],
+  };
+}
+
+// Testing/host tool: burn a clue without playing it. Works from the board
+// (CHOOSE_CLUE) or while a clue is up (CLUE_READING). No turn enforcement —
+// either player may skip any clue. The burn is server-authoritative, so the
+// clue grays out for both players.
+function handleSkipClue(state: GameState, action: Extract<Action, { type: 'SKIP_CLUE' }>): GameState {
+  // If a clue is currently up, skip that one regardless of the id sent.
+  const skippingActive = state.activeClue != null;
+  const clueId = skippingActive ? state.activeClue!.id : action.clueId;
+
+  if (state.burnedClueIds.includes(clueId)) return state;
+
+  return {
+    ...state,
+    status: checkGameOverWith(state, clueId) ? 'GAME_OVER' : 'CHOOSE_CLUE',
+    activeClue: null,
+    buzzes: [],
+    clueSelectPlayerId: null,
+    // When bailing out of an active clue, hand the turn back to its picker;
+    // otherwise leave the current turn untouched.
+    currentTurnPlayerId: skippingActive ? state.clueSelectPlayerId : state.currentTurnPlayerId,
+    burnedClueIds: [...state.burnedClueIds, clueId],
   };
 }
 

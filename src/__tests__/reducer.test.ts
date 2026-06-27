@@ -79,6 +79,49 @@ describe('SELECT_CLUE', () => {
   });
 });
 
+describe('SKIP_CLUE', () => {
+  it('burns a clue from the board, staying in CHOOSE_CLUE', () => {
+    const state = createInitialState(['Alice', 'Bob']);
+    const next = reducer(state, { type: 'SKIP_CLUE', playerId: 'alice', clueId: 7 });
+    expect(next.status).toBe('CHOOSE_CLUE');
+    expect(next.burnedClueIds).toContain(7);
+  });
+
+  it('skips regardless of whose turn it is (testing tool, no turn check)', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = { ...state, currentTurnPlayerId: 'alice' };
+    const next = reducer(state, { type: 'SKIP_CLUE', playerId: 'bob', clueId: 3 });
+    expect(next.burnedClueIds).toContain(3);
+    expect(next.currentTurnPlayerId).toBe('alice'); // board skip leaves turn untouched
+  });
+
+  it('skips the active clue when one is up, returning the turn to its picker', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = reducer(state, { type: 'SELECT_CLUE', playerId: 'bob', clue: clue(4) });
+    expect(state.status).toBe('CLUE_READING');
+    // clueId in the action is ignored — the active clue (4) is what gets burned.
+    const next = reducer(state, { type: 'SKIP_CLUE', playerId: 'alice', clueId: 999 });
+    expect(next.status).toBe('CHOOSE_CLUE');
+    expect(next.activeClue).toBeNull();
+    expect(next.burnedClueIds).toContain(4);
+    expect(next.currentTurnPlayerId).toBe('bob');
+  });
+
+  it('is a no-op on an already-burned clue', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = { ...state, burnedClueIds: [2] };
+    const next = reducer(state, { type: 'SKIP_CLUE', playerId: 'alice', clueId: 2 });
+    expect(next).toBe(state); // unchanged reference
+  });
+
+  it('ends the game when the last clue is skipped', () => {
+    let state = createInitialState(['Alice', 'Bob'], 3);
+    state = { ...state, burnedClueIds: [0, 1] };
+    const next = reducer(state, { type: 'SKIP_CLUE', playerId: 'alice', clueId: 2 });
+    expect(next.status).toBe('GAME_OVER');
+  });
+});
+
 describe('BUZZER_OPEN', () => {
   it('opens the buzz window during CLUE_READING', () => {
     let state = createInitialState(['Alice', 'Bob']);

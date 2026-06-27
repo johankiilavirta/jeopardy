@@ -87,6 +87,13 @@ export interface DismissClueAction {
   type: 'DISMISS_CLUE';
 }
 
+/** Host right-clicks a clue to burn it without entering the reading/buzzing flow */
+export interface SkipClueAction {
+  type: 'SKIP_CLUE';
+  playerId: string;
+  clueId: number;
+}
+
 /** A player's input closes. Swipe-down sends the final text in `answer`;
  *  the server's personal-timer fallback omits it (last synced text stands). */
 export interface LockAnswerAction {
@@ -103,4 +110,5 @@ export type Action =
   | TimeoutAction
   | BuzzerOpenAction
   | DismissClueAction
-  | LockAnswerAction;
+  | LockAnswerAction
+  | SkipClueAction;
