@@ -28,11 +28,9 @@ const extra = Constants.expoConfig?.extra as {
   network?: boolean;
   relayHost?: string;
   room?: string;
-  game?: string;
 } | undefined;
 
 const DEV_ROOM = extra?.room ? Number(extra.room) : null;
-const DEV_GAME = extra?.game ? Number(extra.game) : null;
 const DEFAULT_RELAY_HOST = extra?.relayHost ?? 'localhost';
 
 type AppScreen =
@@ -198,7 +196,7 @@ export default function App() {
           const myPeerId = myPeerIdRef.current;
           const me = players.find(p => p.peerId === myPeerId);
           if (players.length >= 2 && me?.isHost) {
-            transport.sendRaw({ type: 'start-game', ...(DEV_GAME ? { gameId: DEV_GAME } : {}) });
+            transport.sendRaw({ type: 'start-game' });
           }
           break;
         }
@@ -210,16 +208,19 @@ export default function App() {
           setScreen({ type: 'game', serverPeerId: msg.serverPeerId as string, roomCode: DEV_ROOM });
           break;
         case 'room-error':
-          setLobbyError(msg.message as string);
+          if (msg.message === 'Room not found') {
+            transport.sendRaw({ type: 'create-room', playerName });
+          } else {
+            setLobbyError(msg.message as string);
+          }
           break;
       }
     });
 
-    // create-or-join the fixed dev room: whichever client the relay sees
-    // first becomes host, the second joins. The host auto-starts at 2 players.
     transport.ready.then((peerId) => {
       myPeerIdRef.current = peerId;
-      transport.sendRaw({ type: 'create-room', roomCode: DEV_ROOM, playerName });
+      transport.sendRaw({ type: 'join-room', roomCode: DEV_ROOM, playerName });
+      setScreen({ type: 'lobby', roomCode: DEV_ROOM, isHost: false });
     });
   }, []);
 

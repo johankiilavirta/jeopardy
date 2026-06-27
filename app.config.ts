@@ -7,7 +7,6 @@ const config: ExpoConfig = {
     network: !!process.env.EXPO_PUBLIC_NETWORK,
     relayHost: process.env.EXPO_PUBLIC_RELAY_HOST ?? 'localhost',
     room: process.env.EXPO_PUBLIC_ROOM,
-    game: process.env.EXPO_PUBLIC_GAME,
   },
 };
 
