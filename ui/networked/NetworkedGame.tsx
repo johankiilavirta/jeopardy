@@ -6,9 +6,8 @@ import type { WebSocketTransport } from '../../src/webSocketTransport';
 import type { Action, GameState, GameStatus } from '../../src/types';
 import { SwipeUpMenu } from '../components/SwipeUpMenu';
 import { demoBoard } from '../fixtures/board';
-import type { BoardDefinition } from '../fixtures/board';
 import { getClueContent } from '../fixtures/clues';
-import { toBoardDefinition, makeClueGetter } from '../../data/gameLoader';
+import { toBoardDefinition, makeClueGetter, getVisibleBoard } from '../../data/gameLoader';
 import type { GameData } from '../../data/gameLoader';
 import { MainMenuScreen } from '../screens/MainMenuScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
@@ -67,20 +66,6 @@ function statusLine(
     default:
       return null;
   }
-}
-
-/** Returns a 5-category visible board from a 6-category full board.
- *  When the first cleared column is found in burnedClueIds, the 6th category
- *  slides in to replace it. */
-function getVisibleBoard(full: BoardDefinition, burnedClueIds: number[]): BoardDefinition {
-  const sixth = full.categories[5];
-  if (!sixth) return { categories: full.categories.slice(0, 5) };
-  const visible = full.categories.slice(0, 5);
-  const clearedIdx = visible.findIndex(cat => cat.clues.every(c => burnedClueIds.includes(c.id)));
-  if (clearedIdx === -1) return { categories: visible };
-  const replaced = [...visible];
-  replaced[clearedIdx] = sixth;
-  return { categories: replaced };
 }
 
 export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange }: NetworkedGameProps) {
