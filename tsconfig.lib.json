@@ -43,5 +43,9 @@
 
     "moduleResolution": "bundler",
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Tests aren't part of the shippable engine and may import app/ui modules
+  // outside this build's rootDir; they're type-checked by tsconfig.json and
+  // run by vitest.
+  "exclude": ["src/__tests__"]
 }

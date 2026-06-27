@@ -6,7 +6,6 @@ import { createServer } from '../src/server.js';
 import { Room, RoomPlayer, RoomServerTransport } from './room.js';
 
 const TOTAL_CLUES_DEMO = 25; // 5×5 fallback board
-const TOTAL_CLUES_REAL = 30; // 6×5 real board
 
 // --- Game data lookup (runs server-side, loads files on demand) ---
 // Assumes the relay is started from the project root (npm run relay).
@@ -311,7 +310,14 @@ function startServer(portIndex: number): void {
 
           const gameId = msg.gameId ? Number(msg.gameId) : null;
           const gameData = gameId ? lookupFullGame(gameId) : null;
-          const totalClues = gameData ? TOTAL_CLUES_REAL : TOTAL_CLUES_DEMO;
+          // Count both rounds so the game spans Jeopardy! + Double Jeopardy!
+          // and ends only when every clue (across both) is burned. Counts
+          // actual clues, so incomplete categories are handled correctly.
+          const countClues = (cats: CategoryData[]): number =>
+            cats.reduce((n, c) => n + c.clues.length, 0);
+          const totalClues = gameData
+            ? countClues(gameData.round1) + countClues(gameData.round2)
+            : TOTAL_CLUES_DEMO;
 
           room.phase = 'playing';
           const serverTransport = new RoomServerTransport(room);

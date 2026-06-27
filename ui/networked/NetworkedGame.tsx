@@ -6,9 +6,8 @@ import type { WebSocketTransport } from '../../src/webSocketTransport';
 import type { Action, GameState, GameStatus } from '../../src/types';
 import { SwipeUpMenu } from '../components/SwipeUpMenu';
 import { demoBoard } from '../fixtures/board';
-import type { BoardDefinition } from '../fixtures/board';
 import { getClueContent } from '../fixtures/clues';
-import { toBoardDefinition, makeClueGetter } from '../../data/gameLoader';
+import { toBoardDefinition, makeClueGetter, getVisibleBoard } from '../../data/gameLoader';
 import type { GameData } from '../../data/gameLoader';
 import { MainMenuScreen } from '../screens/MainMenuScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
@@ -67,20 +66,6 @@ function statusLine(
     default:
       return null;
   }
-}
-
-/** Returns a 5-category visible board from a 6-category full board.
- *  When the first cleared column is found in burnedClueIds, the 6th category
- *  slides in to replace it. */
-function getVisibleBoard(full: BoardDefinition, burnedClueIds: number[]): BoardDefinition {
-  const sixth = full.categories[5];
-  if (!sixth) return { categories: full.categories.slice(0, 5) };
-  const visible = full.categories.slice(0, 5);
-  const clearedIdx = visible.findIndex(cat => cat.clues.every(c => burnedClueIds.includes(c.id)));
-  if (clearedIdx === -1) return { categories: visible };
-  const replaced = [...visible];
-  replaced[clearedIdx] = sixth;
-  return { categories: replaced };
 }
 
 export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange }: NetworkedGameProps) {
@@ -146,7 +131,17 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     ? Object.keys(gameState.players).find(id => id !== playerId) ?? null
     : null;
 
-  const fullBoard = boardData ? toBoardDefinition(boardData) : demoBoard;
+  // Round transition: once every Jeopardy! (round 1) clue is burned, switch
+  // the board to Double Jeopardy! (round 2). Round 2 clue ids live in their
+  // own range, so the two never collide and round 1 stays fully burned.
+  const round1Board = boardData ? toBoardDefinition(boardData, 1) : demoBoard;
+  const round1Ids = round1Board.categories.flatMap(c => c.clues.map(cl => cl.id));
+  const round1Done =
+    round1Ids.length > 0 && round1Ids.every(id => gameState.burnedClueIds.includes(id));
+  const round2Available = !!boardData && boardData.round2.length > 0;
+  const round = round1Done && round2Available ? 2 : 1;
+
+  const fullBoard = boardData ? toBoardDefinition(boardData, round) : demoBoard;
   const getClue = boardData ? makeClueGetter(boardData) : getClueContent;
   const visibleBoard = getVisibleBoard(fullBoard, gameState.burnedClueIds);
 
