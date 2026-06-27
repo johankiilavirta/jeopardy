@@ -10,11 +10,12 @@ interface BoardProps {
   /** True when the local player may not pick (dims the board, blocks touches). */
   locked: boolean;
   onSelectClue?: ((clueId: number) => void) | undefined;
+  onSkipClue?: ((clueId: number) => void) | undefined;
 }
 
 const ROW_COUNT = 5;
 
-export function Board({ board, burnedClueIds, locked, onSelectClue }: BoardProps) {
+export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue }: BoardProps) {
   const burned = new Set(burnedClueIds);
 
   return (
@@ -39,12 +40,12 @@ export function Board({ board, burnedClueIds, locked, onSelectClue }: BoardProps
                 disabled={locked}
                 empty={!clue}
                 onPress={() => clue && onSelectClue?.(clue.id)}
+                onSkip={clue && onSkipClue ? () => onSkipClue(clue.id) : undefined}
               />
             );
           })}
         </View>
       ))}
-
     </View>
   );
 }
@@ -53,7 +54,6 @@ const styles = StyleSheet.create({
   board: {
     flex: 1,
     width: '100%',
-    // Black container + gaps between cells reveal crisp 2px grid lines.
     backgroundColor: colors.grid,
     gap: grid.lineWidth,
   },

@@ -185,6 +185,9 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               clue: getClue(clueId),
             });
           }}
+          onSkipClue={clueId => {
+            dispatch({ type: 'SKIP_CLUE', playerId, clueId });
+          }}
         />
 
         {peerDisconnected && !gameState.activeClue && (
@@ -202,6 +205,9 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               statusText={statusLine(gameState, playerId, countdown, typing ? personalCountdown : null)}
               canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz}
               showKeyboard={typing}
+              onSkip={() => {
+                if (gameState.activeClue) dispatch({ type: 'SKIP_CLUE', playerId, clueId: gameState.activeClue.id });
+              }}
               canJudge={gameState.status === 'REVEAL'}
               onBuzz={() => dispatch({ type: 'BUZZ', playerId })}
               onJudge={correct => {
