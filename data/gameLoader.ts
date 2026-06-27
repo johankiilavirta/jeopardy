@@ -92,6 +92,42 @@ export function getRandomGameNumber(total: number): number {
 }
 
 /**
+ * Reduce a full round board (up to 6 categories) to the 5 columns shown on
+ * screen.
+ *
+ * With 6 categories the 6th backfills the slot of the column that was
+ * *completed first* — anchored there so it never hops as later columns clear.
+ * `burnedClueIds` is append-ordered, so a clue's position is when it was
+ * burned and a column "completes" at the position of its last-burned clue;
+ * the earliest such position is a stable anchor. The incoming category is
+ * marked with a trailing " *". Only this round's own categories are used —
+ * a round never borrows a column from another round.
+ */
+export function getVisibleBoard(full: BoardDefinition, burnedClueIds: number[]): BoardDefinition {
+  const sixth = full.categories[5];
+  const visible = full.categories.slice(0, 5);
+  if (!sixth) return { categories: visible };
+
+  const burnPos = new Map(burnedClueIds.map((id, i) => [id, i] as const));
+  let swapSlot = -1;
+  let earliest = Infinity;
+  for (let col = 0; col < visible.length; col++) {
+    const clues = visible[col]!.clues;
+    if (clues.length === 0 || !clues.every(c => burnPos.has(c.id))) continue;
+    const completedAt = Math.max(...clues.map(c => burnPos.get(c.id)!));
+    if (completedAt < earliest) {
+      earliest = completedAt;
+      swapSlot = col;
+    }
+  }
+  if (swapSlot === -1) return { categories: visible };
+
+  const replaced = [...visible];
+  replaced[swapSlot] = { ...sixth, name: `${sixth.name} *` };
+  return { categories: replaced };
+}
+
+/**
  * Convert a GameData object into the BoardDefinition used by the UI.
  * Clue IDs are laid out column-major: col * 5 + row.
  */
