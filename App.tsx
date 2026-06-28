@@ -72,6 +72,7 @@ export default function App() {
   const [relayHost, setRelayHost] = useState(DEFAULT_RELAY_HOST);
   const [relayPort, setRelayPort] = useState('8787');
   const [gameId, setGameId] = useState('');
+  const [animationsEnabled, setAnimationsEnabled] = useState(true);
   const [lobbyPlayers, setLobbyPlayers] = useState<LobbyPlayer[]>([]);
   const [lobbyError, setLobbyError] = useState<string | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
@@ -316,6 +317,8 @@ export default function App() {
             onRelayPortChange={setRelayPort}
             gameId={gameId}
             onGameIdChange={setGameId}
+            animationsEnabled={animationsEnabled}
+            onAnimationsChange={setAnimationsEnabled}
             error={lobbyError}
           />
         );
@@ -339,6 +342,7 @@ export default function App() {
             onRelayHostChange={setRelayHost}
             relayPortSetting={relayPort}
             onRelayPortChange={setRelayPort}
+            animationsEnabled={animationsEnabled}
           />
         ) : null;
       case 'settings':

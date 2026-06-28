@@ -1,7 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 import type { BoardDefinition } from '../fixtures/board';
 import { colors, grid } from '../theme/tokens';
-import { BoardCell } from './BoardCell';
+import { BoardCell, type CellRect } from './BoardCell';
 import { CategoryCell } from './CategoryCell';
 
 interface BoardProps {
@@ -9,7 +9,7 @@ interface BoardProps {
   burnedClueIds: number[];
   /** True when the local player may not pick (dims the board, blocks touches). */
   locked: boolean;
-  onSelectClue?: ((clueId: number) => void) | undefined;
+  onSelectClue?: ((clueId: number, rect: CellRect) => void) | undefined;
   onSkipClue?: ((clueId: number) => void) | undefined;
 }
 
@@ -39,7 +39,7 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue }
                 burned={clue ? burned.has(clue.id) : false}
                 disabled={locked}
                 empty={!clue}
-                onPress={() => clue && onSelectClue?.(clue.id)}
+                onPress={rect => clue && onSelectClue?.(clue.id, rect)}
                 onSkip={clue && onSkipClue ? () => onSkipClue(clue.id) : undefined}
               />
             );
