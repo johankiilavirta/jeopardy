@@ -238,7 +238,12 @@ function startServer(portIndex: number): void {
 
       switch (msg.type) {
         case 'create-room': {
-          const code = generateRoomCode();
+          // Honor a requested room code when it's free (dev shortcut so a
+          // fixed EXPO_PUBLIC_ROOM is reproducible); otherwise allocate one.
+          const requested = msg.roomCode != null ? Number(msg.roomCode) : null;
+          const code = requested != null && !rooms.has(requested)
+            ? requested
+            : generateRoomCode();
           const room: Room = {
             code,
             hostPeerId: peerId,
@@ -303,7 +308,11 @@ function startServer(portIndex: number): void {
             relaySend(ws, { type: 'room-error', message: 'Only the host can start' });
             return;
           }
-          if (room.players.length < 2) {
+          // Normally a game needs 2 players. RELAY_ALLOW_SOLO (set by the
+          // `npm run solo` dev launcher) lets the host start solo for fast
+          // single-player testing.
+          const minPlayers = process.env.RELAY_ALLOW_SOLO ? 1 : 2;
+          if (room.players.length < minPlayers) {
             relaySend(ws, { type: 'room-error', message: 'Need 2 players to start' });
             return;
           }
