@@ -28,9 +28,17 @@ const extra = Constants.expoConfig?.extra as {
   network?: boolean;
   relayHost?: string;
   room?: string;
+  players?: string;
+  game?: string;
 } | undefined;
 
 const DEV_ROOM = extra?.room ? Number(extra.room) : null;
+// Auto-start once this many players are in the room (default 1 = solo: drop
+// straight into the game). Set EXPO_PUBLIC_PLAYERS=2 and open a second tab for
+// a multiplayer dev session.
+const DEV_PLAYERS = extra?.players ? Math.max(1, Number(extra.players)) : 1;
+// Optional J!Archive game number to load for the dev session.
+const DEV_GAME = extra?.game ? Number(extra.game) : null;
 const DEFAULT_RELAY_HOST = extra?.relayHost ?? 'localhost';
 
 type AppScreen =
@@ -195,8 +203,8 @@ export default function App() {
           const players = msg.players as LobbyPlayer[];
           const myPeerId = myPeerIdRef.current;
           const me = players.find(p => p.peerId === myPeerId);
-          if (players.length >= 2 && me?.isHost) {
-            transport.sendRaw({ type: 'start-game' });
+          if (players.length >= DEV_PLAYERS && me?.isHost) {
+            transport.sendRaw({ type: 'start-game', ...(DEV_GAME ? { gameId: DEV_GAME } : {}) });
           }
           break;
         }
@@ -209,7 +217,9 @@ export default function App() {
           break;
         case 'room-error':
           if (msg.message === 'Room not found') {
-            transport.sendRaw({ type: 'create-room', playerName });
+            // Recreate the room at the same fixed dev code so a second tab
+            // (EXPO_PUBLIC_PLAYERS=2) can deterministically join it.
+            transport.sendRaw({ type: 'create-room', playerName, roomCode: DEV_ROOM });
           } else {
             setLobbyError(msg.message as string);
           }

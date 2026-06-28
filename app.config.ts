@@ -7,6 +7,10 @@ const config: ExpoConfig = {
     network: !!process.env.EXPO_PUBLIC_NETWORK,
     relayHost: process.env.EXPO_PUBLIC_RELAY_HOST ?? 'localhost',
     room: process.env.EXPO_PUBLIC_ROOM,
+    // Dev solo/auto-start: how many players to wait for before auto-starting
+    // (default 1 = drop straight in), and which J!Archive game to load.
+    players: process.env.EXPO_PUBLIC_PLAYERS,
+    game: process.env.EXPO_PUBLIC_GAME,
   },
 };
 
