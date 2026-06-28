@@ -32,14 +32,21 @@ const extra = Constants.expoConfig?.extra as {
   game?: string;
 } | undefined;
 
-const DEV_ROOM = extra?.room ? Number(extra.room) : null;
+// Read EXPO_PUBLIC_* directly: Expo inlines these into the (web) client
+// bundle at build time, whereas Constants.expoConfig.extra only reliably
+// carries them on native. Fall back to extra for native dev.
+const DEV_ROOM_RAW = process.env.EXPO_PUBLIC_ROOM ?? extra?.room;
+const DEV_PLAYERS_RAW = process.env.EXPO_PUBLIC_PLAYERS ?? extra?.players;
+const DEV_GAME_RAW = process.env.EXPO_PUBLIC_GAME ?? extra?.game;
+
+const DEV_ROOM = DEV_ROOM_RAW ? Number(DEV_ROOM_RAW) : null;
 // Auto-start once this many players are in the room (default 1 = solo: drop
 // straight into the game). Set EXPO_PUBLIC_PLAYERS=2 and open a second tab for
 // a multiplayer dev session.
-const DEV_PLAYERS = extra?.players ? Math.max(1, Number(extra.players)) : 1;
+const DEV_PLAYERS = DEV_PLAYERS_RAW ? Math.max(1, Number(DEV_PLAYERS_RAW)) : 1;
 // Optional J!Archive game number to load for the dev session.
-const DEV_GAME = extra?.game ? Number(extra.game) : null;
-const DEFAULT_RELAY_HOST = extra?.relayHost ?? 'localhost';
+const DEV_GAME = DEV_GAME_RAW ? Number(DEV_GAME_RAW) : null;
+const DEFAULT_RELAY_HOST = process.env.EXPO_PUBLIC_RELAY_HOST ?? extra?.relayHost ?? 'localhost';
 
 type AppScreen =
   | { type: 'menu' }
