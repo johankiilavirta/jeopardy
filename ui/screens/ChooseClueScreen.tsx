@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { GameState } from '../../src/types';
 import { Board } from '../components/Board';
+import type { CellRect } from '../components/BoardCell';
 import { PlayerHeader } from '../components/PlayerHeader';
 import type { BoardDefinition } from '../fixtures/board';
 import { colors } from '../theme/tokens';
@@ -11,7 +12,7 @@ interface ChooseClueScreenProps {
   /** Which player this device belongs to. */
   localPlayerId: string;
   board: BoardDefinition;
-  onSelectClue?: ((clueId: number) => void) | undefined;
+  onSelectClue?: ((clueId: number, rect: CellRect) => void) | undefined;
   onSkipClue?: ((clueId: number) => void) | undefined;
   /** Id of a player who has disconnected. */
   disconnectedPlayerId?: string | null;

@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { sendAction } from '../../src/client';
 import { getBuzz, judgedPlayerId } from '../../src/reducer';
 import type { WebSocketTransport } from '../../src/webSocketTransport';
 import type { Action, GameState, GameStatus } from '../../src/types';
+import type { CellRect } from '../components/BoardCell';
+import { ExpandingClueOverlay } from '../components/ExpandingClueOverlay';
 import { SwipeUpMenu } from '../components/SwipeUpMenu';
 import { demoBoard } from '../fixtures/board';
 import { getClueContent } from '../fixtures/clues';
@@ -33,6 +35,8 @@ interface NetworkedGameProps {
   onRelayHostChange?: (host: string) => void;
   relayPortSetting?: string;
   onRelayPortChange?: (port: string) => void;
+  /** Master toggle for in-game animations (set in the lobby). Default on. */
+  animationsEnabled?: boolean;
 }
 
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
@@ -68,7 +72,7 @@ function statusLine(
   }
 }
 
-export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange }: NetworkedGameProps) {
+export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true }: NetworkedGameProps) {
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
@@ -76,6 +80,10 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const playerId = initialState?.playerId ?? null;
   const [countdown, setCountdown] = useState<number | null>(null);
   const [personalCountdown, setPersonalCountdown] = useState<number | null>(null);
+  // Window rect of the cell this device last tapped, so the clue card can grow
+  // out of it. Only set for clues *we* picked — a clue another player selects
+  // arrives with no rect and simply appears full-screen.
+  const selectedCellRef = useRef<{ clueId: number; rect: CellRect } | null>(null);
 
   const dispatch = (action: Action) => {
     sendAction(transport, serverPeerId, action as unknown as Record<string, unknown>);
@@ -173,7 +181,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           localPlayerId={playerId}
           board={visibleBoard}
           disconnectedPlayerId={disconnectedPlayerId}
-          onSelectClue={clueId => {
+          onSelectClue={(clueId, rect) => {
+            selectedCellRef.current = { clueId, rect };
             dispatch({
               type: 'SELECT_CLUE',
               playerId,
@@ -194,7 +203,15 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         )}
 
         {gameState.activeClue && (
-          <View style={StyleSheet.absoluteFill}>
+          <ExpandingClueOverlay
+            key={gameState.activeClue.id}
+            animate={animationsEnabled}
+            fromRect={
+              selectedCellRef.current?.clueId === gameState.activeClue.id
+                ? selectedCellRef.current.rect
+                : null
+            }
+          >
             <ClueScreen
               clue={gameState.activeClue}
               statusText={statusLine(gameState, playerId, countdown, typing ? personalCountdown : null)}
@@ -221,7 +238,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                   : undefined
               }
             />
-          </View>
+          </ExpandingClueOverlay>
         )}
       </View>
     </SwipeUpMenu>

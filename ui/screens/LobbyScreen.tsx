@@ -34,6 +34,9 @@ interface LobbyScreenProps {
   onRelayPortChange?: (port: string) => void;
   gameId?: string;
   onGameIdChange?: (id: string) => void;
+  /** Master toggle for in-game animations (default on). */
+  animationsEnabled?: boolean;
+  onAnimationsChange?: (enabled: boolean) => void;
   error?: string | null;
 }
 
@@ -170,6 +173,25 @@ export function LobbyScreen(props: LobbyScreenProps) {
 
             {showAdvanced && (
               <View style={styles.advancedSection}>
+                <Pressable
+                  style={styles.checkboxRow}
+                  onPress={() =>
+                    props.onAnimationsChange?.(!(props.animationsEnabled ?? true))
+                  }
+                >
+                  <View
+                    style={[
+                      styles.checkbox,
+                      (props.animationsEnabled ?? true) && styles.checkboxChecked,
+                    ]}
+                  >
+                    {(props.animationsEnabled ?? true) && (
+                      <Text style={styles.checkboxTick}>✓</Text>
+                    )}
+                  </View>
+                  <Text style={styles.checkboxLabel}>Animations</Text>
+                </Pressable>
+
                 <Text style={styles.label}>Game #</Text>
                 <TextInput
                   style={styles.input}
@@ -367,6 +389,36 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 280,
     marginBottom: 16,
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: colors.cell,
+    borderColor: colors.gold,
+  },
+  checkboxTick: {
+    fontFamily: typeTokens.ui700,
+    fontSize: 14,
+    color: colors.gold,
+    lineHeight: 18,
+  },
+  checkboxLabel: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 15,
+    color: '#ddd',
   },
   label: {
     fontFamily: typeTokens.ui500,

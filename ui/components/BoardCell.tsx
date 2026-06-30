@@ -2,13 +2,22 @@ import { useEffect, useRef } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { burnedValueOpacity, colors, radius, shadow, type as typeTokens } from '../theme/tokens';
 
+/** A cell's on-screen rectangle in window coords (for the expand animation). */
+export interface CellRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface BoardCellProps {
   value: number;
   /** Already-played clue: dead-navy fill, ghosted value, not pressable. */
   burned: boolean;
   /** Disables presses (e.g. when it is not the local player's turn). */
   disabled: boolean;
-  onPress: () => void;
+  /** Receives this cell's window rect so the clue can expand out of it. */
+  onPress: (rect: CellRect) => void;
   /** No clue exists for this position — renders an empty grid-colored slot. */
   empty?: boolean;
   /** Web: right-click (contextmenu) burns this clue without playing it. */
@@ -33,6 +42,19 @@ export function BoardCell({ value, burned, disabled, onPress, empty, onSkip }: B
     return () => node.removeEventListener('contextmenu', handler);
   }, [onSkip, burned, empty]);
 
+  // Measure this cell's window rect at press time so the clue card can grow
+  // out of exactly where it sits on the grid. measureInWindow is async; if it
+  // isn't available (or returns nothing), fall back to a zero rect, which the
+  // overlay treats as "no animation".
+  const handlePress = () => {
+    const node = wrapRef.current;
+    if (node && typeof node.measureInWindow === 'function') {
+      node.measureInWindow((x, y, width, height) => onPress({ x, y, width, height }));
+    } else {
+      onPress({ x: 0, y: 0, width: 0, height: 0 });
+    }
+  };
+
   return (
     <View ref={wrapRef} style={styles.cellWrap}>
       <Pressable
@@ -42,7 +64,7 @@ export function BoardCell({ value, burned, disabled, onPress, empty, onSkip }: B
           burned && !empty && styles.cellBurned,
           pressed && !burned && !disabled && !empty && styles.cellPressed,
         ]}
-        onPress={onPress}
+        onPress={handlePress}
         disabled={burned || disabled || empty}
       >
         {!empty && (
