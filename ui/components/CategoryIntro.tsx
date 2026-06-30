@@ -29,8 +29,9 @@ interface CategoryIntroProps {
  * Round-intro fly-by: the category title cards scroll past horizontally, one
  * at a time, like the show reading out the categories. The cards sit edge to
  * edge on a single strip and we translate the strip left by one screen width
- * per step (a constant-speed "push"). Tap anywhere to skip straight to the
- * board. Mount this keyed by round so each round replays its own intro.
+ * per step (a constant-speed "push"). After the last card it fades out to
+ * reveal the board behind. Tap anywhere to drop the intro instantly. Mount
+ * this keyed by round so each round replays its own intro.
  */
 export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
   const tx = useRef(new Animated.Value(0)).current;
@@ -44,16 +45,6 @@ export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
     doneRef.current = true;
     onDone();
   }, [onDone]);
-
-  // Skip (tap) — fade the overlay out rather than vanishing instantly.
-  const skip = useCallback(() => {
-    if (doneRef.current) return;
-    Animated.timing(opacity, {
-      toValue: 0,
-      duration: FADE_MS,
-      useNativeDriver: true,
-    }).start(finish);
-  }, [opacity, finish]);
 
   const begin = useCallback(
     (e: LayoutChangeEvent) => {
@@ -99,7 +90,7 @@ export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
 
   return (
     <Animated.View style={[styles.fill, { opacity }]}>
-      <Pressable style={styles.fill} onPress={skip} onLayout={begin}>
+      <Pressable style={styles.fill} onPress={finish} onLayout={begin}>
         {size && (
           <Animated.View
             style={[
