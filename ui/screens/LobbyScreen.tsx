@@ -167,32 +167,30 @@ export function LobbyScreen(props: LobbyScreenProps) {
               onPress={() => setShowAdvanced(!showAdvanced)}
             >
               <Text style={styles.advancedToggleText}>
-                {showAdvanced ? '▾ Advanced' : '▸ Advanced'}
+                {showAdvanced ? '▾ Game Settings' : '▸ Game Settings'}
               </Text>
             </Pressable>
 
             {showAdvanced && (
               <View style={styles.advancedSection}>
+                <Text style={styles.label}>Animations</Text>
                 <Pressable
-                  style={styles.checkboxRow}
+                  style={styles.toggleBox}
                   onPress={() =>
                     props.onAnimationsChange?.(!(props.animationsEnabled ?? true))
                   }
                 >
-                  <View
+                  <Text
                     style={[
-                      styles.checkbox,
-                      (props.animationsEnabled ?? true) && styles.checkboxChecked,
+                      styles.toggleText,
+                      !(props.animationsEnabled ?? true) && styles.toggleTextOff,
                     ]}
                   >
-                    {(props.animationsEnabled ?? true) && (
-                      <Text style={styles.checkboxTick}>✓</Text>
-                    )}
-                  </View>
-                  <Text style={styles.checkboxLabel}>Animations</Text>
+                    {(props.animationsEnabled ?? true) ? 'On' : 'Off'}
+                  </Text>
                 </Pressable>
 
-                <Text style={styles.label}>Game #</Text>
+                <Text style={[styles.label, styles.stackedLabel]}>Game #</Text>
                 <TextInput
                   style={styles.input}
                   value={props.gameId ?? ''}
@@ -390,35 +388,22 @@ const styles = StyleSheet.create({
     maxWidth: 280,
     marginBottom: 16,
   },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 16,
+  stackedLabel: {
+    marginTop: 16,
   },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 4,
+  toggleBox: {
     borderWidth: 1,
     borderColor: '#444',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 6,
+    padding: 10,
   },
-  checkboxChecked: {
-    backgroundColor: colors.cell,
-    borderColor: colors.gold,
-  },
-  checkboxTick: {
-    fontFamily: typeTokens.ui700,
-    fontSize: 14,
-    color: colors.gold,
-    lineHeight: 18,
-  },
-  checkboxLabel: {
+  toggleText: {
     fontFamily: typeTokens.ui500,
-    fontSize: 15,
-    color: '#ddd',
+    fontSize: 16,
+    color: '#fff',
+  },
+  toggleTextOff: {
+    color: '#666',
   },
   label: {
     fontFamily: typeTokens.ui500,

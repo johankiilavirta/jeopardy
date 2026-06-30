@@ -5,12 +5,13 @@ import { getBuzz, judgedPlayerId } from '../../src/reducer';
 import type { WebSocketTransport } from '../../src/webSocketTransport';
 import type { Action, GameState, GameStatus } from '../../src/types';
 import type { CellRect } from '../components/BoardCell';
+import { CategoryIntro } from '../components/CategoryIntro';
 import { ExpandingClueOverlay } from '../components/ExpandingClueOverlay';
 import { SwipeUpMenu } from '../components/SwipeUpMenu';
 import { demoBoard } from '../fixtures/board';
 import { getClueContent } from '../fixtures/clues';
 import { toBoardDefinition, makeClueGetter, getVisibleBoard } from '../../data/gameLoader';
-import type { GameData } from '../../data/gameLoader';
+import type { GameData, RoundNumber } from '../../data/gameLoader';
 import { MainMenuScreen } from '../screens/MainMenuScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { ChooseClueScreen } from '../screens/ChooseClueScreen';
@@ -84,6 +85,11 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // out of it. Only set for clues *we* picked — a clue another player selects
   // arrives with no rect and simply appears full-screen.
   const selectedCellRef = useRef<{ clueId: number; rect: CellRect } | null>(null);
+  // Category fly-by: each round plays its intro once, before the board is
+  // usable. We track which rounds have already shown theirs so the intro never
+  // replays (e.g. on a reconnect / state update).
+  const introShownRef = useRef<Set<number>>(new Set());
+  const [introRound, setIntroRound] = useState<number | null>(null);
 
   const dispatch = (action: Action) => {
     sendAction(transport, serverPeerId, action as unknown as Record<string, unknown>);
@@ -125,6 +131,20 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     return () => clearInterval(tick);
   }, [typing]);
 
+  // Detect the start of each round and queue its category fly-by. Mirrors the
+  // round derivation below: round 1 at game start, round 2 once every round-1
+  // clue is burned. Gated by the animations toggle.
+  useEffect(() => {
+    if (!animationsEnabled || !gameState || !boardData) return;
+    const r1 = toBoardDefinition(boardData, 1);
+    const r1Ids = r1.categories.flatMap(c => c.clues.map(cl => cl.id));
+    const r1Done = r1Ids.length > 0 && r1Ids.every(id => gameState.burnedClueIds.includes(id));
+    const r = r1Done && boardData.round2.length > 0 ? 2 : 1;
+    if (introShownRef.current.has(r)) return;
+    introShownRef.current.add(r);
+    setIntroRound(r);
+  }, [animationsEnabled, gameState, boardData]);
+
   if (!gameState || !playerId) {
     return (
       <View style={styles.connecting}>
@@ -152,6 +172,15 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const fullBoard = boardData ? toBoardDefinition(boardData, round) : demoBoard;
   const getClue = boardData ? makeClueGetter(boardData) : getClueContent;
   const visibleBoard = getVisibleBoard(fullBoard, gameState.burnedClueIds);
+
+  // Names for the fly-by: all categories of the queued round, with the 6th
+  // (backfilled, non-displayed-at-start) category marked with a trailing " *".
+  const introBoard =
+    introRound != null && boardData
+      ? toBoardDefinition(boardData, introRound as RoundNumber)
+      : null;
+  const introCategories =
+    introBoard?.categories.map((c, i) => (i === 5 ? `${c.name} *` : c.name)) ?? null;
 
   return (
     <SwipeUpMenu
@@ -239,6 +268,14 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               }
             />
           </ExpandingClueOverlay>
+        )}
+
+        {introRound != null && introCategories && !gameState.activeClue && (
+          <CategoryIntro
+            key={introRound}
+            categories={introCategories}
+            onDone={() => setIntroRound(null)}
+          />
         )}
       </View>
     </SwipeUpMenu>
