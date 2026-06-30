@@ -14,6 +14,8 @@ import { colors, shadow, type as typeTokens } from '../theme/tokens';
 const HOLD_MS = 966;
 /** Duration of the horizontal push between two cards. */
 const SLIDE_MS = 254;
+/** Fade of the whole overlay after the last card, revealing the board behind. */
+const FADE_MS = 300;
 
 interface CategoryIntroProps {
   /** Category names in board order. The 6th (backfilled) category should
@@ -32,6 +34,7 @@ interface CategoryIntroProps {
  */
 export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
   const tx = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(1)).current;
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const startedRef = useRef(false);
   const doneRef = useRef(false);
@@ -42,6 +45,16 @@ export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
     onDone();
   }, [onDone]);
 
+  // Skip (tap) — fade the overlay out rather than vanishing instantly.
+  const skip = useCallback(() => {
+    if (doneRef.current) return;
+    Animated.timing(opacity, {
+      toValue: 0,
+      duration: FADE_MS,
+      useNativeDriver: true,
+    }).start(finish);
+  }, [opacity, finish]);
+
   const begin = useCallback(
     (e: LayoutChangeEvent) => {
       const { width: w, height: h } = e.nativeEvent.layout;
@@ -50,11 +63,8 @@ export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
       setSize({ w, h });
 
       const n = categories.length;
-      if (n <= 1) {
-        setTimeout(finish, n === 0 ? 0 : HOLD_MS);
-        return;
-      }
-      // Hold on each card, then push to the next; hold on the last, then done.
+      // Hold on each card, then push to the next; on the last card, hold and
+      // then fade the whole overlay out to reveal the board already behind it.
       const steps: Animated.CompositeAnimation[] = [];
       for (let i = 0; i < n; i++) {
         steps.push(Animated.delay(HOLD_MS));
@@ -69,11 +79,18 @@ export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
           );
         }
       }
+      steps.push(
+        Animated.timing(opacity, {
+          toValue: 0,
+          duration: FADE_MS,
+          useNativeDriver: true,
+        }),
+      );
       Animated.sequence(steps).start(({ finished }) => {
         if (finished) finish();
       });
     },
-    [categories.length, finish, tx],
+    [categories.length, finish, tx, opacity],
   );
 
   // Dark frame around the blue card, matching the broadcast proportions:
@@ -81,26 +98,28 @@ export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
   const pad = size ? { paddingHorizontal: size.w * 0.07, paddingVertical: size.h * 0.12 } : null;
 
   return (
-    <Pressable style={styles.fill} onPress={finish} onLayout={begin}>
-      {size && (
-        <Animated.View
-          style={[
-            styles.strip,
-            { width: size.w * categories.length, transform: [{ translateX: tx }] },
-          ]}
-        >
-          {categories.map((name, i) => (
-            <View key={i} style={[styles.slot, { width: size.w }, pad]}>
-              <View style={styles.card}>
-                <Text style={styles.categoryText} adjustsFontSizeToFit numberOfLines={4}>
-                  {name.toUpperCase()}
-                </Text>
+    <Animated.View style={[styles.fill, { opacity }]}>
+      <Pressable style={styles.fill} onPress={skip} onLayout={begin}>
+        {size && (
+          <Animated.View
+            style={[
+              styles.strip,
+              { width: size.w * categories.length, transform: [{ translateX: tx }] },
+            ]}
+          >
+            {categories.map((name, i) => (
+              <View key={i} style={[styles.slot, { width: size.w }, pad]}>
+                <View style={styles.card}>
+                  <Text style={styles.categoryText} adjustsFontSizeToFit numberOfLines={4}>
+                    {name.toUpperCase()}
+                  </Text>
+                </View>
               </View>
-            </View>
-          ))}
-        </Animated.View>
-      )}
-    </Pressable>
+            ))}
+          </Animated.View>
+        )}
+      </Pressable>
+    </Animated.View>
   );
 }
 
