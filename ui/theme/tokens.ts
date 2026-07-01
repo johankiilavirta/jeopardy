@@ -9,12 +9,14 @@
 export const colors = {
   /** Near-black app background */
   bg: '#0D0D0D',
-  /** Deep broadcast blue cell fill */
-  cell: '#0022B3',
+  /** Deep broadcast blue cell fill (rgb 2,2,154) */
+  cell: '#02029A',
   /** Dead-navy fill for burned (already-played) cells */
   cellBurned: '#0A102E',
   /** Classic gold for dollar values */
   gold: '#E5B20D',
+  /** Warmer tan-gold of the broadcast board numbers (rgb 218,157,92) */
+  boardValue: '#DA9D5C',
   /** Brighter gold (pressed/highlight accents) */
   goldBright: '#FFCC00',
   /** Grid line color between cells */
