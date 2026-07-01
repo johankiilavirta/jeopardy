@@ -30,6 +30,10 @@ const VALUE_FILL = 0.9;
 
 export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue }: BoardProps) {
   const burned = new Set(burnedClueIds);
+  // Value tiers are positional: row R is worth (R+1)×base, where base is 200
+  // (Jeopardy!) or 400 (Double Jeopardy!). Any real clue reveals the base, so
+  // a missing clue can still show its tier's dollar value in its dead cell.
+  const baseValue = board.categories.find(c => c.clues.length > 0)?.clues[0]?.value ?? 200;
   const [boardSize, setBoardSize] = useState<{ w: number; h: number } | null>(null);
   // Natural size of "$1000" at PROBE_FONT (no transform); width scales linearly
   // with font size, so one measurement gives us the exact fit for every cell.
@@ -87,7 +91,7 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue }
             return (
               <BoardCell
                 key={clue?.id ?? `empty-${col}-${row}`}
-                value={clue?.value ?? 0}
+                value={clue?.value ?? (row + 1) * baseValue}
                 valueFontSize={valueFontSize}
                 burned={clue ? burned.has(clue.id) : false}
                 disabled={locked}
