@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { AutoFitText } from './AutoFitText';
 import { colors, radius, type as typeTokens } from '../theme/tokens';
 
 interface CategoryCellProps {
@@ -8,14 +9,9 @@ interface CategoryCellProps {
 export function CategoryCell({ name }: CategoryCellProps) {
   return (
     <View style={styles.cell}>
-      <Text
-        style={styles.text}
-        numberOfLines={3}
-        adjustsFontSizeToFit
-        allowFontScaling={false}
-      >
+      <AutoFitText style={styles.text} maxLines={3} min={8} max={44} widthScale={0.85}>
         {name.toUpperCase()}
-      </Text>
+      </AutoFitText>
     </View>
   );
 }
@@ -32,7 +28,6 @@ const styles = StyleSheet.create({
   },
   text: {
     fontFamily: typeTokens.board,
-    fontSize: 17,
     color: colors.categoryText,
     textAlign: 'center',
     transform: [{ scaleX: 0.85 }],
