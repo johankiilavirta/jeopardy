@@ -24,7 +24,8 @@ interface BoardCellProps {
   disabled: boolean;
   /** Receives this cell's window rect so the clue can expand out of it. */
   onPress: (rect: CellRect) => void;
-  /** No clue exists for this position — renders an empty grid-colored slot. */
+  /** No clue exists for this position — renders like a played/dead cell rather
+   *  than a distracting gray slot. */
   empty?: boolean;
   /** Web: right-click (contextmenu) burns this clue without playing it. */
   onSkip?: (() => void) | undefined;
@@ -61,52 +62,54 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
     }
   };
 
+  // A missing clue is dead in exactly the same way as a burned one: dead-navy
+  // fill, ghosted value, not pressable. Only the reason differs (no content
+  // vs. already played), so they share the burned styling and keep the value.
+  const dead = burned || empty;
+
   return (
     <View ref={wrapRef} style={styles.cellWrap}>
       <Pressable
         style={({ pressed }) => [
           styles.cell,
-          empty && styles.cellEmpty,
-          burned && !empty && styles.cellBurned,
-          pressed && !burned && !disabled && !empty && styles.cellPressed,
+          dead && styles.cellBurned,
+          pressed && !dead && !disabled && styles.cellPressed,
         ]}
         onPress={handlePress}
-        disabled={burned || disabled || empty}
+        disabled={dead || disabled}
       >
-        {!empty && (
-          // The "$" is its own element so we can give it the broadcast spacing
-          // (a clear gap before the digits) instead of the cramped "$800" the
-          // font produces as one string.
-          <View style={styles.valueRow}>
-            <Text
-              style={[
-                styles.dollar,
-                valueFontSize != null && {
-                  fontSize: valueFontSize,
-                  marginRight: valueFontSize * DOLLAR_GAP,
-                },
-                burned && styles.valueBurned,
-              ]}
-              numberOfLines={1}
-              adjustsFontSizeToFit={valueFontSize == null}
-              allowFontScaling={false}
-            >
-              $
-            </Text>
-            <Text
-              style={[
-                styles.value,
-                valueFontSize != null && { fontSize: valueFontSize },
-                burned && styles.valueBurned,
-              ]}
-              numberOfLines={1}
-              adjustsFontSizeToFit={valueFontSize == null}
-              allowFontScaling={false}
-            >
-              {value}
-            </Text>
-          </View>
-        )}
+        {/* The "$" is its own element so we can give it the broadcast spacing
+            (a clear gap before the digits) instead of the cramped "$800" the
+            font produces as one string. */}
+        <View style={styles.valueRow}>
+          <Text
+            style={[
+              styles.dollar,
+              valueFontSize != null && {
+                fontSize: valueFontSize,
+                marginRight: valueFontSize * DOLLAR_GAP,
+              },
+              dead && styles.valueBurned,
+            ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit={valueFontSize == null}
+            allowFontScaling={false}
+          >
+            $
+          </Text>
+          <Text
+            style={[
+              styles.value,
+              valueFontSize != null && { fontSize: valueFontSize },
+              dead && styles.valueBurned,
+            ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit={valueFontSize == null}
+            allowFontScaling={false}
+          >
+            {value}
+          </Text>
+        </View>
       </Pressable>
     </View>
   );
@@ -123,9 +126,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
-  },
-  cellEmpty: {
-    backgroundColor: '#1C1C1C',
   },
   cellBurned: {
     backgroundColor: colors.cellBurned,
