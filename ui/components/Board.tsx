@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { BoardDefinition } from '../fixtures/board';
 import { colors, grid, type as typeTokens } from '../theme/tokens';
@@ -8,44 +8,78 @@ import { CategoryCell } from './CategoryCell';
 interface BoardProps {
   board: BoardDefinition;
   burnedClueIds: number[];
-  /** True when the local player may not pick (dims the board, blocks touches). */
   locked: boolean;
   onSelectClue?: ((clueId: number, rect: CellRect) => void) | undefined;
   onSkipClue?: ((clueId: number) => void) | undefined;
+  /**
+   * Increments to 1 the first time Double Jeopardy starts, triggering the
+   * board-intro flash sequence. 0 (default) = no animation.
+   */
+  boardAnimKey?: number | undefined;
 }
 
 const ROW_COUNT = 5;
 const COL_COUNT = 6;
-/** Rows are 1 category row (flex 1.25) + 5 value rows (flex 1). */
 const ROW_FLEX_TOTAL = 1.25 + ROW_COUNT;
-
-// Uniform value sizing. Every dollar value renders at the *same* font size —
-// computed from the widest value ("$1000") so it fits any cell — rather than
-// each cell auto-shrinking on its own (which made "$1000" smaller than "$200").
-const PROBE_FONT = 100; // reference size the hidden "$1000" probe is measured at
-const VALUE_SCALE_X = 0.85; // must match BoardCell's value transform
-const CELL_PAD_X = 4; // must match BoardCell's cell paddingHorizontal
-/** Fraction of the binding cell dimension the value text fills. */
+const PROBE_FONT = 100;
+const VALUE_SCALE_X = 0.85;
+const CELL_PAD_X = 4;
 const VALUE_FILL = 0.9;
 
-export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue }: BoardProps) {
+/** Number of distinct flash waves across the board. */
+const WAVES = 6;
+/** Ms between each wave. */
+const WAVE_MS = 455;
+/** Pause before the first wave so the board is visibly dark for a beat. */
+const WAVE_OFFSET = 350;
+/** Categories flash on after all waves have fired. */
+const CAT_FLASH_DELAY = WAVE_OFFSET + WAVES * WAVE_MS + 200;
+
+export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boardAnimKey = 0 }: BoardProps) {
   const burned = new Set(burnedClueIds);
-  // Value tiers are positional: row R is worth (R+1)×base, where base is 200
-  // (Jeopardy!) or 400 (Double Jeopardy!). Any real clue reveals the base, so
-  // a missing clue can still show its tier's dollar value in its dead cell.
   const baseValue = board.categories.find(c => c.clues.length > 0)?.clues[0]?.value ?? 200;
   const [boardSize, setBoardSize] = useState<{ w: number; h: number } | null>(null);
-  // Natural size of "$1000" at PROBE_FONT (no transform); width scales linearly
-  // with font size, so one measurement gives us the exact fit for every cell.
   const [probe, setProbe] = useState<{ w: number; h: number } | null>(null);
+
+  // Assign all 30 cells to 6 waves (5 cells each) with the constraint that each
+  // wave contains at most one cell per column and one cell per row.
+  // Construction: wave w, row r → column (r + w) % COL_COUNT. This is a cyclic
+  // Latin rectangle — each wave gets one cell from every row and 5 of 6 columns.
+  // Random permutations on rows, columns, and wave-firing order make each game
+  // look different while preserving the constraint exactly (no remainder).
+  const cellDelays = useMemo<number[] | null>(() => {
+    if (!boardAnimKey) return null;
+
+    function shuffle(n: number): number[] {
+      const a = Array.from({ length: n }, (_, i) => i);
+      for (let i = n - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const tmp = a[i]!; a[i] = a[j]!; a[j] = tmp;
+      }
+      return a;
+    }
+
+    const colPerm = shuffle(COL_COUNT); // randomise which physical col = logical col
+    const rowPerm = shuffle(ROW_COUNT); // randomise which physical row = logical row
+    const waveStep = shuffle(WAVES);    // randomise which step each wave fires at
+
+    const delays = new Array<number>(COL_COUNT * ROW_COUNT);
+    for (let w = 0; w < WAVES; w++) {
+      for (let r = 0; r < ROW_COUNT; r++) {
+        const physCol = colPerm[(r + w) % COL_COUNT]!;
+        const physRow = rowPerm[r]!;
+        delays[physCol * ROW_COUNT + physRow] = WAVE_OFFSET + waveStep[w]! * WAVE_MS;
+      }
+    }
+    return delays;
+  }, [boardAnimKey]);
 
   let valueFontSize: number | undefined;
   if (boardSize && probe && probe.w > 0 && probe.h > 0) {
     const cellW = (boardSize.w - (COL_COUNT - 1) * grid.lineWidth) / COL_COUNT;
     const innerW = cellW - 2 * CELL_PAD_X;
-    const rowsAreaH = boardSize.h - ROW_COUNT * grid.lineWidth; // 6 rows → 5 gaps
+    const rowsAreaH = boardSize.h - ROW_COUNT * grid.lineWidth;
     const valueRowH = rowsAreaH / ROW_FLEX_TOTAL;
-    // Account for the scaleX squeeze when fitting width; height is raw.
     const fByWidth = (PROBE_FONT * innerW) / (probe.w * VALUE_SCALE_X);
     const fByHeight = (PROBE_FONT * valueRowH) / probe.h;
     valueFontSize = Math.max(8, Math.min(fByWidth, fByHeight) * VALUE_FILL);
@@ -61,7 +95,6 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue }
         );
       }}
     >
-      {/* Hidden probe: the widest value, measured once at a reference font size. */}
       <Text
         style={styles.probe}
         numberOfLines={1}
@@ -76,18 +109,22 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue }
         $1000
       </Text>
 
-      {/* Category header row */}
       <View style={styles.categoryRow}>
         {board.categories.map(category => (
-          <CategoryCell key={category.name} name={category.name} />
+          <CategoryCell
+            key={category.name}
+            name={category.name}
+            flashDelay={cellDelays ? CAT_FLASH_DELAY : undefined}
+          />
         ))}
       </View>
 
-      {/* Value rows */}
       {Array.from({ length: ROW_COUNT }, (_, row) => (
         <View key={row} style={styles.row}>
           {board.categories.map((category, col) => {
             const clue = category.clues[row];
+            const dead = clue ? burned.has(clue.id) : true;
+            const cellIdx = col * ROW_COUNT + row;
             return (
               <BoardCell
                 key={clue?.id ?? `empty-${col}-${row}`}
@@ -98,6 +135,7 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue }
                 empty={!clue}
                 onPress={rect => clue && onSelectClue?.(clue.id, rect)}
                 onSkip={clue && onSkipClue ? () => onSkipClue(clue.id) : undefined}
+                flashDelay={cellDelays && !dead ? cellDelays[cellIdx] : undefined}
               />
             );
           })}
@@ -124,9 +162,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: grid.lineWidth,
   },
-  // Off-flow, invisible — only here to be measured. Mirrors the value text's
-  // font and letterSpacing (the scaleX transform doesn't affect layout width,
-  // so it's left off and accounted for in the math instead).
   probe: {
     position: 'absolute',
     opacity: 0,

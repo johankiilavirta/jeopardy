@@ -1,11 +1,9 @@
-import { useEffect, useRef } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { burnedValueOpacity, colors, radius, shadow, type as typeTokens } from '../theme/tokens';
 
-/** Gap between the "$" and the digits, as a fraction of the value font size. */
 const DOLLAR_GAP = 0.06;
 
-/** A cell's on-screen rectangle in window coords (for the expand animation). */
 export interface CellRect {
   x: number;
   y: number;
@@ -15,44 +13,46 @@ export interface CellRect {
 
 interface BoardCellProps {
   value: number;
-  /** Uniform value font size for the whole board (so every value matches). When
-   *  omitted (pre-measure), the value falls back to self-fitting. */
   valueFontSize?: number | undefined;
-  /** Already-played clue: dead-navy fill, ghosted value, not pressable. */
   burned: boolean;
-  /** Disables presses (e.g. when it is not the local player's turn). */
   disabled: boolean;
-  /** Receives this cell's window rect so the clue can expand out of it. */
   onPress: (rect: CellRect) => void;
-  /** No clue exists for this position — renders like a played/dead cell rather
-   *  than a distracting gray slot. */
   empty?: boolean;
-  /** Web: right-click (contextmenu) burns this clue without playing it. */
   onSkip?: (() => void) | undefined;
+  /**
+   * Board-intro flash delay in ms. When set the cell starts dark and snaps on
+   * after this many ms with a quick CRT-strike flash. Only passed for fresh
+   * (non-dead) cells on the DJ board intro.
+   */
+  flashDelay?: number | undefined;
 }
 
-export function BoardCell({ value, valueFontSize, burned, disabled, onPress, empty, onSkip }: BoardCellProps) {
+export function BoardCell({ value, valueFontSize, burned, disabled, onPress, empty, onSkip, flashDelay }: BoardCellProps) {
   const wrapRef = useRef<View>(null);
+  const dead = burned || empty;
 
-  // Web only: attach a native contextmenu (right-click) listener directly to
-  // this cell's DOM node. The handler closes over onSkip, so there's no need
-  // to stamp/parse any id — right-clicking the cell burns exactly this clue.
+  const inFlashMode = flashDelay != null && !dead;
+  // 0 = dark/off, 1 = lit normal blue
+  const flashAnim = useRef(new Animated.Value(0)).current;
+  const [animDone, setAnimDone] = useState(false);
+
+  useEffect(() => {
+    if (!inFlashMode) return;
+    const t = setTimeout(() => {
+      Animated.timing(flashAnim, { toValue: 1, duration: 40, useNativeDriver: false }).start(() => setAnimDone(true));
+    }, flashDelay!);
+    return () => clearTimeout(t);
+  }, []); // mount-only — delay captured at birth
+
   useEffect(() => {
     if (Platform.OS !== 'web' || !onSkip || burned || empty) return;
     const node = wrapRef.current as unknown as HTMLElement | null;
     if (!node || typeof node.addEventListener !== 'function') return;
-    const handler = (e: Event) => {
-      e.preventDefault();
-      onSkip();
-    };
+    const handler = (e: Event) => { e.preventDefault(); onSkip(); };
     node.addEventListener('contextmenu', handler);
     return () => node.removeEventListener('contextmenu', handler);
   }, [onSkip, burned, empty]);
 
-  // Measure this cell's window rect at press time so the clue card can grow
-  // out of exactly where it sits on the grid. measureInWindow is async; if it
-  // isn't available (or returns nothing), fall back to a zero rect, which the
-  // overlay treats as "no animation".
   const handlePress = () => {
     const node = wrapRef.current;
     if (node && typeof node.measureInWindow === 'function') {
@@ -62,10 +62,39 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
     }
   };
 
-  // A missing clue is dead in exactly the same way as a burned one: dead-navy
-  // fill, ghosted value, not pressable. Only the reason differs (no content
-  // vs. already played), so they share the burned styling and keep the value.
-  const dead = burned || empty;
+  if (inFlashMode && !animDone) {
+    const bgColor = flashAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [colors.cellBurned, colors.cell],
+      extrapolate: 'clamp',
+    });
+    const textOpacity = flashAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [burnedValueOpacity, 1],
+      extrapolate: 'clamp',
+    });
+
+    return (
+      <View ref={wrapRef} style={styles.cellWrap}>
+        <Animated.View style={[styles.cell, { backgroundColor: bgColor }]}>
+          <Pressable style={styles.pressableInner} onPress={handlePress} disabled={disabled}>
+            <Animated.View style={[styles.valueRow, { opacity: textOpacity }]}>
+              <Text
+                style={[styles.dollar, valueFontSize != null && { fontSize: valueFontSize, marginRight: valueFontSize * DOLLAR_GAP }]}
+                numberOfLines={1}
+                allowFontScaling={false}
+              >$</Text>
+              <Text
+                style={[styles.value, valueFontSize != null && { fontSize: valueFontSize }]}
+                numberOfLines={1}
+                allowFontScaling={false}
+              >{value}</Text>
+            </Animated.View>
+          </Pressable>
+        </Animated.View>
+      </View>
+    );
+  }
 
   return (
     <View ref={wrapRef} style={styles.cellWrap}>
@@ -78,25 +107,17 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
         onPress={handlePress}
         disabled={dead || disabled}
       >
-        {/* The "$" is its own element so we can give it the broadcast spacing
-            (a clear gap before the digits) instead of the cramped "$800" the
-            font produces as one string. */}
         <View style={styles.valueRow}>
           <Text
             style={[
               styles.dollar,
-              valueFontSize != null && {
-                fontSize: valueFontSize,
-                marginRight: valueFontSize * DOLLAR_GAP,
-              },
+              valueFontSize != null && { fontSize: valueFontSize, marginRight: valueFontSize * DOLLAR_GAP },
               dead && styles.valueBurned,
             ]}
             numberOfLines={1}
             adjustsFontSizeToFit={valueFontSize == null}
             allowFontScaling={false}
-          >
-            $
-          </Text>
+          >$</Text>
           <Text
             style={[
               styles.value,
@@ -106,9 +127,7 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
             numberOfLines={1}
             adjustsFontSizeToFit={valueFontSize == null}
             allowFontScaling={false}
-          >
-            {value}
-          </Text>
+          >{value}</Text>
         </View>
       </Pressable>
     </View>
@@ -116,9 +135,7 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
 }
 
 const styles = StyleSheet.create({
-  cellWrap: {
-    flex: 1,
-  },
+  cellWrap: { flex: 1 },
   cell: {
     flex: 1,
     backgroundColor: colors.cell,
@@ -127,14 +144,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 4,
   },
-  cellBurned: {
-    backgroundColor: colors.cellBurned,
+  cellBurned: { backgroundColor: colors.cellBurned },
+  cellPressed: { backgroundColor: '#0029D6' },
+  pressableInner: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
   },
-  cellPressed: {
-    backgroundColor: '#0029D6',
-  },
-  // The scaleX squeeze lives on the row so "$" and the digits compress as one
-  // unit — scaling each Text separately would fabricate a gap between them.
   valueRow: {
     flexDirection: 'row',
     alignItems: 'center',
