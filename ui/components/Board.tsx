@@ -19,21 +19,22 @@ interface BoardProps {
 }
 
 const ROW_COUNT = 5;
-const COL_COUNT = 6;
 const ROW_FLEX_TOTAL = 1.25 + ROW_COUNT;
 const PROBE_FONT = 100;
 const VALUE_SCALE_X = 0.85;
 const CELL_PAD_X = 4;
 const VALUE_FILL = 0.9;
-
-/** Number of distinct flash waves across the board. */
-const WAVES = 6;
-/** Ms between each wave. */
 const WAVE_MS = 455;
-/** Pause before the first wave so the board is visibly dark for a beat. */
 const WAVE_OFFSET = 350;
-/** Categories flash on after all waves have fired. */
-const CAT_FLASH_DELAY = WAVE_OFFSET + WAVES * WAVE_MS + 200;
+
+function shuffle(n: number): number[] {
+  const a = Array.from({ length: n }, (_, i) => i);
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = a[i]!; a[i] = a[j]!; a[j] = tmp;
+  }
+  return a;
+}
 
 export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boardAnimKey = 0 }: BoardProps) {
   const burned = new Set(burnedClueIds);
@@ -41,42 +42,51 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue, 
   const [boardSize, setBoardSize] = useState<{ w: number; h: number } | null>(null);
   const [probe, setProbe] = useState<{ w: number; h: number } | null>(null);
 
-  // Assign all 30 cells to 6 waves (5 cells each) with the constraint that each
-  // wave contains at most one cell per column and one cell per row.
-  // Construction: wave w, row r → column (r + w) % COL_COUNT. This is a cyclic
-  // Latin rectangle — each wave gets one cell from every row and 5 of 6 columns.
-  // Random permutations on rows, columns, and wave-firing order make each game
-  // look different while preserving the constraint exactly (no remainder).
+  const colCount = board.categories.length;
+
+  // waves = max(cols, rows); cells-per-wave = min(cols, rows).
+  // When cols >= rows: cycle columns — wave w, row r → col (r+w) % cols.
+  // When cols <  rows: cycle rows    — wave w, col c → row (c+w) % rows.
+  // Both guarantee exactly one cell per column AND per row within each wave,
+  // and every cell covered exactly once across all waves.
+  const waves = Math.max(colCount, ROW_COUNT);
+  const catFlashDelay = WAVE_OFFSET + waves * WAVE_MS + 200;
+
   const cellDelays = useMemo<number[] | null>(() => {
     if (!boardAnimKey) return null;
 
-    function shuffle(n: number): number[] {
-      const a = Array.from({ length: n }, (_, i) => i);
-      for (let i = n - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        const tmp = a[i]!; a[i] = a[j]!; a[j] = tmp;
+    const cols = colCount;
+    const waveCount = Math.max(cols, ROW_COUNT);
+    const colPerm = shuffle(cols);
+    const rowPerm = shuffle(ROW_COUNT);
+    const waveStep = shuffle(waveCount);
+    const delays = new Array<number>(cols * ROW_COUNT);
+
+    if (cols >= ROW_COUNT) {
+      for (let w = 0; w < waveCount; w++) {
+        for (let r = 0; r < ROW_COUNT; r++) {
+          const physCol = colPerm[(r + w) % cols]!;
+          const physRow = rowPerm[r]!;
+          delays[physCol * ROW_COUNT + physRow] = WAVE_OFFSET + waveStep[w]! * WAVE_MS;
+        }
       }
-      return a;
-    }
-
-    const colPerm = shuffle(COL_COUNT); // randomise which physical col = logical col
-    const rowPerm = shuffle(ROW_COUNT); // randomise which physical row = logical row
-    const waveStep = shuffle(WAVES);    // randomise which step each wave fires at
-
-    const delays = new Array<number>(COL_COUNT * ROW_COUNT);
-    for (let w = 0; w < WAVES; w++) {
-      for (let r = 0; r < ROW_COUNT; r++) {
-        const physCol = colPerm[(r + w) % COL_COUNT]!;
-        const physRow = rowPerm[r]!;
-        delays[physCol * ROW_COUNT + physRow] = WAVE_OFFSET + waveStep[w]! * WAVE_MS;
+    } else {
+      for (let w = 0; w < waveCount; w++) {
+        for (let c = 0; c < cols; c++) {
+          const physCol = colPerm[c]!;
+          const physRow = rowPerm[(c + w) % ROW_COUNT]!;
+          delays[physCol * ROW_COUNT + physRow] = WAVE_OFFSET + waveStep[w]! * WAVE_MS;
+        }
       }
     }
     return delays;
-  }, [boardAnimKey]);
+  // colCount included: if it changes (board swap), recompute delays for new size.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardAnimKey, colCount]);
 
   let valueFontSize: number | undefined;
   if (boardSize && probe && probe.w > 0 && probe.h > 0) {
-    const cellW = (boardSize.w - (COL_COUNT - 1) * grid.lineWidth) / COL_COUNT;
+    const cellW = (boardSize.w - (colCount - 1) * grid.lineWidth) / colCount;
     const innerW = cellW - 2 * CELL_PAD_X;
     const rowsAreaH = boardSize.h - ROW_COUNT * grid.lineWidth;
     const valueRowH = rowsAreaH / ROW_FLEX_TOTAL;
@@ -114,7 +124,7 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue, 
           <CategoryCell
             key={category.name}
             name={category.name}
-            flashDelay={cellDelays ? CAT_FLASH_DELAY : undefined}
+            flashDelay={cellDelays ? catFlashDelay : undefined}
           />
         ))}
       </View>

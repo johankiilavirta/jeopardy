@@ -38,6 +38,8 @@ interface NetworkedGameProps {
   onRelayPortChange?: (port: string) => void;
   /** Master toggle for in-game animations (set in the lobby). Default on. */
   animationsEnabled?: boolean;
+  /** How many category columns to show (4, 5, or 6). Default 6. */
+  visibleCategories?: number | undefined;
 }
 
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
@@ -73,7 +75,7 @@ function statusLine(
   }
 }
 
-export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true }: NetworkedGameProps) {
+export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, visibleCategories = 6 }: NetworkedGameProps) {
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
@@ -183,7 +185,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
   const fullBoard = boardData ? toBoardDefinition(boardData, round) : demoBoard;
   const getClue = boardData ? makeClueGetter(boardData) : getClueContent;
-  const visibleBoard = getVisibleBoard(fullBoard, gameState.burnedClueIds);
+  const visibleBoard = getVisibleBoard(fullBoard, gameState.burnedClueIds, visibleCategories);
 
   // Update the Y-key handler every render so it closes over fresh state.
   yKeyHandlerRef.current = () => {
@@ -196,14 +198,17 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     });
   };
 
-  // Names for the fly-by: all categories of the queued round, with the 6th
-  // (backfilled, non-displayed-at-start) category marked with a trailing " *".
+  // Names for the fly-by: categories beyond visibleCategories are reserve
+  // categories (marked " *") that will backfill as columns clear.
+  // When visibleCategories >= 6, nothing is hidden so no "*" is needed.
   const introBoard =
     introRound != null && boardData
       ? toBoardDefinition(boardData, introRound as RoundNumber)
       : null;
   const introCategories =
-    introBoard?.categories.map((c, i) => (i === 5 ? `${c.name} *` : c.name)) ?? null;
+    introBoard?.categories.map((c, i) =>
+      i >= visibleCategories ? `${c.name} *` : c.name,
+    ) ?? null;
 
   return (
     <SwipeUpMenu
