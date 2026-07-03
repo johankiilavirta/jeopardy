@@ -346,7 +346,9 @@ export default function App() {
             relayPortSetting={relayPort}
             onRelayPortChange={setRelayPort}
             animationsEnabled={animationsEnabled}
+            onAnimationsChange={setAnimationsEnabled}
             visibleCategories={visibleCategories}
+            onVisibleCategoriesChange={setVisibleCategories}
           />
         ) : null;
       case 'settings':

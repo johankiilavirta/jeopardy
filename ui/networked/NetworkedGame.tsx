@@ -13,7 +13,7 @@ import { getClueContent } from '../fixtures/clues';
 import { toBoardDefinition, makeClueGetter, getVisibleBoard } from '../../data/gameLoader';
 import type { GameData, RoundNumber } from '../../data/gameLoader';
 import { MainMenuScreen } from '../screens/MainMenuScreen';
-import { SettingsScreen } from '../screens/SettingsScreen';
+import { InGameSettingsScreen } from '../screens/InGameSettingsScreen';
 import { ChooseClueScreen } from '../screens/ChooseClueScreen';
 import { ClueScreen } from '../screens/ClueScreen';
 import { colors, type as typeTokens } from '../theme/tokens';
@@ -38,8 +38,10 @@ interface NetworkedGameProps {
   onRelayPortChange?: (port: string) => void;
   /** Master toggle for in-game animations (set in the lobby). Default on. */
   animationsEnabled?: boolean;
+  onAnimationsChange?: (enabled: boolean) => void;
   /** How many category columns to show (4, 5, or 6). Default 6. */
   visibleCategories?: number | undefined;
+  onVisibleCategoriesChange?: (n: number) => void;
 }
 
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
@@ -75,7 +77,7 @@ function statusLine(
   }
 }
 
-export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, visibleCategories = 6 }: NetworkedGameProps) {
+export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange }: NetworkedGameProps) {
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
@@ -155,6 +157,31 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     setIntroRound(1);
   }, [animationsEnabled, boardData]);
 
+  // Solo mode: auto-buzz when the buzz window opens — no tap required since
+  // there's no opponent to race. This lets locking immediately trigger REVEAL.
+  useEffect(() => {
+    if (!gameState || !playerId) return;
+    if (Object.keys(gameState.players).length !== 1) return;
+    if (gameState.status !== 'BUZZ_OPEN') return;
+    if (gameState.buzzes.some(b => b.playerId === playerId)) return;
+    dispatch({ type: 'BUZZ', playerId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState?.status, gameState?.activeClue?.id, playerId]);
+
+  // Solo mode: auto-dismiss the reveal after 2.5 s. The player can still
+  // swipe or use arrow keys to self-judge (and record a score) before then.
+  useEffect(() => {
+    if (!gameState || !playerId) return;
+    if (Object.keys(gameState.players).length !== 1) return;
+    if (gameState.status !== 'REVEAL' || !gameState.activeClue) return;
+    const clueId = gameState.activeClue.id;
+    const timer = setTimeout(() => {
+      dispatch({ type: 'SKIP_CLUE', playerId, clueId });
+    }, 2500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState?.status, gameState?.activeClue?.id, playerId]);
+
   if (!gameState || !playerId) {
     return (
       <View style={styles.connecting}>
@@ -220,15 +247,19 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           onSettings={showSettings}
         />
       )}
-      renderSettings={goBack => (
-        <SettingsScreen
+      renderSettings={(_goBack, close) => (
+        <InGameSettingsScreen
+          onClose={close}
+          animationsEnabled={animationsEnabled}
+          onAnimationsChange={onAnimationsChange ?? (() => {})}
+          visibleCategories={visibleCategories}
+          onVisibleCategoriesChange={onVisibleCategoriesChange ?? (() => {})}
           playerName={playerName ?? ''}
           onNameChange={onNameChange ?? (() => {})}
           relayHost={relayHostSetting ?? relayHost ?? 'localhost'}
           onRelayHostChange={onRelayHostChange ?? (() => {})}
           relayPort={relayPortSetting ?? relayPort ?? '8787'}
           onRelayPortChange={onRelayPortChange ?? (() => {})}
-          onBack={goBack}
         />
       )}
     >
