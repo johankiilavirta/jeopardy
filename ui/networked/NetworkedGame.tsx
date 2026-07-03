@@ -131,19 +131,14 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     return () => clearInterval(tick);
   }, [typing]);
 
-  // Detect the start of each round and queue its category fly-by. Mirrors the
-  // round derivation below: round 1 at game start, round 2 once every round-1
-  // clue is burned. Gated by the animations toggle.
+  // Play the category fly-by once at the start of round 1 only. Round 2
+  // (Double Jeopardy) transitions silently — no intro animation.
   useEffect(() => {
-    if (!animationsEnabled || !gameState || !boardData) return;
-    const r1 = toBoardDefinition(boardData, 1);
-    const r1Ids = r1.categories.flatMap(c => c.clues.map(cl => cl.id));
-    const r1Done = r1Ids.length > 0 && r1Ids.every(id => gameState.burnedClueIds.includes(id));
-    const r = r1Done && boardData.round2.length > 0 ? 2 : 1;
-    if (introShownRef.current.has(r)) return;
-    introShownRef.current.add(r);
-    setIntroRound(r);
-  }, [animationsEnabled, gameState, boardData]);
+    if (!animationsEnabled || !boardData) return;
+    if (introShownRef.current.has(1)) return;
+    introShownRef.current.add(1);
+    setIntroRound(1);
+  }, [animationsEnabled, boardData]);
 
   if (!gameState || !playerId) {
     return (
