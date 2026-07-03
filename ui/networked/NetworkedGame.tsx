@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { sendAction } from '../../src/client';
 import { getBuzz, judgedPlayerId } from '../../src/reducer';
 import type { WebSocketTransport } from '../../src/webSocketTransport';
@@ -95,6 +95,19 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     sendAction(transport, serverPeerId, action as unknown as Record<string, unknown>);
   };
 
+  // Dev shortcut: Y key burns all-but-one clue on the current board.
+  const yKeyHandlerRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.key === 'y' || e.key === 'Y') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        yKeyHandlerRef.current?.();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   // Phase countdown timers (display-only, server is authoritative).
   useEffect(() => {
     if (!gameState) return;
@@ -164,9 +177,24 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const round2Available = !!boardData && boardData.round2.length > 0;
   const round = round1Done && round2Available ? 2 : 1;
 
+  // Latch to 1 the first time round 2 is reached — triggers the DJ board flash.
+  const boardAnimKeyRef = useRef(0);
+  if (round === 2 && boardAnimKeyRef.current === 0) boardAnimKeyRef.current = 1;
+
   const fullBoard = boardData ? toBoardDefinition(boardData, round) : demoBoard;
   const getClue = boardData ? makeClueGetter(boardData) : getClueContent;
   const visibleBoard = getVisibleBoard(fullBoard, gameState.burnedClueIds);
+
+  // Update the Y-key handler every render so it closes over fresh state.
+  yKeyHandlerRef.current = () => {
+    if (gameState.activeClue) return;
+    const allIds = fullBoard.categories.flatMap(c => c.clues.map(cl => cl.id));
+    const unburned = allIds.filter(id => !gameState.burnedClueIds.includes(id));
+    if (unburned.length <= 1) return;
+    unburned.slice(0, -1).forEach(clueId => {
+      dispatch({ type: 'SKIP_CLUE', playerId, clueId });
+    });
+  };
 
   // Names for the fly-by: all categories of the queued round, with the 6th
   // (backfilled, non-displayed-at-start) category marked with a trailing " *".
@@ -205,6 +233,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           localPlayerId={playerId}
           board={visibleBoard}
           disconnectedPlayerId={disconnectedPlayerId}
+          boardAnimKey={boardAnimKeyRef.current}
           onSelectClue={(clueId, rect) => {
             selectedCellRef.current = { clueId, rect };
             dispatch({
