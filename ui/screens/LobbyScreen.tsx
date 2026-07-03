@@ -37,6 +37,9 @@ interface LobbyScreenProps {
   /** Master toggle for in-game animations (default on). */
   animationsEnabled?: boolean;
   onAnimationsChange?: (enabled: boolean) => void;
+  /** How many category columns to show (4, 5, or 6). Default 6. */
+  visibleCategories?: number | undefined;
+  onVisibleCategoriesChange?: ((n: number) => void) | undefined;
   error?: string | null;
 }
 
@@ -189,6 +192,24 @@ export function LobbyScreen(props: LobbyScreenProps) {
                     {(props.animationsEnabled ?? true) ? 'On' : 'Off'}
                   </Text>
                 </Pressable>
+
+                <Text style={[styles.label, styles.stackedLabel]}>Categories Displayed</Text>
+                <View style={styles.catCountRow}>
+                  {([4, 5, 6] as const).map(n => {
+                    const active = (props.visibleCategories ?? 6) === n;
+                    return (
+                      <Pressable
+                        key={n}
+                        style={[styles.catCountBtn, active && styles.catCountBtnActive]}
+                        onPress={() => props.onVisibleCategoriesChange?.(n)}
+                      >
+                        <Text style={[styles.catCountText, active && styles.catCountTextActive]}>
+                          {n}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
 
                 <Text style={[styles.label, styles.stackedLabel]}>Game #</Text>
                 <TextInput
@@ -391,6 +412,13 @@ const styles = StyleSheet.create({
   stackedLabel: {
     marginTop: 16,
   },
+  settingsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  settingsHalf: {
+    flex: 1,
+  },
   toggleBox: {
     borderWidth: 1,
     borderColor: '#444',
@@ -404,6 +432,30 @@ const styles = StyleSheet.create({
   },
   toggleTextOff: {
     color: '#666',
+  },
+  catCountRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  catCountBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#444',
+    borderRadius: 6,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  catCountBtnActive: {
+    borderColor: '#fff',
+    backgroundColor: '#222',
+  },
+  catCountText: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 16,
+    color: '#666',
+  },
+  catCountTextActive: {
+    color: '#fff',
   },
   label: {
     fontFamily: typeTokens.ui500,

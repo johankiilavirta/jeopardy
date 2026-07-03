@@ -73,6 +73,7 @@ export default function App() {
   const [relayPort, setRelayPort] = useState('8787');
   const [gameId, setGameId] = useState('');
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
+  const [visibleCategories, setVisibleCategories] = useState(6);
   const [lobbyPlayers, setLobbyPlayers] = useState<LobbyPlayer[]>([]);
   const [lobbyError, setLobbyError] = useState<string | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
@@ -319,6 +320,8 @@ export default function App() {
             onGameIdChange={setGameId}
             animationsEnabled={animationsEnabled}
             onAnimationsChange={setAnimationsEnabled}
+            visibleCategories={visibleCategories}
+            onVisibleCategoriesChange={setVisibleCategories}
             error={lobbyError}
           />
         );
@@ -343,6 +346,7 @@ export default function App() {
             relayPortSetting={relayPort}
             onRelayPortChange={setRelayPort}
             animationsEnabled={animationsEnabled}
+            visibleCategories={visibleCategories}
           />
         ) : null;
       case 'settings':
