@@ -2,6 +2,9 @@ import { StyleSheet, View } from 'react-native';
 import type { Player } from '../../src/types';
 import { PlayerScoreBlock } from './PlayerScoreBlock';
 
+/** Space reserved at the bottom of an active-clue screen for the player bar. */
+export const PLAYER_BAR_HEIGHT = 62;
+
 interface PlayerHeaderProps {
   players: Player[];
   /** Id of the player whose turn it is (null = nobody highlighted). */

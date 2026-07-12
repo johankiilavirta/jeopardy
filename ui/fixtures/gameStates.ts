@@ -2,11 +2,9 @@
  * Named mock GameStates for the design showcase.
  *
  * All fixtures are CHOOSE_CLUE states for two players (`you` / `opponent`)
- * on the 5x5 demo board (totalClues: 25).
+ * on the 6x5 demo board (totalClues: 30).
  *
- * NOTE (milestone 2): `createInitialState` in src/reducer.ts hardcodes
- * `totalClues: 30`; the 5x5 board has 25 clues. Parameterize it when the
- * live game loop is wired up — fixtures use 25 directly here.
+ * The fixture uses the same 30-clue shape as a standard live board.
  */
 
 import type { GameState } from '../../src/types';
@@ -31,7 +29,7 @@ function makeState(opts: {
     activeClue: null,
     buzzes: [],
     burnedClueIds: opts.burnedClueIds,
-    totalClues: 25,
+    totalClues: 30,
   };
 }
 
@@ -60,7 +58,7 @@ export const opponentTurnMidGame = makeState({
   ],
 });
 
-/** Late game, your turn, 20 of 25 burned, lopsided scores. */
+/** Late game, your turn, 20 of 30 burned, lopsided scores. */
 export const yourTurnLateGame = makeState({
   currentTurnPlayerId: 'you',
   yourScore: 9800,

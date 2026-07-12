@@ -41,7 +41,9 @@ const styles = StyleSheet.create({
     // Transparent border when inactive so the active outline causes no layout shift.
     borderWidth: 2,
     borderColor: 'transparent',
-    paddingVertical: 5,
+    // A little more height makes the row feel like a deliberate persistent
+    // game-control bar when it sits at the bottom of the screen.
+    paddingVertical: 8,
     paddingHorizontal: 10,
     alignItems: 'center',
     justifyContent: 'center',

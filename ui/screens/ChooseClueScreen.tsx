@@ -42,12 +42,6 @@ export function ChooseClueScreen({
 
   return (
     <View style={styles.screen}>
-      <PlayerHeader
-        players={Object.values(state.players)}
-        currentTurnPlayerId={state.currentTurnPlayerId}
-        localPlayerId={localPlayerId}
-        disconnectedPlayerId={disconnectedPlayerId}
-      />
       <View
         style={styles.boardWrap}
         onLayout={e => {
@@ -67,6 +61,12 @@ export function ChooseClueScreen({
           />
         )}
       </View>
+      <PlayerHeader
+        players={Object.values(state.players)}
+        currentTurnPlayerId={state.currentTurnPlayerId}
+        localPlayerId={localPlayerId}
+        disconnectedPlayerId={disconnectedPlayerId}
+      />
     </View>
   );
 }
@@ -77,6 +77,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     paddingHorizontal: 8,
     paddingTop: 8,
+    paddingBottom: 8,
     gap: 10,
   },
   boardWrap: {

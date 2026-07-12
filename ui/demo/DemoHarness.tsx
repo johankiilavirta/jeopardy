@@ -7,6 +7,7 @@ import { getClueContent } from '../fixtures/clues';
 import { LOCAL_PLAYER_ID, yourTurnFresh } from '../fixtures/gameStates';
 import { ChooseClueScreen } from '../screens/ChooseClueScreen';
 import { ClueScreen } from '../screens/ClueScreen';
+import { PLAYER_BAR_HEIGHT } from '../components/PlayerHeader';
 
 // Demo loop driven by the real reducer with real Jeopardy pacing: tapping a
 // cell dispatches SELECT_CLUE; the clue is "read" for 5s (buzzing locked),
@@ -26,6 +27,33 @@ const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number; action: Action }>> 
 
 /** Personal typing time, from each player's own buzz (mirrors answerMs). */
 const ANSWER_MS = 10000;
+
+type DemoScreen = 'board' | 'clue' | 'judge';
+
+function initialStateFor(screen: string | undefined): GameState {
+  const clue = getClueContent(0);
+  switch (screen) {
+    case 'clue':
+      return {
+        ...yourTurnFresh,
+        status: 'CLUE_READING',
+        clueSelectPlayerId: LOCAL_PLAYER_ID,
+        activeClue: { ...clue, failedPlayerIds: [] },
+      };
+    case 'judge':
+      return {
+        ...yourTurnFresh,
+        status: 'REVEAL',
+        clueSelectPlayerId: LOCAL_PLAYER_ID,
+        activeClue: { ...clue, failedPlayerIds: [] },
+        buzzes: [
+          { playerId: LOCAL_PLAYER_ID, answer: 'WHAT IS MEZCAL?', locked: true },
+        ],
+      };
+    default:
+      return yourTurnFresh;
+  }
+}
 
 // The info line in the clue card's bottom-left corner. Minimal during
 // counting phases (just the countdown) to leave space for the space bar.
@@ -56,8 +84,8 @@ function statusLine(
   }
 }
 
-export function DemoHarness() {
-  const [state, setState] = useState<GameState>(yourTurnFresh);
+export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) {
+  const [state, setState] = useState<GameState>(() => initialStateFor(initialScreen));
   const [countdown, setCountdown] = useState<number | null>(null);
   const [personalCountdown, setPersonalCountdown] = useState<number | null>(null);
   const dispatch = (action: Action) => setState(s => reducer(s, action));
@@ -135,7 +163,7 @@ export function DemoHarness() {
       {/* activeClue is non-null for exactly the on-clue phases:
           CLUE_READING, BUZZ_OPEN, ANSWERING, REVEAL and CLUE_EXPIRED. */}
       {state.activeClue && (
-        <View style={StyleSheet.absoluteFill}>
+        <View style={[StyleSheet.absoluteFill, { bottom: PLAYER_BAR_HEIGHT }]}>
           <ClueScreen
             clue={state.activeClue}
             statusText={statusLine(state, countdown, typing ? personalCountdown : null)}

@@ -7,6 +7,7 @@ import type { Action, GameState, GameStatus } from '../../src/types';
 import type { CellRect } from '../components/BoardCell';
 import { CategoryIntro } from '../components/CategoryIntro';
 import { ExpandingClueOverlay } from '../components/ExpandingClueOverlay';
+import { PLAYER_BAR_HEIGHT } from '../components/PlayerHeader';
 import { SwipeUpMenu } from '../components/SwipeUpMenu';
 import { demoBoard } from '../fixtures/board';
 import { getClueContent } from '../fixtures/clues';
@@ -295,6 +296,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           <ExpandingClueOverlay
             key={gameState.activeClue.id}
             animate={animationsEnabled}
+            bottomInset={PLAYER_BAR_HEIGHT}
             fromRect={
               selectedCellRef.current?.clueId === gameState.activeClue.id
                 ? selectedCellRef.current.rect

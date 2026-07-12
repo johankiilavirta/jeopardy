@@ -386,6 +386,9 @@ const styles = StyleSheet.create({
   },
   cardWrap: {
     flex: 1,
+    // The clue is a card, not a full-bleed blue page. The dark frame also
+    // separates it from the persistent blue player-score bar below.
+    margin: 10,
   },
   card: {
     flex: 1,

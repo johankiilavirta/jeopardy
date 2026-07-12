@@ -22,6 +22,7 @@ const CATEGORY_NAMES = [
   'BEFORE & AFTER',
   'SCIENCE FICTION',
   '4-LETTER WORDS',
+  'MOVIE QUOTES',
 ] as const;
 
 /**
