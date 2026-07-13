@@ -41,7 +41,7 @@ export function JudgementTray({
 
   useEffect(() => {
     Animated.sequence([
-      Animated.delay(180), // wait for keyboard to fully slide down
+      Animated.delay(220), // wait for keyboard to fully slide down
       Animated.spring(rise, {
         toValue: 1,
         friction: 8,
