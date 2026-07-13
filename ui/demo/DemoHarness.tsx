@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { getBuzz, judgedPlayerId, reducer } from '../../src/reducer';
 import type { Action, GameState, GameStatus } from '../../src/types';
@@ -9,6 +9,8 @@ import { ChooseClueScreen } from '../screens/ChooseClueScreen';
 import { ClueScreen } from '../screens/ClueScreen';
 import { PLAYER_BAR_HEIGHT } from '../components/PlayerHeader';
 import { JudgementTray } from '../components/JudgementTray';
+import { ExpandingClueOverlay } from '../components/ExpandingClueOverlay';
+import type { CellRect } from '../components/BoardCell';
 
 // Demo loop driven by the real reducer with real Jeopardy pacing: tapping a
 // cell dispatches SELECT_CLUE; the clue is "read" for 5s (buzzing locked),
@@ -62,6 +64,7 @@ function initialStateFor(screen: string | undefined): GameState {
 
 export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) {
   const [state, setState] = useState<GameState>(() => initialStateFor(initialScreen));
+  const selectedCellRef = useRef<{ clueId: number; rect: CellRect } | null>(null);
   // Deadlines (epoch ms) for the current phase window and the local player's
   // personal typing timer — they drive the activation lights' drain.
   const [phaseDeadline, setPhaseDeadline] = useState<number | null>(null);
@@ -116,7 +119,8 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
         localPlayerId={LOCAL_PLAYER_ID}
         board={demoBoard}
         judgingPlayerId={state.status === 'REVEAL' ? onStand : null}
-        onSelectClue={clueId => {
+        onSelectClue={(clueId, rect) => {
+          selectedCellRef.current = { clueId, rect };
           dispatch({
             type: 'SELECT_CLUE',
             playerId: LOCAL_PLAYER_ID,
@@ -128,7 +132,16 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
       {/* activeClue is non-null for exactly the on-clue phases:
           CLUE_READING, BUZZ_OPEN, ANSWERING, REVEAL and CLUE_EXPIRED. */}
       {state.activeClue && (
-        <View style={[StyleSheet.absoluteFill, { bottom: PLAYER_BAR_HEIGHT }]}>
+        <ExpandingClueOverlay
+          key={state.activeClue.id}
+          fromRect={
+            selectedCellRef.current?.clueId === state.activeClue.id
+              ? selectedCellRef.current.rect
+              : null
+          }
+          animate={true}
+          bottomInset={PLAYER_BAR_HEIGHT}
+        >
           <ClueScreen
             clue={state.activeClue}
             canBuzz={state.status === 'BUZZ_OPEN' && !localBuzz}
@@ -155,7 +168,7 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
                 : undefined
             }
           />
-        </View>
+        </ExpandingClueOverlay>
       )}
       {state.status === 'REVEAL' && onStand && (
         <JudgementTray
