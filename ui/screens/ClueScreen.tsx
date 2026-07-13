@@ -90,12 +90,15 @@ export function ClueScreen({
 
   useEffect(() => {
     if (reveal) {
-      Animated.timing(revealAnim, {
-        toValue: 1,
-        duration: 250,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
+      Animated.sequence([
+        Animated.delay(180), // wait for keyboard to fully slide down
+        Animated.timing(revealAnim, {
+          toValue: 1,
+          duration: 250,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
     } else {
       revealAnim.setValue(0);
     }
