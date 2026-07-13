@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Animated, Easing, StyleSheet, useWindowDimensions } from 'react-native';
 import type { CellRect } from './BoardCell';
 
 /** Expand duration, board cell → full screen. */
@@ -84,23 +84,18 @@ export function ExpandingClueOverlay({ fromRect, animate, bottomInset = 0, child
     : [];
 
   return (
-    <View style={[styles.fill, { bottom: bottomInset }]} pointerEvents="box-none">
-      {/* Dark background overlay that fades in, blacking out the board behind the card */}
-      <Animated.View style={[styles.background, { opacity: progress }]} pointerEvents="none" />
-
-      <Animated.View
-        style={[
-          styles.fill,
-          {
-            transformOrigin: 'center',
-            transform,
-          },
-        ]}
-        pointerEvents="box-none"
-      >
-        {children}
-      </Animated.View>
-    </View>
+    <Animated.View
+      style={[
+        styles.fill,
+        {
+          bottom: bottomInset,
+          transformOrigin: 'center',
+          transform,
+        },
+      ]}
+    >
+      {children}
+    </Animated.View>
   );
 }
 
@@ -111,13 +106,5 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-  },
-  background: {
-    position: 'absolute',
-    top: -100, // extend slightly beyond container boundaries to cover everything
-    left: -100,
-    right: -100,
-    bottom: -100,
-    backgroundColor: '#0D0D0D', // colors.bg
   },
 });
