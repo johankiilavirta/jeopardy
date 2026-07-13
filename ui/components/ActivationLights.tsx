@@ -5,7 +5,7 @@ const LIGHT_COUNT = 101;
 /** The buzzer-activation flash runs this long before going steady. */
 const FLASH_MS = 1320;
 /** Vibrant electric blue, matching the brilliant blue LEDs in the modern set. */
-const LIT = '#389BFF';
+const LIT = '#FFFFFF';
 /** Extinguished lamps stay faintly visible, like the real board's dark LEDs. */
 const OFF_OPACITY = 0.15;
 
@@ -154,7 +154,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 37, // glued tightly to the bottom of the card/grid (leaving a subtle 4px gap)
+    bottom: 38, // glued tightly to the bottom of the card/grid (leaving a subtle 4px gap)
     alignItems: 'center',
   },
   row: {
@@ -164,9 +164,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   light: {
-    width: 3, // dense square blocks
-    height: 3,
+    width: 2, // 2px square blocks
+    height: 2,
     borderRadius: 0, // perfectly square like in the gif
-    backgroundColor: LIT,
+    backgroundColor: LIT, // white LED bulb
+    shadowColor: '#0088FF', // electric blue glow
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 3, // glowing halo effect
   },
 });
