@@ -42,6 +42,8 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue, 
   const baseValue = board.categories.find(c => c.clues.length > 0)?.clues[0]?.value ?? 200;
   const [boardSize, setBoardSize] = useState<{ w: number; h: number } | null>(null);
   const [probe, setProbe] = useState<{ w: number; h: number } | null>(null);
+  // Native fallback: measured single-line widths of each category at PROBE_FONT.
+  const [catProbes, setCatProbes] = useState<Record<string, number>>({});
 
   const colCount = board.categories.length;
 
@@ -99,8 +101,7 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue, 
   // Equal category text sizing: compute fits for every category, take the
   // minimum font size, then re-fit each at that shared ceiling so line breaks
   // are optimised for the final size. Mirrors the broadcast where all headers
-  // sit at the same visual weight. Falls back to per-cell AutoFitText on
-  // native (no canvas).
+  // sit at the same visual weight.
   const categoryFits = useMemo(() => {
     if (!boardSize) return null;
     const cellW = (boardSize.w - (colCount - 1) * grid.lineWidth) / colCount;
@@ -111,19 +112,46 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue, 
     if (innerW <= 0 || innerH <= 0) return null;
 
     const names = board.categories.map(c => c.name.toUpperCase());
-    const individual = names.map(n =>
+
+    // --- Web path: canvas measurement with balanced line breaks ---
+    const webFits = names.map(n =>
       computeFit(n, innerW, innerH, typeTokens.board, '400', 0.85, 1.28, 3, 8, 44),
     );
-    if (individual.some(f => f === null)) return null;
+    if (!webFits.some(f => f === null)) {
+      const minSize = Math.min(...webFits.map(f => f!.fontSize));
+      return names.map(n =>
+        computeFit(n, innerW, innerH, typeTokens.board, '400', 0.85, 1.28, 3, 8, minSize),
+      );
+    }
 
-    const minSize = Math.min(...individual.map(f => f!.fontSize));
+    // --- Native fallback: derive sizing from layout-measured probe widths ---
+    if (!board.categories.every(c => catProbes[c.name] != null)) return null;
 
-    // Re-fit with the shared ceiling so each name picks optimal line breaks
-    // at the final size.
-    return names.map(n =>
-      computeFit(n, innerW, innerH, typeTokens.board, '400', 0.85, 1.28, 3, 8, minSize),
-    );
-  }, [boardSize, board.categories, colCount]);
+    const WIDTH_FILL = 0.92;
+    const HEIGHT_FILL = 0.88;
+    const widthBudget = innerW / 0.85; // account for scaleX
+
+    let minFontSize = 44;
+    for (const cat of board.categories) {
+      const textW = catProbes[cat.name]!;
+      const wordCount = cat.name.toUpperCase().split(/\s+/).filter(Boolean).length;
+      const maxL = Math.min(3, wordCount);
+
+      let bestSize = 0;
+      for (let L = 1; L <= maxL; L++) {
+        // Conservative line-width estimate: even split with a 25% penalty
+        // for uneven word lengths at break boundaries.
+        const estMaxLine = (textW / L) * 1.25;
+        const byWidth = (WIDTH_FILL * widthBudget * PROBE_FONT) / estMaxLine;
+        const byHeight = (HEIGHT_FILL * innerH) / (L * 1.28);
+        const fontSize = Math.min(byWidth, byHeight, 44);
+        if (fontSize > bestSize * 1.06) bestSize = fontSize;
+      }
+      minFontSize = Math.min(minFontSize, Math.max(8, bestSize));
+    }
+
+    return names.map(n => ({ fontSize: minFontSize, text: n }));
+  }, [boardSize, board.categories, colCount, catProbes]);
 
   return (
     <View
@@ -148,6 +176,23 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue, 
       >
         $1000
       </Text>
+
+      {/* Category probes: measure each name's single-line width at PROBE_FONT
+          so the native fallback path can compute a shared font size. */}
+      {board.categories.map(cat => (
+        <Text
+          key={`cat-probe-${cat.name}`}
+          style={styles.catProbe}
+          numberOfLines={1}
+          allowFontScaling={false}
+          onLayout={e => {
+            const w = e.nativeEvent.layout.width;
+            setCatProbes(prev => prev[cat.name] === w ? prev : { ...prev, [cat.name]: w });
+          }}
+        >
+          {cat.name.toUpperCase()}
+        </Text>
+      ))}
 
       <View style={styles.categoryRow}>
         {board.categories.map((category, i) => (
@@ -209,5 +254,11 @@ const styles = StyleSheet.create({
     fontFamily: typeTokens.board,
     fontSize: PROBE_FONT,
     letterSpacing: -0.5,
+  },
+  catProbe: {
+    position: 'absolute',
+    opacity: 0,
+    fontFamily: typeTokens.board,
+    fontSize: PROBE_FONT,
   },
 });
