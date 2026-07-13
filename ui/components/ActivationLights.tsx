@@ -154,20 +154,19 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 26, // glued close to the bottom of the card/grid (which is at 44px, leaving a 4px gap)
+    bottom: 36, // glued tightly to the bottom of the card/grid (leaving a subtle 2px gap)
     alignItems: 'center',
   },
-  // Spans 75% of the card width up to 1200px max.
   row: {
-    width: '75%',
-    maxWidth: 1200,
+    width: '91.2%', // 95% of the card's 96% width footprint
+    maxWidth: 1460,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   light: {
-    width: 4, // dense vertical rectangular blocks
-    height: 14,
-    borderRadius: 1,
+    width: 3, // subtle vertical rectangular blocks
+    height: 6,
+    borderRadius: 0.5,
     backgroundColor: LIT,
   },
 });
