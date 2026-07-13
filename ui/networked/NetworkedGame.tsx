@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import { sendAction } from '../../src/client';
+import { computeReadingMs } from '../../src/readingTime';
 import { getBuzz, judgedPlayerId } from '../../src/reducer';
 import type { WebSocketTransport } from '../../src/webSocketTransport';
 import type { Action, GameState, GameStatus } from '../../src/types';
@@ -47,7 +48,7 @@ interface NetworkedGameProps {
 }
 
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
-  CLUE_READING: { ms: 600 },
+  CLUE_READING: { ms: 5000 },
   BUZZ_OPEN: { ms: 20000 },
   CLUE_EXPIRED: { ms: 5000 },
 };
@@ -99,7 +100,10 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       setPhaseDeadline(null);
       return;
     }
-    const deadline = Date.now() + phase.ms;
+    const ms = gameState.status === 'CLUE_READING' && gameState.activeClue
+      ? computeReadingMs(gameState.activeClue.text)
+      : phase.ms;
+    const deadline = Date.now() + ms;
     setPhaseDeadline(deadline);
     if (gameState.status === 'BUZZ_OPEN') buzzWindowDeadlineRef.current = deadline;
   }, [gameState?.status]);
