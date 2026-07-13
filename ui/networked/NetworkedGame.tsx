@@ -62,7 +62,8 @@ function statusLine(
 ): string | null {
   switch (state.status) {
     case 'CLUE_READING':
-      return `Wait to buzz ${PHASE_TIMERS.CLUE_READING!.ms / 1000}s`;
+      // No text — the activation lights (dark) say "not yet".
+      return null;
     case 'BUZZ_OPEN':
     case 'ANSWERING':
       return `${(personalCountdown ?? countdown) ?? 0}s`;
@@ -306,6 +307,13 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               clue={gameState.activeClue}
               statusText={statusLine(gameState, playerId, countdown, typing ? personalCountdown : null)}
               canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz}
+              buzzLights={
+                gameState.status === 'CLUE_READING'
+                  ? 'off'
+                  : gameState.status === 'BUZZ_OPEN' && !localBuzz
+                    ? 'live'
+                    : null
+              }
               showKeyboard={typing}
               onSkip={() => {
                 if (gameState.activeClue) dispatch({ type: 'SKIP_CLUE', playerId, clueId: gameState.activeClue.id });

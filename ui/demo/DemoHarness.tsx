@@ -71,7 +71,8 @@ function statusLine(
 ): string | null {
   switch (state.status) {
     case 'CLUE_READING':
-      return `Wait to buzz ${PHASE_TIMERS.CLUE_READING!.ms / 1000}s`;
+      // No text — the activation lights (dark) say "not yet".
+      return null;
     case 'BUZZ_OPEN':
     case 'ANSWERING':
       return `${(personalCountdown ?? countdown) ?? 0}s`;
@@ -170,6 +171,13 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
             clue={state.activeClue}
             statusText={statusLine(state, countdown, typing ? personalCountdown : null)}
             canBuzz={state.status === 'BUZZ_OPEN' && !localBuzz}
+            buzzLights={
+              state.status === 'CLUE_READING'
+                ? 'off'
+                : state.status === 'BUZZ_OPEN' && !localBuzz
+                  ? 'live'
+                  : null
+            }
             showKeyboard={typing}
             canJudge={false}
             onBuzz={() => dispatch({ type: 'BUZZ', playerId: LOCAL_PLAYER_ID })}

@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import type { ActiveClue } from '../../src/types';
+import { ActivationLights } from '../components/ActivationLights';
 import { AnswerKeyboard } from '../components/AnswerKeyboard';
 import { colors, shadow, type as typeTokens } from '../theme/tokens';
 
@@ -64,6 +65,9 @@ interface ClueScreenProps {
   reveal?: RevealInfo | undefined;
   /** P key: skip this clue and return to the board without answering. */
   onSkip?: (() => void) | undefined;
+  /** Activation lights in the band under the card: dark while the clue is
+   *  read, pulsing while the buzzers are live. Null/undefined hides them. */
+  buzzLights?: 'off' | 'live' | null | undefined;
 }
 
 export function ClueScreen({
@@ -79,6 +83,7 @@ export function ClueScreen({
   onLockAnswer,
   reveal,
   onSkip,
+  buzzLights,
 }: ClueScreenProps) {
   const { width } = useWindowDimensions();
   const pan = useRef(new Animated.Value(0)).current;
@@ -273,6 +278,8 @@ export function ClueScreen({
           WRONG
         </Text>
       </Animated.View>
+
+      {buzzLights != null && <ActivationLights state={buzzLights} />}
 
       <Animated.View
         style={[styles.cardWrap, { transform: [{ translateX: pan }] }]}
