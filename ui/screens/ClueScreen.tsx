@@ -86,7 +86,6 @@ export function ClueScreen({
   const { width } = useWindowDimensions();
   const pan = useRef(new Animated.Value(0)).current;
 
-  const [bodyHeight, setBodyHeight] = useState(0);
   const revealAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -102,14 +101,14 @@ export function ClueScreen({
     }
   }, [reveal, revealAnim]);
 
-  const revealRise = revealAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -bodyHeight * 0.15],
-  });
-
   const revealOpacity = revealAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [0, 1],
+  });
+
+  const answerSlide = revealAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [24, 0],
   });
 
   // The player can swipe the keyboard down without locking if they haven't
@@ -331,10 +330,10 @@ export function ClueScreen({
             </Text>
           </View>
 
-          <View style={styles.body} onLayout={e => setBodyHeight(e.nativeEvent.layout.height)}>
+          <View style={styles.body}>
             <Animated.View
               style={{
-                transform: [{ translateY: Animated.add(clueRise, revealRise) }, { scale: clueScale }],
+                transform: [{ translateY: clueRise }, { scale: clueScale }],
                 alignItems: 'center',
                 position: 'relative',
               }}
@@ -354,6 +353,7 @@ export function ClueScreen({
                       left: -400,
                       right: -400,
                       opacity: revealOpacity,
+                      transform: [{ translateY: answerSlide }],
                     },
                   ]}
                 >
