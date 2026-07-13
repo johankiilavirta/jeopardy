@@ -48,22 +48,12 @@ interface NetworkedGameProps {
 
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
   CLUE_READING: { ms: 5000 },
-  BUZZ_OPEN: { ms: 5000 },
+  BUZZ_OPEN: { ms: 8000 },
   CLUE_EXPIRED: { ms: 5000 },
 };
 
 const ANSWER_MS = 10000;
 
-// The activation lights carry all the timing now (flash on buzzer open,
-// drain until the deadline), so only the expired state still speaks in words.
-function statusLine(state: GameState): string | null {
-  switch (state.status) {
-    case 'CLUE_EXPIRED':
-      return 'Time to answer expired';
-    default:
-      return null;
-  }
-}
 
 export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange }: NetworkedGameProps) {
   // createClient is called in App.tsx before this component mounts, so
@@ -285,7 +275,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           >
             <ClueScreen
               clue={gameState.activeClue}
-              statusText={statusLine(gameState)}
               canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz}
               lights={
                 gameState.status === 'BUZZ_OPEN' && !localBuzz && phaseDeadline != null

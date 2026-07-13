@@ -22,7 +22,7 @@ import { JudgementTray } from '../components/JudgementTray';
 // countdowns honest.
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number; action: Action }>> = {
   CLUE_READING: { ms: 5000, action: { type: 'BUZZER_OPEN' } },
-  BUZZ_OPEN: { ms: 5000, action: { type: 'TIMEOUT' } },
+  BUZZ_OPEN: { ms: 8000, action: { type: 'TIMEOUT' } },
   CLUE_EXPIRED: { ms: 5000, action: { type: 'DISMISS_CLUE' } },
 };
 
@@ -59,17 +59,6 @@ function initialStateFor(screen: string | undefined): GameState {
   }
 }
 
-// The info line in the clue card's bottom-left corner. The activation
-// lights carry all the timing now (flash on buzzer open, drain until the
-// deadline), so only the expired state still speaks in words.
-function statusLine(state: GameState): string | null {
-  switch (state.status) {
-    case 'CLUE_EXPIRED':
-      return 'Time to answer expired';
-    default:
-      return null;
-  }
-}
 
 export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) {
   const [state, setState] = useState<GameState>(() => initialStateFor(initialScreen));
@@ -142,7 +131,6 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
         <View style={[StyleSheet.absoluteFill, { bottom: PLAYER_BAR_HEIGHT }]}>
           <ClueScreen
             clue={state.activeClue}
-            statusText={statusLine(state)}
             canBuzz={state.status === 'BUZZ_OPEN' && !localBuzz}
             lights={
               state.status === 'BUZZ_OPEN' && !localBuzz && phaseDeadline != null

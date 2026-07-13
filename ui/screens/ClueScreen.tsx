@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  Easing,
   PanResponder,
   Pressable,
   StyleSheet,
@@ -43,8 +44,6 @@ interface RevealInfo {
 
 interface ClueScreenProps {
   clue: ActiveClue;
-  /** Small info line in the bottom-left corner ("4s", "Bob answered…"). */
-  statusText?: string | null | undefined;
   /** Tap-to-buzz is live (buzz window open and this player hasn't buzzed). */
   canBuzz?: boolean | undefined;
   /** This player buzzed and is still typing — the keyboard is up. */
@@ -72,7 +71,6 @@ interface ClueScreenProps {
 
 export function ClueScreen({
   clue,
-  statusText,
   canBuzz,
   showKeyboard,
   canJudge,
@@ -87,6 +85,32 @@ export function ClueScreen({
 }: ClueScreenProps) {
   const { width } = useWindowDimensions();
   const pan = useRef(new Animated.Value(0)).current;
+
+  const [bodyHeight, setBodyHeight] = useState(0);
+  const revealAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (reveal) {
+      Animated.timing(revealAnim, {
+        toValue: 1,
+        duration: 250,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    } else {
+      revealAnim.setValue(0);
+    }
+  }, [reveal, revealAnim]);
+
+  const revealRise = revealAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -bodyHeight * 0.15],
+  });
+
+  const revealOpacity = revealAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  });
 
   // The player can swipe the keyboard down without locking if they haven't
   // typed anything yet — it just dismisses temporarily. Tapping the card
@@ -279,7 +303,7 @@ export function ClueScreen({
         </Text>
       </Animated.View>
 
-      {lights != null && <ActivationLights key={lights.deadline} {...lights} />}
+      <ActivationLights lights={lights} />
 
       <Animated.View
         style={[styles.cardWrap, { transform: [{ translateX: pan }] }]}
@@ -307,9 +331,13 @@ export function ClueScreen({
             </Text>
           </View>
 
-          <View style={styles.body}>
+          <View style={styles.body} onLayout={e => setBodyHeight(e.nativeEvent.layout.height)}>
             <Animated.View
-              style={{ transform: [{ translateY: clueRise }, { scale: clueScale }] }}
+              style={{
+                transform: [{ translateY: Animated.add(clueRise, revealRise) }, { scale: clueScale }],
+                alignItems: 'center',
+                position: 'relative',
+              }}
             >
               <Text style={styles.clueText} allowFontScaling={false}>
                 {clue.text.toUpperCase()}
@@ -317,26 +345,26 @@ export function ClueScreen({
 
               {/* The reveal: correct answer in gold under the clue text. */}
               {reveal && (
-                <View style={styles.revealWrap}>
+                <Animated.View
+                  style={[
+                    styles.revealWrap,
+                    {
+                      position: 'absolute',
+                      top: '100%',
+                      left: -400,
+                      right: -400,
+                      opacity: revealOpacity,
+                    },
+                  ]}
+                >
                   <Text style={styles.revealAnswer} allowFontScaling={false}>
                     {reveal.correctAnswer.toUpperCase()}
                   </Text>
-                </View>
+                </Animated.View>
               )}
             </Animated.View>
           </View>
         </Pressable>
-
-        {/* Countdown line, bottom-left: just the countdown number during
-            timed phases ("8s", "3s", etc), or player answer info when
-            locked/expired. Static — sits beside the space bar. */}
-        {statusText != null && (
-          <View style={styles.statusLineWrap} pointerEvents="none">
-            <Text style={styles.statusLine} numberOfLines={1} allowFontScaling={false}>
-              {statusText}
-            </Text>
-          </View>
-        )}
 
         {/* Floating keyboard: slides up over the lower card with the typed
             answer right above the keys. No panel background — only the keys
@@ -428,22 +456,6 @@ const styles = StyleSheet.create({
   },
   answerPlaceholder: {
     color: 'rgba(255,255,255,0.35)',
-  },
-  statusLineWrap: {
-    position: 'absolute',
-    left: 36, // aligns with the card's horizontal padding
-    // The countdown sits on the keyboard's bottom row (flex:1 of the space bar).
-    // Vertically centered on the key height (40px), with the space bar taking
-    // flex:4 to its right. Just the number — "8s", "3s", etc.
-    bottom: 20,
-    height: 40,
-    justifyContent: 'center',
-  },
-  statusLine: {
-    fontFamily: typeTokens.ui500,
-    fontSize: 13,
-    letterSpacing: 0.5,
-    color: 'rgba(255,255,255,0.65)',
   },
   value: {
     fontFamily: typeTokens.board,

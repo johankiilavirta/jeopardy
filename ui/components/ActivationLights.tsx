@@ -1,25 +1,24 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 
 const LIGHT_COUNT = 13;
-/** The buzzer-activation flash runs this long before going steady. */
-const FLASH_MS = 1000;
-/** From the broadcast gif: each ~510ms cycle the lamps pop on for ~90ms. */
-const POP_ON_MS = 90;
-const POP_OFF_MS = 420;
+/** The buzzer-activation flash runs this long before going steady.
+ *  Each of the two pulses takes 120ms (fade-in) + 80ms (hold) + 250ms (fade-out) + 150ms (hold-off) = 600ms.
+ *  Then a final fade-in to steady lit takes 120ms.
+ *  Total duration = 2 * 600ms + 120ms = 1320ms. */
+const FLASH_MS = 1320;
 /** Warm incandescent white, sampled from the gif's lit lamps. */
 const LIT = '#F7EFE8';
 /** Extinguished lamps stay faintly visible, like the real board's dark LEDs. */
 const OFF_OPACITY = 0.15;
 
 interface ActivationLightsProps {
-  /** Epoch ms when the answer window closes — the strip drains to empty here. */
-  deadline: number;
-  /** The window's full length, so a mid-window mount starts partially drained. */
-  durationMs: number;
-  /** Pop twice (the activation moment) before going steady. False when the
-   *  strip is re-armed for a personal typing timer — no re-activation. */
-  flash: boolean;
+  /** The light configurations, or null/undefined to fade out. */
+  lights?: {
+    deadline: number;
+    durationMs: number;
+    flash: boolean;
+  } | null | undefined;
 }
 
 /**
@@ -29,22 +28,70 @@ interface ActivationLightsProps {
  * extinguish linearly from the outermost pair inward until time is up —
  * the show's podium countdown, laid flat.
  *
- * Mount keyed by `deadline` so a new window re-runs the animations.
+ * It stays mounted and animates its overall opacity when lights are cleared.
  */
-export function ActivationLights({ deadline, durationMs, flash }: ActivationLightsProps) {
+export function ActivationLights({ lights }: ActivationLightsProps) {
+  const [activeLights, setActiveLights] = useState<NonNullable<ActivationLightsProps['lights']>>(() => {
+    return lights ?? { deadline: 0, durationMs: 1, flash: false };
+  });
+
+  const overallOpacity = useRef(new Animated.Value(lights ? 1 : 0)).current;
+
+  useEffect(() => {
+    if (lights) {
+      setActiveLights(lights);
+      Animated.timing(overallOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(overallOpacity, {
+        toValue: 0,
+        duration: 350,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [lights, overallOpacity]);
+
+  const { deadline, durationMs, flash } = activeLights;
+
   const glow = useRef(new Animated.Value(flash ? OFF_OPACITY : 1)).current;
   /** Fraction of the window elapsed, 0 → 1, advanced linearly to `deadline`. */
   const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (deadline === 0) return;
+
+    glow.setValue(flash ? OFF_OPACITY : 1);
+
     const pop = () => [
-      Animated.timing(glow, { toValue: 1, duration: 30, useNativeDriver: true }),
-      Animated.delay(POP_ON_MS - 30),
-      Animated.timing(glow, { toValue: OFF_OPACITY, duration: 30, useNativeDriver: true }),
-      Animated.delay(POP_OFF_MS - 60),
+      Animated.timing(glow, {
+        toValue: 1,
+        duration: 120,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.delay(80),
+      Animated.timing(glow, {
+        toValue: OFF_OPACITY,
+        duration: 250,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.delay(150),
     ];
     const arm = flash
-      ? Animated.sequence([...pop(), ...pop(), Animated.timing(glow, { toValue: 1, duration: 30, useNativeDriver: true })])
+      ? Animated.sequence([
+          ...pop(),
+          ...pop(),
+          Animated.timing(glow, {
+            toValue: 1,
+            duration: 120,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ])
       : Animated.timing(glow, { toValue: 1, duration: 120, useNativeDriver: true });
     arm.start();
 
@@ -64,31 +111,46 @@ export function ActivationLights({ deadline, durationMs, flash }: ActivationLigh
   }, [glow, progress, deadline, durationMs, flash]);
 
   // Each lamp extinguishes when the elapsed fraction passes its threshold.
-  // Outermost pair first, center last; thresholds spread evenly across the
-  // window (skipping the flash second, during which everything stays lit).
+  // Outermost pair first, center last.
   const opacities = useMemo(() => {
     const tiers = Math.ceil(LIGHT_COUNT / 2);
-    const drainStart = flash ? Math.min(0.9, FLASH_MS / durationMs) : 0;
     return Array.from({ length: LIGHT_COUNT }, (_, i) => {
       const edgeDistance = Math.min(i, LIGHT_COUNT - 1 - i);
-      const threshold = drainStart + (1 - drainStart) * ((edgeDistance + 1) / tiers);
+
+      let threshold: number;
+      let fadeStart: number;
+
+      if (flash) {
+        // For the buzz window (8s):
+        // Tier d (0 to 6) is fully off at progress = 0.4 + d * 0.1
+        // and starts fading at progress = 0.35 + d * 0.1
+        threshold = 0.4 + edgeDistance * 0.1;
+        fadeStart = 0.35 + edgeDistance * 0.1;
+      } else {
+        // For the personal typing window (10s):
+        // Tier d (0 to 6) is fully off at progress = (d + 1) / tiers
+        // and starts fading 0.05 before that.
+        threshold = (edgeDistance + 1) / tiers;
+        fadeStart = Math.max(0, threshold - 0.05);
+      }
+
       const step = progress.interpolate({
-        inputRange: [Math.max(0, threshold - 0.03), threshold],
+        inputRange: [fadeStart, threshold],
         outputRange: [1, OFF_OPACITY],
         extrapolate: 'clamp',
       });
       return Animated.multiply(glow, step);
     });
-  }, [glow, progress, durationMs, flash]);
+  }, [glow, progress, flash]);
 
   return (
-    <View style={styles.band} pointerEvents="none">
+    <Animated.View style={[styles.band, { opacity: overallOpacity }]} pointerEvents="none">
       <View style={styles.row}>
         {opacities.map((opacity, i) => (
           <Animated.View key={i} style={[styles.light, { opacity }]} />
         ))}
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -101,10 +163,10 @@ const styles = StyleSheet.create({
     bottom: 18,
     alignItems: 'center',
   },
-  // A happy medium: the strip spans well short of the full card width.
+  // Spans 75% of the card width up to 1200px max.
   row: {
-    width: '48%',
-    maxWidth: 780,
+    width: '75%',
+    maxWidth: 1200,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },

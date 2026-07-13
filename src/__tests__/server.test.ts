@@ -256,13 +256,13 @@ describe('GameServer', () => {
     p1.send('host', selectClueMsg);
     fire(); // window opens
     p2.send('host', JSON.stringify({ type: 'BUZZ' }));
-    expect(pendingMs()).toEqual([5000, 10000]); // window + bob's typing timer
+    expect(pendingMs()).toEqual([8000, 10000]); // window + bob's typing timer
 
     // Undo the buzz: bob's personal timer must vanish, the window timer
     // restarts fresh (no timestamps in state — documented tradeoff).
     p1.send('host', JSON.stringify({ type: 'UNDO' }));
     expect(server.history.current.buzzes).toEqual([]);
-    expect(pendingMs()).toEqual([5000]);
+    expect(pendingMs()).toEqual([8000]);
     expect(count()).toBe(1);
   });
 
@@ -282,7 +282,7 @@ describe('GameServer', () => {
 
     fire();
     expect(lastStateFrom(p1Messages).state.status).toBe('BUZZ_OPEN');
-    expect(pendingMs()).toEqual([5000]); // buzzerMs
+    expect(pendingMs()).toEqual([8000]); // buzzerMs
 
     fire();
     expect(lastStateFrom(p1Messages).state.status).toBe('CLUE_EXPIRED');
@@ -349,14 +349,14 @@ describe('GameServer', () => {
     // Bob buzzes: only his personal timer is added — the window timer
     // (armed first, so still at index 0) keeps running untouched.
     p2.send('host', JSON.stringify({ type: 'BUZZ' }));
-    expect(pendingMs()).toEqual([5000, 10000]);
+    expect(pendingMs()).toEqual([8000, 10000]);
     expect(setCalls()).toBe(callsAfterOpen + 1);
 
     // Typing arms nothing new either
     p2.send('host', JSON.stringify({ type: 'SET_ANSWER', text: 'PLU' }));
     p2.send('host', JSON.stringify({ type: 'SET_ANSWER', text: 'PLUTO' }));
     expect(setCalls()).toBe(callsAfterOpen + 1);
-    expect(pendingMs()).toEqual([5000, 10000]);
+    expect(pendingMs()).toEqual([8000, 10000]);
 
     // The untouched window timer is still the one that fires TIMEOUT
     fire(0);
@@ -377,7 +377,7 @@ describe('GameServer', () => {
     fire(); // window opens
 
     p2.send('host', JSON.stringify({ type: 'BUZZ' }));
-    expect(pendingMs()).toEqual([5000, 10000]); // window + bob
+    expect(pendingMs()).toEqual([8000, 10000]); // window + bob
 
     // Alice buzzes too: everyone in — window timer cleared (moot), her
     // own 10s starts from her buzz, bob's keeps running untouched.
