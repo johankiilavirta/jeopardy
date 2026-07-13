@@ -1,14 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 
-const LIGHT_COUNT = 13;
-/** The buzzer-activation flash runs this long before going steady.
- *  Each of the two pulses takes 120ms (fade-in) + 80ms (hold) + 250ms (fade-out) + 150ms (hold-off) = 600ms.
- *  Then a final fade-in to steady lit takes 120ms.
- *  Total duration = 2 * 600ms + 120ms = 1320ms. */
+const LIGHT_COUNT = 41;
+/** The buzzer-activation flash runs this long before going steady. */
 const FLASH_MS = 1320;
-/** Warm incandescent white, sampled from the gif's lit lamps. */
-const LIT = '#F7EFE8';
+/** Vibrant electric blue, matching the brilliant blue LEDs in the modern set. */
+const LIT = '#389BFF';
 /** Extinguished lamps stay faintly visible, like the real board's dark LEDs. */
 const OFF_OPACITY = 0.15;
 
@@ -22,13 +19,11 @@ interface ActivationLightsProps {
 }
 
 /**
- * The board's activation lights, doubling as the answer timer: a sparse row
- * of warm-white lamps in the dark band under the clue card. When the buzzers
- * open they pop at the broadcast cadence for a second, hold steady, then
- * extinguish linearly from the outermost pair inward until time is up —
- * the show's podium countdown, laid flat.
- *
- * It stays mounted and animates its overall opacity when lights are cleared.
+ * The board's activation lights, doubling as the answer timer: a dense row
+ * of electric-blue rectangular LED bars glued tightly under the clue card.
+ * When the buzzers open they pop at the broadcast cadence for a second, hold
+ * steady, then extinguish linearly from the outermost pair inward until time
+ * is up.
  */
 export function ActivationLights({ lights }: ActivationLightsProps) {
   const [activeLights, setActiveLights] = useState<NonNullable<ActivationLightsProps['lights']>>(() => {
@@ -121,14 +116,14 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
       let fadeStart: number;
 
       if (flash) {
-        // For the buzz window (8s):
-        // Tier d (0 to 6) is fully off at progress = 0.4 + d * 0.1
-        // and starts fading at progress = 0.35 + d * 0.1
-        threshold = 0.4 + edgeDistance * 0.1;
-        fadeStart = 0.35 + edgeDistance * 0.1;
+        // Countdown runs from progress = 0.2 to 1.0 linearly across the tiers
+        const rangeStart = 0.2;
+        const rangeLen = 1.0 - rangeStart;
+        threshold = rangeStart + (edgeDistance + 1) * (rangeLen / tiers);
+        fadeStart = Math.max(0, threshold - (rangeLen / tiers));
       } else {
         // For the personal typing window (10s):
-        // Tier d (0 to 6) is fully off at progress = (d + 1) / tiers
+        // Tier d (0 to tiers - 1) is fully off at progress = (d + 1) / tiers
         // and starts fading 0.05 before that.
         threshold = (edgeDistance + 1) / tiers;
         fadeStart = Math.max(0, threshold - 0.05);
@@ -155,12 +150,11 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
 }
 
 const styles = StyleSheet.create({
-  // Vertically centered in the card's 44px bottom-margin band.
   band: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 18,
+    bottom: 26, // glued close to the bottom of the card/grid (which is at 44px, leaving a 4px gap)
     alignItems: 'center',
   },
   // Spans 75% of the card width up to 1200px max.
@@ -171,9 +165,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   light: {
-    width: 8,
-    height: 8,
-    borderRadius: 2,
+    width: 4, // dense vertical rectangular blocks
+    height: 14,
+    borderRadius: 1,
     backgroundColor: LIT,
   },
 });
