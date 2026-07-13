@@ -30,6 +30,8 @@ const extra = Constants.expoConfig?.extra as {
   room?: string;
   players?: string;
   game?: string;
+  uiLab?: boolean;
+  uiLabScreen?: string;
 } | undefined;
 
 // Read EXPO_PUBLIC_* directly: Expo inlines these into the (web) client
@@ -38,6 +40,8 @@ const extra = Constants.expoConfig?.extra as {
 const DEV_ROOM_RAW = process.env.EXPO_PUBLIC_ROOM ?? extra?.room;
 const DEV_PLAYERS_RAW = process.env.EXPO_PUBLIC_PLAYERS ?? extra?.players;
 const DEV_GAME_RAW = process.env.EXPO_PUBLIC_GAME ?? extra?.game;
+const UI_LAB = process.env.EXPO_PUBLIC_UI_LAB === 'true' || extra?.uiLab === true;
+const UI_LAB_SCREEN = process.env.EXPO_PUBLIC_UI_LAB_SCREEN ?? extra?.uiLabScreen;
 
 const DEV_ROOM = DEV_ROOM_RAW ? Number(DEV_ROOM_RAW) : null;
 // Auto-start once this many players are in the room (default 1 = solo: drop
@@ -67,7 +71,7 @@ export default function App() {
     Oswald_700Bold,
   });
 
-  const [screen, setScreen] = useState<AppScreen>({ type: 'menu' });
+  const [screen, setScreen] = useState<AppScreen>(() => (UI_LAB ? { type: 'demo' } : { type: 'menu' }));
   const [playerName, setPlayerName] = useState(randomPlayerName);
   const [relayHost, setRelayHost] = useState(DEFAULT_RELAY_HOST);
   const [relayPort, setRelayPort] = useState('8787');
@@ -346,7 +350,9 @@ export default function App() {
             relayPortSetting={relayPort}
             onRelayPortChange={setRelayPort}
             animationsEnabled={animationsEnabled}
+            onAnimationsChange={setAnimationsEnabled}
             visibleCategories={visibleCategories}
+            onVisibleCategoriesChange={setVisibleCategories}
           />
         ) : null;
       case 'settings':
@@ -362,7 +368,7 @@ export default function App() {
           />
         );
       case 'demo':
-        return <DemoHarness />;
+        return <DemoHarness initialScreen={UI_LAB_SCREEN} />;
     }
   }
 

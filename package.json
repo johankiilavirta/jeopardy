@@ -12,6 +12,7 @@
     "ios": "expo start --ios",
     "relay": "tsx relay/index.ts",
     "solo": "tsx scripts/dev-solo.ts",
+    "ui": "tsx scripts/ui-lab.ts",
     "convert-data": "tsx scripts/convert-jeopardy-data.ts"
   },
   "keywords": [],

@@ -1,5 +1,5 @@
 /**
- * Mock clue content for the 5x5 demo board.
+ * Mock clue content for the 6-column demo board.
  *
  * Indexed by clue id (column-major, see `clueIdAt` in board.ts). In the next
  * milestone this content comes from whoever hosts the game; `GameState` only
@@ -117,6 +117,28 @@ const CLUE_TEXT: Record<number, { text: string; answer: string }> = {
   24: {
     text: 'It can precede \u201cfall\u201d, \u201cbow\u201d & \u201ccoat\u201d',
     answer: 'What is rain?',
+  },
+
+  // MOVIE QUOTES (col 5)
+  25: {
+    text: 'In 1939, Dorothy says there is no place like this',
+    answer: 'What is home?',
+  },
+  26: {
+    text: 'This 1972 film gave us the offer that cannot be refused',
+    answer: 'What is The Godfather?',
+  },
+  27: {
+    text: 'This Arnold Schwarzenegger cyborg promised, “I\u2019ll be back”',
+    answer: 'What is The Terminator?',
+  },
+  28: {
+    text: 'In “When Harry Met Sally...”, Sally orders one of these at Katz\u2019s Deli',
+    answer: 'What is a sandwich?',
+  },
+  29: {
+    text: '“Why so serious?” is a line from this 2008 Batman film',
+    answer: 'What is The Dark Knight?',
   },
 };
 

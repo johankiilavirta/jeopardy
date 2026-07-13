@@ -3,8 +3,9 @@ import { StyleSheet, View } from 'react-native';
 import type { GameState } from '../../src/types';
 import { Board } from '../components/Board';
 import type { CellRect } from '../components/BoardCell';
-import { PlayerHeader } from '../components/PlayerHeader';
+import { PLAYER_BAR_HEIGHT, PLAYER_BLOCK_HEIGHT, PlayerHeader } from '../components/PlayerHeader';
 import type { BoardDefinition } from '../fixtures/board';
+import { CARD_BOTTOM_MARGIN } from './ClueScreen';
 import { colors } from '../theme/tokens';
 
 interface ChooseClueScreenProps {
@@ -18,6 +19,8 @@ interface ChooseClueScreenProps {
   disconnectedPlayerId?: string | null;
   /** Passed through to Board to trigger the DJ board-intro flash. */
   boardAnimKey?: number | undefined;
+  /** Highlights the player whose answer is being judged. */
+  judgingPlayerId?: string | null | undefined;
 }
 
 export function ChooseClueScreen({
@@ -28,6 +31,7 @@ export function ChooseClueScreen({
   onSkipClue,
   disconnectedPlayerId,
   boardAnimKey,
+  judgingPlayerId,
 }: ChooseClueScreenProps) {
   // null currentTurnPlayerId means anyone may pick the first clue.
   const locked =
@@ -42,12 +46,6 @@ export function ChooseClueScreen({
 
   return (
     <View style={styles.screen}>
-      <PlayerHeader
-        players={Object.values(state.players)}
-        currentTurnPlayerId={state.currentTurnPlayerId}
-        localPlayerId={localPlayerId}
-        disconnectedPlayerId={disconnectedPlayerId}
-      />
       <View
         style={styles.boardWrap}
         onLayout={e => {
@@ -67,6 +65,13 @@ export function ChooseClueScreen({
           />
         )}
       </View>
+      <PlayerHeader
+        players={Object.values(state.players)}
+        currentTurnPlayerId={state.currentTurnPlayerId}
+        localPlayerId={localPlayerId}
+        disconnectedPlayerId={disconnectedPlayerId}
+        judgingPlayerId={judgingPlayerId}
+      />
     </View>
   );
 }
@@ -75,9 +80,14 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.bg,
-    paddingHorizontal: 8,
-    paddingTop: 8,
-    gap: 10,
+    // The board occupies exactly the clue card's footprint, so the card
+    // expands over it edge-for-edge: same 2% side/top insets, and the gap
+    // below the board puts its bottom edge where the card's bottom edge
+    // lands (bar inset + card bottom margin, minus the bar itself).
+    paddingHorizontal: '2%',
+    paddingTop: '2%',
+    paddingBottom: 8,
+    gap: PLAYER_BAR_HEIGHT + CARD_BOTTOM_MARGIN - (8 + PLAYER_BLOCK_HEIGHT),
   },
   boardWrap: {
     flex: 1,

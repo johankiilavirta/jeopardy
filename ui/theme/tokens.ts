@@ -9,18 +9,24 @@
 export const colors = {
   /** Near-black app background */
   bg: '#0D0D0D',
-  /** Deep broadcast blue cell fill (rgb 2,2,154) */
-  cell: '#02029A',
+  /** Deep navy cell fill — softer than the raw broadcast blue (#02029A),
+   *  which overwhelms on large surfaces. Used everywhere something is
+   *  "Jeopardy blue": board cells, clue card, score blocks, menus. */
+  cell: '#111A63',
   /** Dead-navy fill for burned (already-played) cells */
   cellBurned: '#0A102E',
+  /** A recessed layer sitting visually "behind" the cell blue — between
+   *  cell and the near-black background. */
+  cellRecessed: '#0F1440',
   /** Classic gold for dollar values */
   gold: '#E5B20D',
   /** Warmer tan-gold of the broadcast board numbers (rgb 218,157,92) */
   boardValue: '#DA9D5C',
   /** Brighter gold (pressed/highlight accents) */
   goldBright: '#FFCC00',
-  /** Grid line color between cells */
-  grid: '#000000',
+  /** Grid line color between cells — same as the app background, so the
+   *  lines read as the background showing through, not a second black. */
+  grid: '#0D0D0D',
   /** Outline for the player whose turn it is */
   activeOutline: '#2E5BFF',
   /** Category header text */

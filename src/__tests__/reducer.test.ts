@@ -294,6 +294,14 @@ describe('LOCK_ANSWER', () => {
     expect(state.status).toBe('REVEAL');
   });
 
+  it('locking in solo mode reveals immediately even if in BUZZ_OPEN', () => {
+    let state = createInitialState(['Alice']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'alice' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice' });
+    expect(state.status).toBe('REVEAL');
+  });
+
   it('is rejected for non-buzzers and already-locked players', () => {
     let state = createInitialState(['Alice', 'Bob']);
     state = openClue(state, 'alice');
@@ -402,6 +410,17 @@ describe('JUDGE_ANSWER', () => {
 
     expect(state.status).toBe('REVEAL'); // alice's answer is up next
     expect(state.players['bob']!.score).toBe(-200);
+    expect(state.activeClue!.failedPlayerIds).toContain('bob');
+    expect(judgedPlayerId(state)).toBe('alice');
+  });
+
+  it('incorrect with penalty=false (pass): does not deduct points, next buzzer goes on the stand', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = bothAnswered(state, 1, 200);
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false, penalty: false });
+
+    expect(state.status).toBe('REVEAL'); // alice's answer is up next
+    expect(state.players['bob']!.score).toBe(0); // unchanged score
     expect(state.activeClue!.failedPlayerIds).toContain('bob');
     expect(judgedPlayerId(state)).toBe('alice');
   });

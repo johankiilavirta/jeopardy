@@ -11,6 +11,9 @@ const config: ExpoConfig = {
     // (default 1 = drop straight in), and which J!Archive game to load.
     players: process.env.EXPO_PUBLIC_PLAYERS,
     game: process.env.EXPO_PUBLIC_GAME,
+    // UI lab: opens a reducer-backed visual fixture without the relay/menu.
+    uiLab: !!process.env.EXPO_PUBLIC_UI_LAB,
+    uiLabScreen: process.env.EXPO_PUBLIC_UI_LAB_SCREEN ?? 'board',
   },
 };
 

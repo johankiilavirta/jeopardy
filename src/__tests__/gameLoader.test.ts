@@ -18,11 +18,11 @@ const names = (b: BoardDefinition) => b.categories.map(c => c.name);
 
 describe('getVisibleBoard', () => {
   it('shows the first 5 categories until a column clears', () => {
-    expect(names(getVisibleBoard(sixCatBoard(), []))).toEqual(['CAT0', 'CAT1', 'CAT2', 'CAT3', 'CAT4']);
+    expect(names(getVisibleBoard(sixCatBoard(), [], 5))).toEqual(['CAT0', 'CAT1', 'CAT2', 'CAT3', 'CAT4']);
   });
 
   it('backfills the 6th category into the first cleared column, marked with *', () => {
-    const vb = getVisibleBoard(sixCatBoard(), colIds(2)); // column 2 cleared
+    const vb = getVisibleBoard(sixCatBoard(), colIds(2), 5); // column 2 cleared
     expect(names(vb)).toEqual(['CAT0', 'CAT1', 'CAT5 *', 'CAT3', 'CAT4']);
   });
 
@@ -30,7 +30,7 @@ describe('getVisibleBoard', () => {
     // Column 2 completes first, then column 0. The 6th must stay at column 2 —
     // this is the bug the old findIndex logic had (it would hop to column 0).
     const burned = [...colIds(2), ...colIds(0)];
-    const vb = getVisibleBoard(sixCatBoard(), burned);
+    const vb = getVisibleBoard(sixCatBoard(), burned, 5);
     expect(vb.categories[2]?.name).toBe('CAT5 *'); // still column 2
     expect(vb.categories[0]?.name).toBe('CAT0');   // column 0 stays itself (fully burned)
   });
@@ -39,7 +39,7 @@ describe('getVisibleBoard', () => {
     // Column 0 has clues burned early but completes LAST (its 5th clue burned
     // after column 3 fully clears). The 6th should anchor to column 3.
     const burned = [0, 1, 2, 3, ...colIds(3), 4];
-    const vb = getVisibleBoard(sixCatBoard(), burned);
+    const vb = getVisibleBoard(sixCatBoard(), burned, 5);
     expect(vb.categories[3]?.name).toBe('CAT5 *');
     expect(vb.categories[0]?.name).toBe('CAT0');
   });

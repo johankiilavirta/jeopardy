@@ -11,6 +11,8 @@ interface ExpandingClueOverlayProps {
   fromRect: CellRect | null;
   /** When false, the overlay just fills the screen instantly. */
   animate: boolean;
+  /** Leaves a persistent UI element (such as the player bar) uncovered. */
+  bottomInset?: number | undefined;
   children: ReactNode;
 }
 
@@ -22,7 +24,7 @@ interface ExpandingClueOverlayProps {
  * position and subtract it from the cell rect, so the math is correct under any
  * safe-area inset. Mount this keyed by clue id so each pick replays the grow.
  */
-export function ExpandingClueOverlay({ fromRect, animate, children }: ExpandingClueOverlayProps) {
+export function ExpandingClueOverlay({ fromRect, animate, bottomInset = 0, children }: ExpandingClueOverlayProps) {
   const willAnimate = animate && !!fromRect;
   const progress = useRef(new Animated.Value(willAnimate ? 0 : 1)).current;
   // The card grows uniformly (single scale, so the clue text never distorts)
@@ -105,7 +107,7 @@ export function ExpandingClueOverlay({ fromRect, animate, children }: ExpandingC
       onLayout={begin}
       // Scale is anchored at the element's center; the translate then glides
       // that center from the tapped cell to the middle of the screen.
-      style={[styles.fill, { transformOrigin: 'center', transform, opacity: ready ? 1 : 0 }]}
+      style={[styles.fill, { bottom: bottomInset, transformOrigin: 'center', transform, opacity: ready ? 1 : 0 }]}
     >
       {children}
     </Animated.View>

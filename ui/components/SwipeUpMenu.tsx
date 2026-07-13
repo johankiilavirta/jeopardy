@@ -21,8 +21,12 @@ interface SwipeUpMenuProps {
   children: React.ReactNode;
   /** Render the main menu page. Receives a callback to navigate to settings. */
   renderMenu: (showSettings: () => void) => React.ReactNode;
-  /** Render the settings page inside the overlay. Receives a back callback. */
-  renderSettings?: (goBack: () => void) => React.ReactNode;
+  /**
+   * Render the settings page inside the overlay.
+   * First arg: go back to the menu page.
+   * Second arg: close the overlay entirely (return to game).
+   */
+  renderSettings?: (goBack: () => void, close: () => void) => React.ReactNode;
   /** Suppress the swipe gesture (e.g. during active clue answering). */
   disabled?: boolean;
 }
@@ -64,7 +68,7 @@ export function SwipeUpMenu({ children, renderMenu, renderSettings, disabled }: 
     if (typeof window === 'undefined') return;
     const handler = (e: KeyboardEvent) => {
       if (menuVisible) {
-        if (e.key === 'Escape' || e.key === 'm' || e.key === 'M') closeMenu();
+        if (e.key === 'Escape' || e.key === 'm' || e.key === 'M' || e.key === 'ArrowDown') closeMenu();
       } else if (!disabled && (e.key === 'm' || e.key === 'M')) {
         openMenu();
       }
@@ -169,7 +173,7 @@ export function SwipeUpMenu({ children, renderMenu, renderSettings, disabled }: 
             {...dismissResponder.panHandlers}
           >
             {overlayPage === 'settings' && renderSettings
-              ? renderSettings(showMenu)
+              ? renderSettings(showMenu, closeMenu)
               : renderMenu(showSettings)}
           </Animated.View>
         </>

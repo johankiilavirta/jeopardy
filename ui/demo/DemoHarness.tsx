@@ -7,6 +7,8 @@ import { getClueContent } from '../fixtures/clues';
 import { LOCAL_PLAYER_ID, yourTurnFresh } from '../fixtures/gameStates';
 import { ChooseClueScreen } from '../screens/ChooseClueScreen';
 import { ClueScreen } from '../screens/ClueScreen';
+import { PLAYER_BAR_HEIGHT } from '../components/PlayerHeader';
+import { JudgementTray } from '../components/JudgementTray';
 
 // Demo loop driven by the real reducer with real Jeopardy pacing: tapping a
 // cell dispatches SELECT_CLUE; the clue is "read" for 5s (buzzing locked),
@@ -20,46 +22,50 @@ import { ClueScreen } from '../screens/ClueScreen';
 // countdowns honest.
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number; action: Action }>> = {
   CLUE_READING: { ms: 5000, action: { type: 'BUZZER_OPEN' } },
-  BUZZ_OPEN: { ms: 5000, action: { type: 'TIMEOUT' } },
+  BUZZ_OPEN: { ms: 8000, action: { type: 'TIMEOUT' } },
   CLUE_EXPIRED: { ms: 5000, action: { type: 'DISMISS_CLUE' } },
 };
 
 /** Personal typing time, from each player's own buzz (mirrors answerMs). */
 const ANSWER_MS = 10000;
 
-// The info line in the clue card's bottom-left corner. Minimal during
-// counting phases (just the countdown) to leave space for the space bar.
-// The reading lockout shows no countdown — tracking when the buzzers open
-// is part of the skill. The personal typing countdown wins over the window
-// countdown while the local player is typing.
-function statusLine(
-  state: GameState,
-  countdown: number | null,
-  personalCountdown: number | null,
-): string | null {
-  switch (state.status) {
-    case 'CLUE_READING':
-      return `Wait to buzz ${PHASE_TIMERS.CLUE_READING!.ms / 1000}s`;
-    case 'BUZZ_OPEN':
-    case 'ANSWERING':
-      return `${(personalCountdown ?? countdown) ?? 0}s`;
-    case 'REVEAL': {
-      const onStand = judgedPlayerId(state);
-      const name = state.players[onStand ?? '']?.name ?? 'Someone';
-      const text = onStand ? getBuzz(state, onStand)?.answer : '';
-      return `${name} ANSWERED ${text ? `"${text}"` : 'NOTHING'}`.toUpperCase();
-    }
-    case 'CLUE_EXPIRED':
-      return 'Time to answer expired';
+type DemoScreen = 'board' | 'clue' | 'judge';
+
+function initialStateFor(screen: string | undefined): GameState {
+  const clue = getClueContent(0);
+  switch (screen) {
+    case 'clue':
+      return {
+        ...yourTurnFresh,
+        status: 'CLUE_READING',
+        clueSelectPlayerId: LOCAL_PLAYER_ID,
+        activeClue: { ...clue, failedPlayerIds: [] },
+      };
+    case 'judge':
+      return {
+        ...yourTurnFresh,
+        status: 'REVEAL',
+        clueSelectPlayerId: LOCAL_PLAYER_ID,
+        activeClue: { ...clue, failedPlayerIds: [] },
+        // Both players buzzed, so judging the first answer wrong hands the
+        // stand (and the bottom highlight) to the second buzzer.
+        buzzes: [
+          { playerId: LOCAL_PLAYER_ID, answer: 'MEZCAL', locked: true },
+          { playerId: 'opponent', answer: 'TEQUILA', locked: true },
+        ],
+      };
     default:
-      return null;
+      return yourTurnFresh;
   }
 }
 
-export function DemoHarness() {
-  const [state, setState] = useState<GameState>(yourTurnFresh);
-  const [countdown, setCountdown] = useState<number | null>(null);
-  const [personalCountdown, setPersonalCountdown] = useState<number | null>(null);
+
+export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) {
+  const [state, setState] = useState<GameState>(() => initialStateFor(initialScreen));
+  // Deadlines (epoch ms) for the current phase window and the local player's
+  // personal typing timer — they drive the activation lights' drain.
+  const [phaseDeadline, setPhaseDeadline] = useState<number | null>(null);
+  const [personalDeadline, setPersonalDeadline] = useState<number | null>(null);
   const dispatch = (action: Action) => setState(s => reducer(s, action));
 
   const localBuzz = getBuzz(state, LOCAL_PLAYER_ID);
@@ -72,19 +78,12 @@ export function DemoHarness() {
   useEffect(() => {
     const phase = PHASE_TIMERS[state.status];
     if (!phase) {
-      setCountdown(null);
+      setPhaseDeadline(null);
       return;
     }
-    const deadline = Date.now() + phase.ms;
-    setCountdown(Math.ceil(phase.ms / 1000));
-    const tick = setInterval(() => {
-      setCountdown(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
-    }, 100);
+    setPhaseDeadline(Date.now() + phase.ms);
     const fire = setTimeout(() => dispatch(phase.action), phase.ms);
-    return () => {
-      clearInterval(tick);
-      clearTimeout(fire);
-    };
+    return () => clearTimeout(fire);
   }, [state.status]);
 
   // Personal typing timer: 10s from the local player's own buzz, surviving
@@ -93,22 +92,15 @@ export function DemoHarness() {
   // tears this down via the cleanup.
   useEffect(() => {
     if (!typing) {
-      setPersonalCountdown(null);
+      setPersonalDeadline(null);
       return;
     }
-    const deadline = Date.now() + ANSWER_MS;
-    setPersonalCountdown(Math.ceil(ANSWER_MS / 1000));
-    const tick = setInterval(() => {
-      setPersonalCountdown(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
-    }, 100);
+    setPersonalDeadline(Date.now() + ANSWER_MS);
     const fire = setTimeout(
       () => dispatch({ type: 'LOCK_ANSWER', playerId: LOCAL_PLAYER_ID }),
       ANSWER_MS,
     );
-    return () => {
-      clearInterval(tick);
-      clearTimeout(fire);
-    };
+    return () => clearTimeout(fire);
   }, [typing]);
 
   // Single-device demo: whoever's answer is on the stand gets judged.
@@ -123,6 +115,7 @@ export function DemoHarness() {
         state={state}
         localPlayerId={LOCAL_PLAYER_ID}
         board={demoBoard}
+        judgingPlayerId={state.status === 'REVEAL' ? onStand : null}
         onSelectClue={clueId => {
           dispatch({
             type: 'SELECT_CLUE',
@@ -135,17 +128,20 @@ export function DemoHarness() {
       {/* activeClue is non-null for exactly the on-clue phases:
           CLUE_READING, BUZZ_OPEN, ANSWERING, REVEAL and CLUE_EXPIRED. */}
       {state.activeClue && (
-        <View style={StyleSheet.absoluteFill}>
+        <View style={[StyleSheet.absoluteFill, { bottom: PLAYER_BAR_HEIGHT }]}>
           <ClueScreen
             clue={state.activeClue}
-            statusText={statusLine(state, countdown, typing ? personalCountdown : null)}
             canBuzz={state.status === 'BUZZ_OPEN' && !localBuzz}
+            lights={
+              state.status === 'BUZZ_OPEN' && !localBuzz && phaseDeadline != null
+                ? { deadline: phaseDeadline, durationMs: PHASE_TIMERS.BUZZ_OPEN!.ms, flash: true }
+                : typing && personalDeadline != null
+                  ? { deadline: personalDeadline, durationMs: ANSWER_MS, flash: false }
+                  : null
+            }
             showKeyboard={typing}
-            canJudge={state.status === 'REVEAL'}
+            canJudge={false}
             onBuzz={() => dispatch({ type: 'BUZZ', playerId: LOCAL_PLAYER_ID })}
-            onJudge={correct => {
-              if (onStand) dispatch({ type: 'JUDGE_ANSWER', playerId: onStand, correct });
-            }}
             answer={localBuzz?.answer ?? ''}
             onAnswerChange={text =>
               dispatch({ type: 'SET_ANSWER', playerId: LOCAL_PLAYER_ID, text })
@@ -160,6 +156,30 @@ export function DemoHarness() {
             }
           />
         </View>
+      )}
+      {state.status === 'REVEAL' && onStand && (
+        <JudgementTray
+          key={onStand}
+          players={Object.values(state.players)}
+          localPlayerId={LOCAL_PLAYER_ID}
+          judgedPlayerId={onStand}
+          answer={getBuzz(state, onStand)?.answer ?? ''}
+          hasMoreToJudge={
+            state.activeClue
+              ? state.buzzes.some(
+                  b => b.playerId !== onStand && !state.activeClue!.failedPlayerIds.includes(b.playerId)
+                )
+              : false
+          }
+          onJudge={(correct, penalty) =>
+            dispatch({
+              type: 'JUDGE_ANSWER',
+              playerId: onStand,
+              correct,
+              ...(penalty !== undefined ? { penalty } : {}),
+            })
+          }
+        />
       )}
     </View>
   );
