@@ -59,26 +59,11 @@ function initialStateFor(screen: string | undefined): GameState {
   }
 }
 
-// The info line in the clue card's bottom-left corner. Minimal during
-// counting phases (just the countdown) to leave space for the space bar.
-// The reading lockout shows no countdown — tracking when the buzzers open
-// is part of the skill. The personal typing countdown wins over the window
-// countdown while the local player is typing.
-function statusLine(
-  state: GameState,
-  countdown: number | null,
-  personalCountdown: number | null,
-): string | null {
+// The info line in the clue card's bottom-left corner. The activation
+// lights carry all the timing now (flash on buzzer open, drain until the
+// deadline), so only the expired state still speaks in words.
+function statusLine(state: GameState): string | null {
   switch (state.status) {
-    case 'CLUE_READING':
-      // No text — the activation lights (dark) say "not yet".
-      return null;
-    case 'BUZZ_OPEN':
-    case 'ANSWERING':
-      return `${(personalCountdown ?? countdown) ?? 0}s`;
-    case 'REVEAL':
-      // No status line — the judgement tray shows the answer on the stand.
-      return null;
     case 'CLUE_EXPIRED':
       return 'Time to answer expired';
     default:
@@ -88,8 +73,10 @@ function statusLine(
 
 export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) {
   const [state, setState] = useState<GameState>(() => initialStateFor(initialScreen));
-  const [countdown, setCountdown] = useState<number | null>(null);
-  const [personalCountdown, setPersonalCountdown] = useState<number | null>(null);
+  // Deadlines (epoch ms) for the current phase window and the local player's
+  // personal typing timer — they drive the activation lights' drain.
+  const [phaseDeadline, setPhaseDeadline] = useState<number | null>(null);
+  const [personalDeadline, setPersonalDeadline] = useState<number | null>(null);
   const dispatch = (action: Action) => setState(s => reducer(s, action));
 
   const localBuzz = getBuzz(state, LOCAL_PLAYER_ID);
@@ -102,19 +89,12 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
   useEffect(() => {
     const phase = PHASE_TIMERS[state.status];
     if (!phase) {
-      setCountdown(null);
+      setPhaseDeadline(null);
       return;
     }
-    const deadline = Date.now() + phase.ms;
-    setCountdown(Math.ceil(phase.ms / 1000));
-    const tick = setInterval(() => {
-      setCountdown(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
-    }, 100);
+    setPhaseDeadline(Date.now() + phase.ms);
     const fire = setTimeout(() => dispatch(phase.action), phase.ms);
-    return () => {
-      clearInterval(tick);
-      clearTimeout(fire);
-    };
+    return () => clearTimeout(fire);
   }, [state.status]);
 
   // Personal typing timer: 10s from the local player's own buzz, surviving
@@ -123,22 +103,15 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
   // tears this down via the cleanup.
   useEffect(() => {
     if (!typing) {
-      setPersonalCountdown(null);
+      setPersonalDeadline(null);
       return;
     }
-    const deadline = Date.now() + ANSWER_MS;
-    setPersonalCountdown(Math.ceil(ANSWER_MS / 1000));
-    const tick = setInterval(() => {
-      setPersonalCountdown(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
-    }, 100);
+    setPersonalDeadline(Date.now() + ANSWER_MS);
     const fire = setTimeout(
       () => dispatch({ type: 'LOCK_ANSWER', playerId: LOCAL_PLAYER_ID }),
       ANSWER_MS,
     );
-    return () => {
-      clearInterval(tick);
-      clearTimeout(fire);
-    };
+    return () => clearTimeout(fire);
   }, [typing]);
 
   // Single-device demo: whoever's answer is on the stand gets judged.
@@ -169,13 +142,13 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
         <View style={[StyleSheet.absoluteFill, { bottom: PLAYER_BAR_HEIGHT }]}>
           <ClueScreen
             clue={state.activeClue}
-            statusText={statusLine(state, countdown, typing ? personalCountdown : null)}
+            statusText={statusLine(state)}
             canBuzz={state.status === 'BUZZ_OPEN' && !localBuzz}
-            buzzLights={
-              state.status === 'CLUE_READING'
-                ? 'off'
-                : state.status === 'BUZZ_OPEN' && !localBuzz
-                  ? 'live'
+            lights={
+              state.status === 'BUZZ_OPEN' && !localBuzz && phaseDeadline != null
+                ? { deadline: phaseDeadline, durationMs: PHASE_TIMERS.BUZZ_OPEN!.ms, flash: true }
+                : typing && personalDeadline != null
+                  ? { deadline: personalDeadline, durationMs: ANSWER_MS, flash: false }
                   : null
             }
             showKeyboard={typing}

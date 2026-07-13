@@ -54,22 +54,10 @@ const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
 
 const ANSWER_MS = 10000;
 
-function statusLine(
-  state: GameState,
-  localPlayerId: string,
-  countdown: number | null,
-  personalCountdown: number | null,
-): string | null {
+// The activation lights carry all the timing now (flash on buzzer open,
+// drain until the deadline), so only the expired state still speaks in words.
+function statusLine(state: GameState): string | null {
   switch (state.status) {
-    case 'CLUE_READING':
-      // No text — the activation lights (dark) say "not yet".
-      return null;
-    case 'BUZZ_OPEN':
-    case 'ANSWERING':
-      return `${(personalCountdown ?? countdown) ?? 0}s`;
-    case 'REVEAL':
-      // No status line — the judgement tray shows the answer on the stand.
-      return null;
     case 'CLUE_EXPIRED':
       return 'Time to answer expired';
     default:
@@ -83,8 +71,10 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // down as initialState (updated on every STATE_UPDATE from the server).
   const gameState = initialState?.state ?? null;
   const playerId = initialState?.playerId ?? null;
-  const [countdown, setCountdown] = useState<number | null>(null);
-  const [personalCountdown, setPersonalCountdown] = useState<number | null>(null);
+  // Deadlines (epoch ms) for the current phase window and the local player's
+  // personal typing timer — they drive the activation lights' drain.
+  const [phaseDeadline, setPhaseDeadline] = useState<number | null>(null);
+  const [personalDeadline, setPersonalDeadline] = useState<number | null>(null);
   // Window rect of the cell this device last tapped, so the clue card can grow
   // out of it. Only set for clues *we* picked — a clue another player selects
   // arrives with no rect and simply appears full-screen.
@@ -112,20 +102,15 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Phase countdown timers (display-only, server is authoritative).
+  // Phase deadline estimate (display-only, server is authoritative).
   useEffect(() => {
     if (!gameState) return;
     const phase = PHASE_TIMERS[gameState.status];
     if (!phase) {
-      setCountdown(null);
+      setPhaseDeadline(null);
       return;
     }
-    const deadline = Date.now() + phase.ms;
-    setCountdown(Math.ceil(phase.ms / 1000));
-    const tick = setInterval(() => {
-      setCountdown(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
-    }, 100);
-    return () => clearInterval(tick);
+    setPhaseDeadline(Date.now() + phase.ms);
   }, [gameState?.status]);
 
   const localBuzz = gameState && playerId ? getBuzz(gameState, playerId) : undefined;
@@ -134,18 +119,13 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     !localBuzz.locked &&
     (gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING');
 
-  // Personal typing timer (display-only).
+  // Personal typing deadline (display-only).
   useEffect(() => {
     if (!typing) {
-      setPersonalCountdown(null);
+      setPersonalDeadline(null);
       return;
     }
-    const deadline = Date.now() + ANSWER_MS;
-    setPersonalCountdown(Math.ceil(ANSWER_MS / 1000));
-    const tick = setInterval(() => {
-      setPersonalCountdown(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
-    }, 100);
-    return () => clearInterval(tick);
+    setPersonalDeadline(Date.now() + ANSWER_MS);
   }, [typing]);
 
   // Play the category fly-by once at the start of round 1 only. Round 2
@@ -305,13 +285,13 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           >
             <ClueScreen
               clue={gameState.activeClue}
-              statusText={statusLine(gameState, playerId, countdown, typing ? personalCountdown : null)}
+              statusText={statusLine(gameState)}
               canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz}
-              buzzLights={
-                gameState.status === 'CLUE_READING'
-                  ? 'off'
-                  : gameState.status === 'BUZZ_OPEN' && !localBuzz
-                    ? 'live'
+              lights={
+                gameState.status === 'BUZZ_OPEN' && !localBuzz && phaseDeadline != null
+                  ? { deadline: phaseDeadline, durationMs: PHASE_TIMERS.BUZZ_OPEN!.ms, flash: true }
+                  : typing && personalDeadline != null
+                    ? { deadline: personalDeadline, durationMs: ANSWER_MS, flash: false }
                     : null
               }
               showKeyboard={typing}
