@@ -312,7 +312,21 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
             localPlayerId={playerId}
             judgedPlayerId={onStand}
             answer={getBuzz(gameState, onStand)?.answer ?? ''}
-            onJudge={correct => dispatch({ type: 'JUDGE_ANSWER', playerId: onStand, correct })}
+            hasMoreToJudge={
+              gameState.activeClue
+                ? gameState.buzzes.some(
+                    b => b.playerId !== onStand && !gameState.activeClue!.failedPlayerIds.includes(b.playerId)
+                  )
+                : false
+            }
+            onJudge={(correct, penalty) =>
+              dispatch({
+                type: 'JUDGE_ANSWER',
+                playerId: onStand,
+                correct,
+                ...(penalty !== undefined ? { penalty } : {}),
+              })
+            }
           />
         )}
 

@@ -1,11 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Player } from '../../src/types';
 import { colors, type as typeTokens } from '../theme/tokens';
 import { PLAYER_BLOCK_HEIGHT, sortLocalFirst } from './PlayerHeader';
 
-/** How long the CORRECT/WRONG verdict color holds before committing. */
-const CONFIRMATION_MS = 650;
 /** Extra headroom above the tab so the spring's overshoot isn't clipped. */
 const OVERSHOOT_ROOM = 12;
 
@@ -17,14 +15,16 @@ interface JudgementTrayProps {
   judgedPlayerId: string;
   answer: string;
   onJudge: (correct: boolean, penalty?: boolean) => void;
+  hasMoreToJudge: boolean;
 }
 
 /**
  * The judging control: a recessed tab that slides up from behind the judged
  * player's score bug — same height as the bug, a step darker than cell blue,
  * rounded top corners, no borders. Sitting on the player's own bug is the
- * attribution; either player can tap ✕, ✓, or the gray arrow (no penalty).
- * The verdict floods the tab and holds a beat before the score commits.
+ * attribution; either player can tap ✕, ✓, or the gray horizontal line (no penalty).
+ * Correct answers immediately commit; incorrect/skip answers slide down and then
+ * commit if there are more players to judge.
  *
  * Mount keyed by the judged player's id so a second buzzer's answer arrives
  * with fresh state and replays the rise.
@@ -35,10 +35,9 @@ export function JudgementTray({
   judgedPlayerId,
   answer,
   onJudge,
+  hasMoreToJudge,
 }: JudgementTrayProps) {
   const rise = useRef(new Animated.Value(0)).current;
-  const [decision, setDecision] = useState<boolean | null>(null);
-  const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     Animated.spring(rise, {
@@ -47,28 +46,26 @@ export function JudgementTray({
       tension: 60,
       useNativeDriver: true,
     }).start();
-    return () => {
-      if (commitTimer.current) clearTimeout(commitTimer.current);
-    };
   }, [rise]);
 
   const choose = (correct: boolean, penalty: boolean = true) => {
-    if (decision !== null) return;
-    setDecision(correct);
     if (correct) {
-      commitTimer.current = setTimeout(() => onJudge(true), CONFIRMATION_MS);
+      onJudge(true);
     } else {
-      // No wrong-verdict flash: the tab just retreats back behind the bug,
-      // then the judgement commits — if the other player buzzed and can
-      // still answer, their tab rises in its place (highlight included).
-      Animated.timing(rise, {
-        toValue: 0,
-        duration: 220,
-        easing: Easing.in(Easing.quad),
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (finished) onJudge(false, penalty);
-      });
+      if (hasMoreToJudge) {
+        // Slide down quickly and then transition to the next player
+        Animated.timing(rise, {
+          toValue: 0,
+          duration: 120,
+          easing: Easing.in(Easing.quad),
+          useNativeDriver: true,
+        }).start(({ finished }) => {
+          if (finished) onJudge(false, penalty);
+        });
+      } else {
+        // No more players to judge: transition immediately without slide animation
+        onJudge(false, penalty);
+      }
     }
   };
   const chooseRef = useRef(choose);
@@ -87,8 +84,6 @@ export function JudgementTray({
   }, []);
 
   const judgedName = players.find(p => p.id === judgedPlayerId)?.name ?? 'Player';
-  // Only a correct call gets a verdict fill; a wrong call slides away silently.
-  const verdict = decision === true ? 'CORRECT' : null;
 
   return (
     <View style={styles.row} pointerEvents="box-none">
@@ -100,7 +95,6 @@ export function JudgementTray({
             <Animated.View
               style={[
                 styles.tab,
-                decision === true && styles.tabCorrect,
                 {
                   transform: [
                     {
@@ -113,38 +107,30 @@ export function JudgementTray({
                 },
               ]}
             >
-              {verdict ? (
-                <Text style={styles.verdictText} allowFontScaling={false}>
-                  {verdict}
-                </Text>
-              ) : (
-                <>
-                  <Text
-                    style={[styles.answerText, !answer && styles.answerEmpty]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.5}
-                    allowFontScaling={false}
-                  >
-                    {answer || 'NO ANSWER'}
-                  </Text>
-                  <JudgeButton
-                    type="pass"
-                    label={`Skip ${judgedName}'s answer (no penalty)`}
-                    onPress={() => choose(false, false)}
-                  />
-                  <JudgeButton
-                    type="incorrect"
-                    label={`Mark ${judgedName}'s answer incorrect`}
-                    onPress={() => choose(false, true)}
-                  />
-                  <JudgeButton
-                    type="correct"
-                    label={`Mark ${judgedName}'s answer correct`}
-                    onPress={() => choose(true)}
-                  />
-                </>
-              )}
+              <Text
+                style={[styles.answerText, !answer && styles.answerEmpty]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.5}
+                allowFontScaling={false}
+              >
+                {answer || 'NO ANSWER'}
+              </Text>
+              <JudgeButton
+                type="pass"
+                label={`Skip ${judgedName}'s answer (no penalty)`}
+                onPress={() => choose(false, false)}
+              />
+              <JudgeButton
+                type="incorrect"
+                label={`Mark ${judgedName}'s answer incorrect`}
+                onPress={() => choose(false, true)}
+              />
+              <JudgeButton
+                type="correct"
+                label={`Mark ${judgedName}'s answer correct`}
+                onPress={() => choose(true)}
+              />
             </Animated.View>
           </View>
         ) : (
@@ -232,9 +218,6 @@ const styles = StyleSheet.create({
     paddingLeft: 18,
     paddingRight: 6,
   },
-  tabCorrect: {
-    backgroundColor: colors.judgeCorrect,
-  },
   answerText: {
     flex: 1,
     fontFamily: typeTokens.board,
@@ -245,14 +228,6 @@ const styles = StyleSheet.create({
   },
   answerEmpty: {
     opacity: 0.45,
-  },
-  verdictText: {
-    flex: 1,
-    fontFamily: typeTokens.board,
-    fontSize: 21,
-    color: '#FFFFFF',
-    textAlign: 'center',
-    transform: [{ scaleX: 0.85 }],
   },
   button: {
     width: 44,

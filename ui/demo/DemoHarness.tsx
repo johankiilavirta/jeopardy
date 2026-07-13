@@ -164,7 +164,21 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
           localPlayerId={LOCAL_PLAYER_ID}
           judgedPlayerId={onStand}
           answer={getBuzz(state, onStand)?.answer ?? ''}
-          onJudge={correct => dispatch({ type: 'JUDGE_ANSWER', playerId: onStand, correct })}
+          hasMoreToJudge={
+            state.activeClue
+              ? state.buzzes.some(
+                  b => b.playerId !== onStand && !state.activeClue!.failedPlayerIds.includes(b.playerId)
+                )
+              : false
+          }
+          onJudge={(correct, penalty) =>
+            dispatch({
+              type: 'JUDGE_ANSWER',
+              playerId: onStand,
+              correct,
+              ...(penalty !== undefined ? { penalty } : {}),
+            })
+          }
         />
       )}
     </View>
