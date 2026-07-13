@@ -302,6 +302,14 @@ describe('LOCK_ANSWER', () => {
     expect(state.status).toBe('REVEAL');
   });
 
+  it('locking in solo mode ignores the mock opponent player', () => {
+    let state = createInitialState(['Alice', 'opponent']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'alice' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice' });
+    expect(state.status).toBe('REVEAL');
+  });
+
   it('is rejected for non-buzzers and already-locked players', () => {
     let state = createInitialState(['Alice', 'Bob']);
     state = openClue(state, 'alice');

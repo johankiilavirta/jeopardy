@@ -106,7 +106,8 @@ function handleBuzz(state: GameState, action: Extract<Action, { type: 'BUZZ' }>)
   const buzzes = [...state.buzzes, { playerId: action.playerId, answer: '', locked: false }];
 
   // Once everyone has buzzed, the window is moot — close it
-  const everyoneBuzzed = Object.keys(state.players).every(
+  const activePlayers = Object.keys(state.players).filter(id => id !== 'opponent');
+  const everyoneBuzzed = activePlayers.every(
     id => buzzes.some(b => b.playerId === id),
   );
 
@@ -145,8 +146,9 @@ function handleLockAnswer(state: GameState, action: Extract<Action, { type: 'LOC
 
   // During ANSWERING (window closed) the last lock reveals early. During
   // BUZZ_OPEN others may still buzz, so TIMEOUT handles the reveal.
-  // In solo mode (only 1 player in the game), we reveal immediately when they lock.
-  const isSolo = Object.keys(state.players).length === 1;
+  // In solo mode (only 1 active player in the game), we reveal immediately when they lock.
+  const activePlayers = Object.keys(state.players).filter(id => id !== 'opponent');
+  const isSolo = activePlayers.length === 1;
   const reveal = (state.status === 'ANSWERING' || isSolo) && buzzes.every(b => b.locked);
 
   return {
