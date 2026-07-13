@@ -71,6 +71,7 @@ export interface JudgeAnswerAction {
   type: 'JUDGE_ANSWER';
   playerId: string;
   correct: boolean;
+  penalty?: boolean;
 }
 
 export interface TimeoutAction {

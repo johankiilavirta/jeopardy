@@ -185,9 +185,10 @@ function handleJudgeAnswer(state: GameState, action: Extract<Action, { type: 'JU
     failedPlayerIds: [...state.activeClue.failedPlayerIds, action.playerId],
   };
 
+  const scoreChange = action.penalty !== false ? -state.activeClue.value : 0;
   const updatedPlayers = {
     ...state.players,
-    [player.id]: { ...player, score: player.score - state.activeClue.value },
+    [player.id]: { ...player, score: player.score + scoreChange },
   };
 
   // Any unjudged buzzer left? If not, burn the clue — original picker keeps turn.

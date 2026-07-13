@@ -16,15 +16,15 @@ interface JudgementTrayProps {
   /** The player whose answer is on the stand. */
   judgedPlayerId: string;
   answer: string;
-  onJudge: (correct: boolean) => void;
+  onJudge: (correct: boolean, penalty?: boolean) => void;
 }
 
 /**
  * The judging control: a recessed tab that slides up from behind the judged
  * player's score bug — same height as the bug, a step darker than cell blue,
  * rounded top corners, no borders. Sitting on the player's own bug is the
- * attribution; either player can tap ✕ or ✓. The verdict floods the tab and
- * holds a beat before the score commits.
+ * attribution; either player can tap ✕, ✓, or the gray arrow (no penalty).
+ * The verdict floods the tab and holds a beat before the score commits.
  *
  * Mount keyed by the judged player's id so a second buzzer's answer arrives
  * with fresh state and replays the rise.
@@ -52,7 +52,7 @@ export function JudgementTray({
     };
   }, [rise]);
 
-  const choose = (correct: boolean) => {
+  const choose = (correct: boolean, penalty: boolean = true) => {
     if (decision !== null) return;
     setDecision(correct);
     if (correct) {
@@ -67,19 +67,20 @@ export function JudgementTray({
         easing: Easing.in(Easing.quad),
         useNativeDriver: true,
       }).start(({ finished }) => {
-        if (finished) onJudge(false);
+        if (finished) onJudge(false, penalty);
       });
     }
   };
   const chooseRef = useRef(choose);
   chooseRef.current = choose;
 
-  // Arrow keys judge too (right = correct), matching the old swipe directions.
+  // Arrow keys judge too (right = correct, left = incorrect, down = pass/no penalty).
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight') chooseRef.current(true);
-      if (e.key === 'ArrowLeft') chooseRef.current(false);
+      if (e.key === 'ArrowLeft') chooseRef.current(false, true);
+      if (e.key === 'ArrowDown') chooseRef.current(false, false);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -128,12 +129,17 @@ export function JudgementTray({
                     {answer || 'NO ANSWER'}
                   </Text>
                   <JudgeButton
-                    correct={false}
-                    label={`Mark ${judgedName}'s answer incorrect`}
-                    onPress={() => choose(false)}
+                    type="pass"
+                    label={`Skip ${judgedName}'s answer (no penalty)`}
+                    onPress={() => choose(false, false)}
                   />
                   <JudgeButton
-                    correct={true}
+                    type="incorrect"
+                    label={`Mark ${judgedName}'s answer incorrect`}
+                    onPress={() => choose(false, true)}
+                  />
+                  <JudgeButton
+                    type="correct"
                     label={`Mark ${judgedName}'s answer correct`}
                     onPress={() => choose(true)}
                   />
@@ -150,14 +156,12 @@ export function JudgementTray({
   );
 }
 
-/** The ✕/✓ marks are drawn from identical View strokes (not font glyphs,
- *  which render at uneven weights), so the two marks match exactly. */
 function JudgeButton({
-  correct,
+  type,
   label,
   onPress,
 }: {
-  correct: boolean;
+  type: 'correct' | 'incorrect' | 'pass';
   label: string;
   onPress: () => void;
 }) {
@@ -169,12 +173,14 @@ function JudgeButton({
       style={({ pressed }) => [styles.button, pressed && styles.pressed]}
     >
       <View style={styles.glyph}>
-        {correct ? (
+        {type === 'correct' && (
           <>
             <View style={[styles.stroke, styles.strokeCorrect, styles.checkShort]} />
             <View style={[styles.stroke, styles.strokeCorrect, styles.checkLong]} />
+            <View style={[styles.stroke, styles.strokeCorrect, styles.checkJoint]} />
           </>
-        ) : (
+        )}
+        {type === 'incorrect' && (
           <>
             <View
               style={[styles.stroke, styles.strokeIncorrect, styles.cross, { transform: [{ rotate: '45deg' }] }]}
@@ -182,6 +188,12 @@ function JudgeButton({
             <View
               style={[styles.stroke, styles.strokeIncorrect, styles.cross, { transform: [{ rotate: '-45deg' }] }]}
             />
+          </>
+        )}
+        {type === 'pass' && (
+          <>
+            <View style={[styles.stroke, styles.strokePass, styles.arrowTop]} />
+            <View style={[styles.stroke, styles.strokePass, styles.arrowBottom]} />
           </>
         )}
       </View>
@@ -246,7 +258,7 @@ const styles = StyleSheet.create({
     transform: [{ scaleX: 0.85 }],
   },
   button: {
-    width: 52,
+    width: 44,
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
@@ -271,6 +283,9 @@ const styles = StyleSheet.create({
   strokeCorrect: {
     backgroundColor: '#2EB865',
   },
+  strokePass: {
+    backgroundColor: '#8E8E93',
+  },
   cross: {
     width: 20,
     left: 0,
@@ -286,6 +301,25 @@ const styles = StyleSheet.create({
     width: 17,
     left: 4.5,
     top: 8,
+    transform: [{ rotate: '-45deg' }],
+  },
+  checkJoint: {
+    width: 3.5,
+    height: 3.5,
+    borderRadius: 1.75,
+    left: 5.0,
+    top: 13.5,
+  },
+  arrowTop: {
+    width: 11,
+    left: 5,
+    top: 6.5,
+    transform: [{ rotate: '45deg' }],
+  },
+  arrowBottom: {
+    width: 11,
+    left: 5,
+    top: 13.5,
     transform: [{ rotate: '-45deg' }],
   },
 });
