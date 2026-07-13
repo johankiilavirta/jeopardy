@@ -29,6 +29,12 @@ const VERDICT_HOLD_MS = 500;
  *  leaves a narrow strip on the left for the countdown display. */
 const KEYBOARD_BOTTOM = 12;
 
+/** The clue card's fixed bottom margin inside its overlay (which is itself
+ *  inset by PLAYER_BAR_HEIGHT): keeps the card 10px clear of the judgement
+ *  tab's resting top at any screen size. Exported so the board can match
+ *  the card's footprint exactly. */
+export const CARD_BOTTOM_MARGIN = 44;
+
 interface RevealInfo {
   /** The clue's correct answer, shown on the card in gold. */
   correctAnswer: string;
@@ -386,15 +392,19 @@ const styles = StyleSheet.create({
   },
   cardWrap: {
     flex: 1,
-    // The clue is a card, not a full-bleed blue page. The dark frame also
-    // separates it from the persistent blue player-score bar below.
-    margin: 10,
+    // The clue is a card floating in dark space, not a full-bleed blue page.
+    // Percentage margins scale the dark frame with the screen; the bottom
+    // margin is fixed so the card always clears the judgement tab (which
+    // tops out 34px above this overlay's bottom edge) by the same 10px.
+    marginHorizontal: '2%',
+    marginTop: '2%',
+    marginBottom: CARD_BOTTOM_MARGIN,
   },
   card: {
     flex: 1,
     backgroundColor: colors.cell,
-    paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingHorizontal: 36,
+    paddingVertical: 28,
   },
   header: {
     flexDirection: 'row',
@@ -414,7 +424,7 @@ const styles = StyleSheet.create({
   },
   statusLineWrap: {
     position: 'absolute',
-    left: 24, // aligns with the card's horizontal padding
+    left: 36, // aligns with the card's horizontal padding
     // The countdown sits on the keyboard's bottom row (flex:1 of the space bar).
     // Vertically centered on the key height (40px), with the space bar taking
     // flex:4 to its right. Just the number — "8s", "3s", etc.
@@ -450,6 +460,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     color: colors.categoryText,
     textAlign: 'center',
+    // Cap the measure on wide screens — a wall-to-wall single line reads
+    // worse than a centered two-liner.
+    maxWidth: 880,
     textShadowColor: shadow.valueText.textShadowColor,
     textShadowOffset: shadow.valueText.textShadowOffset,
     textShadowRadius: shadow.valueText.textShadowRadius,

@@ -8,6 +8,7 @@ import type { CellRect } from '../components/BoardCell';
 import { CategoryIntro } from '../components/CategoryIntro';
 import { ExpandingClueOverlay } from '../components/ExpandingClueOverlay';
 import { PLAYER_BAR_HEIGHT } from '../components/PlayerHeader';
+import { JudgementTray } from '../components/JudgementTray';
 import { SwipeUpMenu } from '../components/SwipeUpMenu';
 import { demoBoard } from '../fixtures/board';
 import { getClueContent } from '../fixtures/clues';
@@ -65,12 +66,9 @@ function statusLine(
     case 'BUZZ_OPEN':
     case 'ANSWERING':
       return `${(personalCountdown ?? countdown) ?? 0}s`;
-    case 'REVEAL': {
-      const onStand = judgedPlayerId(state);
-      const name = state.players[onStand ?? '']?.name ?? 'Someone';
-      const text = onStand ? getBuzz(state, onStand)?.answer : '';
-      return `${name} ANSWERED ${text ? `"${text}"` : 'NOTHING'}`.toUpperCase();
-    }
+    case 'REVEAL':
+      // No status line — the judgement tray shows the answer on the stand.
+      return null;
     case 'CLUE_EXPIRED':
       return 'Time to answer expired';
     default:
@@ -271,6 +269,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           board={visibleBoard}
           disconnectedPlayerId={disconnectedPlayerId}
           boardAnimKey={boardAnimKeyRef.current}
+          judgingPlayerId={gameState.status === 'REVEAL' ? onStand : null}
           onSelectClue={(clueId, rect) => {
             selectedCellRef.current = { clueId, rect };
             dispatch({
@@ -311,11 +310,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               onSkip={() => {
                 if (gameState.activeClue) dispatch({ type: 'SKIP_CLUE', playerId, clueId: gameState.activeClue.id });
               }}
-              canJudge={gameState.status === 'REVEAL'}
+              canJudge={false}
               onBuzz={() => dispatch({ type: 'BUZZ', playerId })}
-              onJudge={correct => {
-                if (onStand) dispatch({ type: 'JUDGE_ANSWER', playerId: onStand, correct });
-              }}
               answer={localBuzz?.answer ?? ''}
               onAnswerChange={text =>
                 dispatch({ type: 'SET_ANSWER', playerId, text })
@@ -330,6 +326,17 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               }
             />
           </ExpandingClueOverlay>
+        )}
+
+        {gameState.status === 'REVEAL' && onStand && (
+          <JudgementTray
+            key={onStand}
+            players={Object.values(gameState.players)}
+            localPlayerId={playerId}
+            judgedPlayerId={onStand}
+            answer={getBuzz(gameState, onStand)?.answer ?? ''}
+            onJudge={correct => dispatch({ type: 'JUDGE_ANSWER', playerId: onStand, correct })}
+          />
         )}
 
         {introRound != null && introCategories && !gameState.activeClue && (

@@ -8,6 +8,7 @@ import { LOCAL_PLAYER_ID, yourTurnFresh } from '../fixtures/gameStates';
 import { ChooseClueScreen } from '../screens/ChooseClueScreen';
 import { ClueScreen } from '../screens/ClueScreen';
 import { PLAYER_BAR_HEIGHT } from '../components/PlayerHeader';
+import { JudgementTray } from '../components/JudgementTray';
 
 // Demo loop driven by the real reducer with real Jeopardy pacing: tapping a
 // cell dispatches SELECT_CLUE; the clue is "read" for 5s (buzzing locked),
@@ -46,8 +47,11 @@ function initialStateFor(screen: string | undefined): GameState {
         status: 'REVEAL',
         clueSelectPlayerId: LOCAL_PLAYER_ID,
         activeClue: { ...clue, failedPlayerIds: [] },
+        // Both players buzzed, so judging the first answer wrong hands the
+        // stand (and the bottom highlight) to the second buzzer.
         buzzes: [
-          { playerId: LOCAL_PLAYER_ID, answer: 'WHAT IS MEZCAL?', locked: true },
+          { playerId: LOCAL_PLAYER_ID, answer: 'MEZCAL', locked: true },
+          { playerId: 'opponent', answer: 'TEQUILA', locked: true },
         ],
       };
     default:
@@ -71,12 +75,9 @@ function statusLine(
     case 'BUZZ_OPEN':
     case 'ANSWERING':
       return `${(personalCountdown ?? countdown) ?? 0}s`;
-    case 'REVEAL': {
-      const onStand = judgedPlayerId(state);
-      const name = state.players[onStand ?? '']?.name ?? 'Someone';
-      const text = onStand ? getBuzz(state, onStand)?.answer : '';
-      return `${name} ANSWERED ${text ? `"${text}"` : 'NOTHING'}`.toUpperCase();
-    }
+    case 'REVEAL':
+      // No status line — the judgement tray shows the answer on the stand.
+      return null;
     case 'CLUE_EXPIRED':
       return 'Time to answer expired';
     default:
@@ -151,6 +152,7 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
         state={state}
         localPlayerId={LOCAL_PLAYER_ID}
         board={demoBoard}
+        judgingPlayerId={state.status === 'REVEAL' ? onStand : null}
         onSelectClue={clueId => {
           dispatch({
             type: 'SELECT_CLUE',
@@ -169,11 +171,8 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
             statusText={statusLine(state, countdown, typing ? personalCountdown : null)}
             canBuzz={state.status === 'BUZZ_OPEN' && !localBuzz}
             showKeyboard={typing}
-            canJudge={state.status === 'REVEAL'}
+            canJudge={false}
             onBuzz={() => dispatch({ type: 'BUZZ', playerId: LOCAL_PLAYER_ID })}
-            onJudge={correct => {
-              if (onStand) dispatch({ type: 'JUDGE_ANSWER', playerId: onStand, correct });
-            }}
             answer={localBuzz?.answer ?? ''}
             onAnswerChange={text =>
               dispatch({ type: 'SET_ANSWER', playerId: LOCAL_PLAYER_ID, text })
@@ -188,6 +187,16 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
             }
           />
         </View>
+      )}
+      {state.status === 'REVEAL' && onStand && (
+        <JudgementTray
+          key={onStand}
+          players={Object.values(state.players)}
+          localPlayerId={LOCAL_PLAYER_ID}
+          judgedPlayerId={onStand}
+          answer={getBuzz(state, onStand)?.answer ?? ''}
+          onJudge={correct => dispatch({ type: 'JUDGE_ANSWER', playerId: onStand, correct })}
+        />
       )}
     </View>
   );

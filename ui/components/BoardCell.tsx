@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   cellBurned: { backgroundColor: colors.cellBurned },
-  cellPressed: { backgroundColor: '#0029D6' },
+  cellPressed: { backgroundColor: '#1E2C96' },
   pressableInner: {
     flex: 1,
     width: '100%',

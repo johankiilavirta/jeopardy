@@ -38,11 +38,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: colors.cell,
     borderRadius: radius,
-    // Transparent border when inactive so the active outline causes no layout shift.
-    borderWidth: 2,
-    borderColor: 'transparent',
-    // A little more height makes the row feel like a deliberate persistent
-    // game-control bar when it sits at the bottom of the screen.
+    // The active accent lives on the bottom edge only, so the top edge stays
+    // clean for overlays (the judgement podium) to fuse onto the block.
+    // Transparent when inactive so the accent causes no layout shift.
+    borderBottomWidth: 3,
+    borderBottomColor: 'transparent',
     paddingVertical: 8,
     paddingHorizontal: 10,
     alignItems: 'center',
@@ -50,7 +50,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   blockActive: {
-    borderColor: colors.activeOutline,
+    borderBottomColor: colors.activeOutline,
   },
   blockDisconnected: {
     opacity: 0.35,
