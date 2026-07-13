@@ -65,7 +65,7 @@ export function SwipeUpMenu({ children, renderMenu, renderSettings, disabled }: 
   const showMenu = useCallback(() => setOverlayPage('menu'), []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || !window.addEventListener) return;
     const handler = (e: KeyboardEvent) => {
       if (menuVisible) {
         if (e.key === 'Escape' || e.key === 'm' || e.key === 'M' || e.key === 'ArrowDown') closeMenu();

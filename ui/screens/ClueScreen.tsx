@@ -252,7 +252,7 @@ export function ClueScreen({
   }, [judgeActive, onJudge, pan, commitJudge]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || !window.addEventListener) return;
     const handler = (e: KeyboardEvent) => {
       if ((e.key === 'p' || e.key === 'P') && onSkip) { e.preventDefault(); onSkip(); return; }
       if (canBuzz && onBuzz && e.key === ' ') {

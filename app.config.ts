@@ -3,6 +3,9 @@ import appJson from './app.json';
 
 const config: ExpoConfig = {
   ...appJson.expo,
+  ios: {
+    bundleIdentifier: 'com.anonymous.jeopardy',
+  },
   extra: {
     network: !!process.env.EXPO_PUBLIC_NETWORK,
     relayHost: process.env.EXPO_PUBLIC_RELAY_HOST ?? 'localhost',
