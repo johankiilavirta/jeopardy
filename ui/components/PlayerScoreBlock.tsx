@@ -57,8 +57,6 @@ export function PlayerScoreBlock({ name, score, activeTurn, disconnected }: Play
       }, 150);
 
       return () => clearTimeout(timer);
-    } else {
-      setDisplayedScore(score);
     }
   }, [score, animVal]);
 
