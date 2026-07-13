@@ -43,14 +43,14 @@ export function PlayerScoreBlock({ name, score, activeTurn, disconnected }: Play
       Animated.sequence([
         Animated.spring(animVal, {
           toValue: 1,
-          friction: 4,  // high bounce
-          tension: 130,
+          friction: 6.5,  // smoother spring
+          tension: 80,
           useNativeDriver: true,
         }),
-        Animated.delay(400),
+        Animated.delay(650), // hold longer to read easily
         Animated.timing(animVal, {
           toValue: 2,
-          duration: 250,
+          duration: 400, // gentle float out
           easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }),
@@ -63,7 +63,7 @@ export function PlayerScoreBlock({ name, score, activeTurn, disconnected }: Play
       // 2. Block colored flash overlay
       Animated.timing(borderFlashVal, {
         toValue: 1,
-        duration: 400,
+        duration: 600, // softer, longer flash fade out
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }).start();
@@ -74,19 +74,19 @@ export function PlayerScoreBlock({ name, score, activeTurn, disconnected }: Play
         
         Animated.sequence([
           Animated.timing(scoreScaleVal, {
-            toValue: 1.3,
-            duration: 80,
+            toValue: 1.2, // pop slightly less high (1.2 instead of 1.3)
+            duration: 120, // slower, smoother growth
             easing: Easing.out(Easing.quad),
             useNativeDriver: true,
           }),
           Animated.spring(scoreScaleVal, {
             toValue: 1,
-            friction: 4,
-            tension: 120,
+            friction: 6,
+            tension: 80,
             useNativeDriver: true,
           }),
         ]).start();
-      }, 120);
+      }, 180); // sync with peak pop
 
       return () => clearTimeout(timer);
     }
@@ -111,7 +111,7 @@ export function PlayerScoreBlock({ name, score, activeTurn, disconnected }: Play
 
   const diffRotate = animVal.interpolate({
     inputRange: [0, 1],
-    outputRange: ['0deg', animDiff && animDiff > 0 ? '12deg' : '-12deg'],
+    outputRange: ['0deg', animDiff && animDiff > 0 ? '-4deg' : '4deg'],
   });
 
   const flashOpacity = borderFlashVal.interpolate({
