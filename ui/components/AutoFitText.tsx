@@ -91,7 +91,7 @@ function balance(wordW: number[], spaceW: number, L: number): { groups: [number,
   return { groups, maxWidth: Math.max(...groups.map(width)) };
 }
 
-function fit(
+export function fit(
   text: string,
   boxW: number,
   boxH: number,
