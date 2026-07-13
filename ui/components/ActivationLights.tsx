@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 
-const LIGHT_COUNT = 41;
+const LIGHT_COUNT = 61;
 /** The buzzer-activation flash runs this long before going steady. */
 const FLASH_MS = 1320;
 /** Vibrant electric blue, matching the brilliant blue LEDs in the modern set. */
@@ -154,7 +154,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 36, // glued tightly to the bottom of the card/grid (leaving a subtle 2px gap)
+    bottom: 39, // glued tightly to the bottom of the card/grid (leaving a subtle 1px gap)
     alignItems: 'center',
   },
   row: {
@@ -164,9 +164,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   light: {
-    width: 3, // subtle vertical rectangular blocks
-    height: 6,
-    borderRadius: 0.5,
+    width: 4, // dense square blocks
+    height: 4,
+    borderRadius: 0, // perfectly square like in the gif
     backgroundColor: LIT,
   },
 });
