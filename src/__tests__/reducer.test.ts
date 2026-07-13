@@ -294,6 +294,14 @@ describe('LOCK_ANSWER', () => {
     expect(state.status).toBe('REVEAL');
   });
 
+  it('locking in solo mode reveals immediately even if in BUZZ_OPEN', () => {
+    let state = createInitialState(['Alice']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'alice' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice' });
+    expect(state.status).toBe('REVEAL');
+  });
+
   it('is rejected for non-buzzers and already-locked players', () => {
     let state = createInitialState(['Alice', 'Bob']);
     state = openClue(state, 'alice');

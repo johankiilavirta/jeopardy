@@ -145,7 +145,9 @@ function handleLockAnswer(state: GameState, action: Extract<Action, { type: 'LOC
 
   // During ANSWERING (window closed) the last lock reveals early. During
   // BUZZ_OPEN others may still buzz, so TIMEOUT handles the reveal.
-  const reveal = state.status === 'ANSWERING' && buzzes.every(b => b.locked);
+  // In solo mode (only 1 player in the game), we reveal immediately when they lock.
+  const isSolo = Object.keys(state.players).length === 1;
+  const reveal = (state.status === 'ANSWERING' || isSolo) && buzzes.every(b => b.locked);
 
   return {
     ...state,
