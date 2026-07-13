@@ -47,7 +47,7 @@ interface NetworkedGameProps {
 }
 
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
-  CLUE_READING: { ms: 5000 },
+  CLUE_READING: { ms: 600 },
   BUZZ_OPEN: { ms: 8000 },
   CLUE_EXPIRED: { ms: 5000 },
 };

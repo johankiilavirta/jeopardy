@@ -42,7 +42,7 @@ export function createServer(
 ): GameServer {
   const {
     timer = defaultTimer,
-    readingMs = 5000,
+    readingMs = 600,
     buzzerMs = 8000,
     dismissMs = 5000,
     answerMs = 10000,

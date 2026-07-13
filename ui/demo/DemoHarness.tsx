@@ -23,7 +23,7 @@ import type { CellRect } from '../components/BoardCell';
 // timers GameServer does (the demo has no server); a 100ms tick keeps the
 // countdowns honest.
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number; action: Action }>> = {
-  CLUE_READING: { ms: 5000, action: { type: 'BUZZER_OPEN' } },
+  CLUE_READING: { ms: 600, action: { type: 'BUZZER_OPEN' } },
   BUZZ_OPEN: { ms: 8000, action: { type: 'TIMEOUT' } },
   CLUE_EXPIRED: { ms: 5000, action: { type: 'DISMISS_CLUE' } },
 };

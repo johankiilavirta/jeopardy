@@ -237,7 +237,7 @@ describe('GameServer', () => {
 
     p1.send('host', JSON.stringify({ type: 'UNDO' }));
     expect(server.history.current.status).toBe('CLUE_READING');
-    expect(pendingMs()).toEqual([5000]);
+    expect(pendingMs()).toEqual([600]);
 
     fire(); // re-armed reading timer reopens the window
     expect(server.history.current.status).toBe('BUZZ_OPEN');
@@ -278,7 +278,7 @@ describe('GameServer', () => {
 
     p1.send('host', selectClueMsg);
     expect(lastStateFrom(p1Messages).state.status).toBe('CLUE_READING');
-    expect(pendingMs()).toEqual([5000]); // readingMs
+    expect(pendingMs()).toEqual([600]); // readingMs
 
     fire();
     expect(lastStateFrom(p1Messages).state.status).toBe('BUZZ_OPEN');
