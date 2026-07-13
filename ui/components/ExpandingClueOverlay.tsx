@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, StyleSheet, useWindowDimensions } from 'react-native';
+import { Animated, Easing, StyleSheet, useWindowDimensions, View } from 'react-native';
 import type { CellRect } from './BoardCell';
 
 /** Expand duration, board cell → full screen. */
@@ -45,19 +45,16 @@ export function ExpandingClueOverlay({ fromRect, animate, bottomInset = 0, child
   }, [willAnimate, progress]);
 
   // Calculate start parameters synchronously.
-  // The card grows uniformly (single scale, so the clue text never distorts)
-  // out of the tapped cell's center: at progress 0 it's a small box of scale
-  // `k` centered on the cell; at progress 1 it's full-screen and centered.
+  // The card has marginHorizontal: '2%' (meaning 96% width) at scale 1.
+  // We calculate the start scale `k` so the inner blue card matches the cell width exactly.
+  const cardWidth = ow * 0.96;
   const start = fromRect
     ? {
         cx: fromRect.x + fromRect.width / 2,
         cy: fromRect.y + fromRect.height / 2,
         centerX: ow / 2,
         centerY: (oh - bottomInset) / 2,
-        // Uniform start scale: the larger of the two cell/screen ratios, so the
-        // initial box fully covers the tapped cell (no edge of the old grid peeks
-        // through) while keeping the screen's aspect ratio — hence no stretch.
-        k: Math.max(fromRect.width / ow, fromRect.height / (oh - bottomInset)),
+        k: fromRect.width / cardWidth,
       }
     : null;
 
@@ -87,18 +84,23 @@ export function ExpandingClueOverlay({ fromRect, animate, bottomInset = 0, child
     : [];
 
   return (
-    <Animated.View
-      style={[
-        styles.fill,
-        {
-          bottom: bottomInset,
-          transformOrigin: 'center',
-          transform,
-        },
-      ]}
-    >
-      {children}
-    </Animated.View>
+    <View style={[styles.fill, { bottom: bottomInset }]} pointerEvents="box-none">
+      {/* Dark background overlay that fades in, blacking out the board behind the card */}
+      <Animated.View style={[styles.background, { opacity: progress }]} pointerEvents="none" />
+
+      <Animated.View
+        style={[
+          styles.fill,
+          {
+            transformOrigin: 'center',
+            transform,
+          },
+        ]}
+        pointerEvents="box-none"
+      >
+        {children}
+      </Animated.View>
+    </View>
   );
 }
 
@@ -109,5 +111,13 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  background: {
+    position: 'absolute',
+    top: -100, // extend slightly beyond container boundaries to cover everything
+    left: -100,
+    right: -100,
+    bottom: -100,
+    backgroundColor: '#0D0D0D', // colors.bg
   },
 });

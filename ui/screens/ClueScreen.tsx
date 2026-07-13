@@ -404,7 +404,7 @@ export function ClueScreen({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: 'transparent',
   },
   bgCorrect: {
     backgroundColor: colors.judgeCorrect,
