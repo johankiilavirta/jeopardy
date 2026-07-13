@@ -2,6 +2,7 @@ import type { Transport } from './transport.js';
 import type { Action } from './types.js';
 import { createInitialState } from './reducer.js';
 import { createHistory, dispatch, undo, canUndo, type GameHistory } from './history.js';
+import { computeReadingMs } from './readingTime.js';
 
 export interface Timer {
   set(cb: () => void, ms: number): unknown;
@@ -42,10 +43,10 @@ export function createServer(
 ): GameServer {
   const {
     timer = defaultTimer,
-    readingMs = 600,
-    buzzerMs = 8000,
+    readingMs,          // undefined → dynamic per-clue computation
+    buzzerMs = 20000,
     dismissMs = 5000,
-    answerMs = 10000,
+    answerMs = 20000,
     totalClues,
   } = options;
   const initialState = createInitialState(playerNames, totalClues);
@@ -55,6 +56,8 @@ export function createServer(
   };
 
   let phaseTimerId: unknown = null;
+  /** Wall-clock time when the current buzz window opened (Date.now()). */
+  let buzzWindowOpenAt: number | null = null;
 
   /** One personal typing timer per unlocked buzzer (playerId → timer id). */
   const answerTimerIds = new Map<string, unknown>();
@@ -78,10 +81,14 @@ export function createServer(
   function armPhaseTimer(): void {
     clearPhaseTimer();
     switch (server.history.current.status) {
-      case 'CLUE_READING':
-        phaseTimerId = timer.set(() => fireTimerAction({ type: 'BUZZER_OPEN' }), readingMs);
+      case 'CLUE_READING': {
+        const text = server.history.current.activeClue?.text ?? '';
+        const ms = readingMs ?? computeReadingMs(text);
+        phaseTimerId = timer.set(() => fireTimerAction({ type: 'BUZZER_OPEN' }), ms);
         break;
+      }
       case 'BUZZ_OPEN':
+        buzzWindowOpenAt = Date.now();
         phaseTimerId = timer.set(() => fireTimerAction({ type: 'TIMEOUT' }), buzzerMs);
         break;
       case 'CLUE_EXPIRED':
@@ -112,10 +119,14 @@ export function createServer(
     for (const buzz of state.buzzes) {
       if (!buzz.locked && !answerTimerIds.has(buzz.playerId)) {
         const playerId = buzz.playerId;
+        // Lock at the buzz window's deadline, not a fresh answerMs from now.
+        const remainingMs = buzzWindowOpenAt != null
+          ? Math.max(50, Math.round((buzzWindowOpenAt + buzzerMs - Date.now()) / 100) * 100)
+          : answerMs;
         answerTimerIds.set(playerId, timer.set(() => {
           answerTimerIds.delete(playerId);
           applyAction({ type: 'LOCK_ANSWER', playerId });
-        }, answerMs));
+        }, remainingMs));
       }
     }
   }

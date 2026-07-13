@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 
-const LIGHT_COUNT = 101;
-/** The buzzer-activation flash runs this long before going steady. */
-const FLASH_MS = 1320;
+const LIGHT_COUNT = 151;
+/** Hold the initial buzzer flash before the countdown begins. */
+const FLASH_MS = 1000;
+/** Fully-lit hold before the drain starts (both the buzzer flash and the
+ *  first second of the personal typing window). */
+const HOLD_MS = 1000;
+/** The glow-in ramp when the strip appears. */
+const RISE_MS = 120;
 /** Vibrant electric blue, matching the brilliant blue LEDs in the modern set. */
 const LIT = '#FFFFFF';
 /** Extinguished lamps stay faintly visible, like the real board's dark LEDs. */
@@ -60,74 +65,55 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
 
     glow.setValue(flash ? OFF_OPACITY : 1);
 
-    const pop = () => [
+    let drain: Animated.CompositeAnimation | null = null;
+    const startDrain = () => {
+      // Measured at drain start (after the hold), so the strip empties
+      // exactly at the deadline rather than a hold-length late.
+      const remaining = Math.max(0, deadline - Date.now());
+      progress.setValue(1 - remaining / durationMs);
+      drain = Animated.timing(progress, {
+        toValue: 1,
+        duration: remaining,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      });
+      drain.start();
+    };
+
+    // Both modes hold fully lit for a second before the countdown begins;
+    // the flash variant is the buzzer-activation moment.
+    const arm = Animated.sequence([
       Animated.timing(glow, {
         toValue: 1,
-        duration: 120,
+        duration: RISE_MS,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }),
-      Animated.delay(80),
-      Animated.timing(glow, {
-        toValue: OFF_OPACITY,
-        duration: 250,
-        easing: Easing.inOut(Easing.quad),
-        useNativeDriver: true,
-      }),
-      Animated.delay(150),
-    ];
-    const arm = flash
-      ? Animated.sequence([
-          ...pop(),
-          ...pop(),
-          Animated.timing(glow, {
-            toValue: 1,
-            duration: 120,
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-          }),
-        ])
-      : Animated.timing(glow, { toValue: 1, duration: 120, useNativeDriver: true });
-    arm.start();
+      Animated.delay((flash ? FLASH_MS : HOLD_MS) - RISE_MS),
+    ]);
 
-    const remaining = Math.max(0, deadline - Date.now());
-    progress.setValue(1 - remaining / durationMs);
-    const drain = Animated.timing(progress, {
-      toValue: 1,
-      duration: remaining,
-      easing: Easing.linear,
-      useNativeDriver: true,
+    arm.start(({ finished }) => {
+      if (finished) startDrain();
     });
-    drain.start();
+
     return () => {
       arm.stop();
-      drain.stop();
+      drain?.stop();
     };
   }, [glow, progress, deadline, durationMs, flash]);
 
   // Each lamp extinguishes when the elapsed fraction passes its threshold.
-  // Outermost pair first, center last.
+  // Outermost pair first, center last. The countdown range begins where the
+  // hold ends (as a fraction of the whole window), so every lamp gets a turn
+  // and the center lamp dies exactly at the deadline.
   const opacities = useMemo(() => {
     const tiers = Math.ceil(LIGHT_COUNT / 2);
+    const rangeStart = Math.min(0.9, (flash ? FLASH_MS : HOLD_MS) / durationMs);
+    const rangeLen = 1 - rangeStart;
     return Array.from({ length: LIGHT_COUNT }, (_, i) => {
       const edgeDistance = Math.min(i, LIGHT_COUNT - 1 - i);
-
-      let threshold: number;
-      let fadeStart: number;
-
-      if (flash) {
-        // Countdown runs from progress = 0.2 to 1.0 linearly across the tiers
-        const rangeStart = 0.2;
-        const rangeLen = 1.0 - rangeStart;
-        threshold = rangeStart + (edgeDistance + 1) * (rangeLen / tiers);
-        fadeStart = Math.max(0, threshold - (rangeLen / tiers));
-      } else {
-        // For the personal typing window (10s):
-        // Tier d (0 to tiers - 1) is fully off at progress = (d + 1) / tiers
-        // and starts fading 0.05 before that.
-        threshold = (edgeDistance + 1) / tiers;
-        fadeStart = Math.max(0, threshold - 0.05);
-      }
+      const threshold = rangeStart + (edgeDistance + 1) * (rangeLen / tiers);
+      const fadeStart = Math.max(0, threshold - rangeLen / tiers);
 
       const step = progress.interpolate({
         inputRange: [fadeStart, threshold],
@@ -136,7 +122,7 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
       });
       return Animated.multiply(glow, step);
     });
-  }, [glow, progress, flash]);
+  }, [glow, progress, durationMs, flash]);
 
   return (
     <Animated.View style={[styles.band, { opacity: overallOpacity }]} pointerEvents="none">
@@ -158,7 +144,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   row: {
-    width: '91.2%', // 95% of the card's 96% width footprint
+    width: '94.08%',
     maxWidth: 1460,
     flexDirection: 'row',
     justifyContent: 'space-between',

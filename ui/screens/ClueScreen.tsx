@@ -438,10 +438,7 @@ const styles = StyleSheet.create({
   },
   cardWrap: {
     flex: 1,
-    // The clue is a card floating in dark space, not a full-bleed blue page.
-    // Percentage margins scale the dark frame with the screen; the bottom
-    // margin is fixed so the card always clears the judgement tab (which
-    // tops out 34px above this overlay's bottom edge) by the same 10px.
+    overflow: 'hidden',
     marginHorizontal: '2%',
     marginTop: '2%',
     marginBottom: CARD_BOTTOM_MARGIN,

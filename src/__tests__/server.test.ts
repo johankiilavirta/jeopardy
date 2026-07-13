@@ -237,7 +237,9 @@ describe('GameServer', () => {
 
     p1.send('host', JSON.stringify({ type: 'UNDO' }));
     expect(server.history.current.status).toBe('CLUE_READING');
-    expect(pendingMs()).toEqual([600]);
+    expect(pendingMs().length).toBe(1);
+    expect(pendingMs()[0]).toBeGreaterThanOrEqual(5000);
+    expect(pendingMs()[0]).toBeLessThanOrEqual(9000);
 
     fire(); // re-armed reading timer reopens the window
     expect(server.history.current.status).toBe('BUZZ_OPEN');
@@ -256,13 +258,13 @@ describe('GameServer', () => {
     p1.send('host', selectClueMsg);
     fire(); // window opens
     p2.send('host', JSON.stringify({ type: 'BUZZ' }));
-    expect(pendingMs()).toEqual([8000, 10000]); // window + bob's typing timer
+    expect(pendingMs()).toEqual([20000, 20000]); // window + bob's typing timer
 
     // Undo the buzz: bob's personal timer must vanish, the window timer
     // restarts fresh (no timestamps in state — documented tradeoff).
     p1.send('host', JSON.stringify({ type: 'UNDO' }));
     expect(server.history.current.buzzes).toEqual([]);
-    expect(pendingMs()).toEqual([8000]);
+    expect(pendingMs()).toEqual([20000]);
     expect(count()).toBe(1);
   });
 
@@ -278,11 +280,14 @@ describe('GameServer', () => {
 
     p1.send('host', selectClueMsg);
     expect(lastStateFrom(p1Messages).state.status).toBe('CLUE_READING');
-    expect(pendingMs()).toEqual([600]); // readingMs
+    // Dynamic reading time: 5s base + per-char + noise, capped at 9s.
+    expect(pendingMs().length).toBe(1);
+    expect(pendingMs()[0]).toBeGreaterThanOrEqual(5000);
+    expect(pendingMs()[0]).toBeLessThanOrEqual(9000);
 
     fire();
     expect(lastStateFrom(p1Messages).state.status).toBe('BUZZ_OPEN');
-    expect(pendingMs()).toEqual([8000]); // buzzerMs
+    expect(pendingMs()).toEqual([20000]); // buzzerMs
 
     fire();
     expect(lastStateFrom(p1Messages).state.status).toBe('CLUE_EXPIRED');
@@ -349,14 +354,14 @@ describe('GameServer', () => {
     // Bob buzzes: only his personal timer is added — the window timer
     // (armed first, so still at index 0) keeps running untouched.
     p2.send('host', JSON.stringify({ type: 'BUZZ' }));
-    expect(pendingMs()).toEqual([8000, 10000]);
+    expect(pendingMs()).toEqual([20000, 20000]);
     expect(setCalls()).toBe(callsAfterOpen + 1);
 
     // Typing arms nothing new either
     p2.send('host', JSON.stringify({ type: 'SET_ANSWER', text: 'PLU' }));
     p2.send('host', JSON.stringify({ type: 'SET_ANSWER', text: 'PLUTO' }));
     expect(setCalls()).toBe(callsAfterOpen + 1);
-    expect(pendingMs()).toEqual([8000, 10000]);
+    expect(pendingMs()).toEqual([20000, 20000]);
 
     // The untouched window timer is still the one that fires TIMEOUT
     fire(0);
@@ -377,13 +382,13 @@ describe('GameServer', () => {
     fire(); // window opens
 
     p2.send('host', JSON.stringify({ type: 'BUZZ' }));
-    expect(pendingMs()).toEqual([8000, 10000]); // window + bob
+    expect(pendingMs()).toEqual([20000, 20000]); // window + bob
 
     // Alice buzzes too: everyone in — window timer cleared (moot), her
     // own 10s starts from her buzz, bob's keeps running untouched.
     p1.send('host', JSON.stringify({ type: 'BUZZ' }));
     expect(server.history.current.status).toBe('ANSWERING');
-    expect(pendingMs()).toEqual([10000, 10000]); // bob, alice
+    expect(pendingMs()).toEqual([20000, 20000]); // bob, alice
 
     // Bob swipe-locks: his timer is cleared, alice's remains
     p2.send('host', JSON.stringify({ type: 'LOCK_ANSWER', answer: 'PLUTO' }));
@@ -415,7 +420,7 @@ describe('GameServer', () => {
     expect(server.history.current.status).toBe('ANSWERING');
 
     // Bob's personal timer survives the phase change, never re-armed
-    expect(pendingMs()).toEqual([10000]);
+    expect(pendingMs()).toEqual([20000]);
 
     fire(0); // his time runs out → all locked → REVEAL
     expect(server.history.current.status).toBe('REVEAL');

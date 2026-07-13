@@ -48,11 +48,10 @@ interface NetworkedGameProps {
 
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
   CLUE_READING: { ms: 600 },
-  BUZZ_OPEN: { ms: 8000 },
+  BUZZ_OPEN: { ms: 20000 },
   CLUE_EXPIRED: { ms: 5000 },
 };
 
-const ANSWER_MS = 10000;
 
 
 export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange }: NetworkedGameProps) {
@@ -64,7 +63,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // Deadlines (epoch ms) for the current phase window and the local player's
   // personal typing timer — they drive the activation lights' drain.
   const [phaseDeadline, setPhaseDeadline] = useState<number | null>(null);
-  const [personalDeadline, setPersonalDeadline] = useState<number | null>(null);
+  const buzzWindowDeadlineRef = useRef<number | null>(null);
   // Window rect of the cell this device last tapped, so the clue card can grow
   // out of it. Only set for clues *we* picked — a clue another player selects
   // arrives with no rect and simply appears full-screen.
@@ -100,7 +99,9 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       setPhaseDeadline(null);
       return;
     }
-    setPhaseDeadline(Date.now() + phase.ms);
+    const deadline = Date.now() + phase.ms;
+    setPhaseDeadline(deadline);
+    if (gameState.status === 'BUZZ_OPEN') buzzWindowDeadlineRef.current = deadline;
   }, [gameState?.status]);
 
   const localBuzz = gameState && playerId ? getBuzz(gameState, playerId) : undefined;
@@ -109,14 +110,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     !localBuzz.locked &&
     (gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING');
 
-  // Personal typing deadline (display-only).
-  useEffect(() => {
-    if (!typing) {
-      setPersonalDeadline(null);
-      return;
-    }
-    setPersonalDeadline(Date.now() + ANSWER_MS);
-  }, [typing]);
 
   // Play the category fly-by once at the start of round 1 only. Round 2
   // (Double Jeopardy) transitions silently — no intro animation.
@@ -277,11 +270,10 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               clue={gameState.activeClue}
               canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz}
               lights={
-                gameState.status === 'BUZZ_OPEN' && !localBuzz && phaseDeadline != null
-                  ? { deadline: phaseDeadline, durationMs: PHASE_TIMERS.BUZZ_OPEN!.ms, flash: true }
-                  : typing && personalDeadline != null
-                    ? { deadline: personalDeadline, durationMs: ANSWER_MS, flash: false }
-                    : null
+                (gameState.status === 'BUZZ_OPEN' && !localBuzz || typing) &&
+                buzzWindowDeadlineRef.current != null
+                  ? { deadline: buzzWindowDeadlineRef.current, durationMs: PHASE_TIMERS.BUZZ_OPEN!.ms, flash: true }
+                  : null
               }
               showKeyboard={typing}
               onSkip={() => {
