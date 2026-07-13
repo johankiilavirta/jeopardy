@@ -42,7 +42,7 @@ export function PlayerScoreBlock({ name, score, activeTurn, disconnected }: Play
       // 1. Tag continuous float-up and fade-out timeline
       Animated.timing(animVal, {
         toValue: 1,
-        duration: 1100, // 1.1s continuous motion
+        duration: 1000, // 1.0s continuous motion
         easing: Easing.linear,
         useNativeDriver: true,
       }).start(({ finished }) => {
@@ -97,12 +97,12 @@ export function PlayerScoreBlock({ name, score, activeTurn, disconnected }: Play
 
   const diffTranslateY = animVal.interpolate({
     inputRange: [0, 0.12, 0.82, 1],
-    outputRange: [8, 0, -8, -26],
+    outputRange: [8, 0, -8, -18], // reduced final drift height (from -26 to -18)
   });
 
   const diffTranslateX = animVal.interpolate({
     inputRange: [0, 0.12, 0.82, 1],
-    outputRange: [-4, 0, 2.5, 6], // continuous diagonal drift from bottom-left to top-right
+    outputRange: [-4, 0, 2.2, 5], // reduced final horizontal offset (from 6 to 5)
   });
 
   const diffRotate = animVal.interpolate({
