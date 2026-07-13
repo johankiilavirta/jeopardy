@@ -191,10 +191,7 @@ function JudgeButton({
           </>
         )}
         {type === 'pass' && (
-          <>
-            <View style={[styles.stroke, styles.strokePass, styles.arrowTop]} />
-            <View style={[styles.stroke, styles.strokePass, styles.arrowBottom]} />
-          </>
+          <View style={[styles.stroke, styles.strokePass, styles.passLine]} />
         )}
       </View>
     </Pressable>
@@ -292,15 +289,15 @@ const styles = StyleSheet.create({
     top: 8.25,
   },
   checkShort: {
-    width: 8,
-    left: 0,
+    width: 8.5,
+    left: 0.5,
     top: 11,
     transform: [{ rotate: '45deg' }],
   },
   checkLong: {
-    width: 17,
-    left: 4.5,
-    top: 8,
+    width: 15,
+    left: 5.0,
+    top: 8.75,
     transform: [{ rotate: '-45deg' }],
   },
   checkJoint: {
@@ -310,16 +307,9 @@ const styles = StyleSheet.create({
     left: 5.0,
     top: 13.5,
   },
-  arrowTop: {
-    width: 11,
-    left: 5,
-    top: 6.5,
-    transform: [{ rotate: '45deg' }],
-  },
-  arrowBottom: {
-    width: 11,
-    left: 5,
-    top: 13.5,
-    transform: [{ rotate: '-45deg' }],
+  passLine: {
+    width: 14,
+    left: 3,
+    top: 8.25,
   },
 });
