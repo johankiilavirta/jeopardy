@@ -76,7 +76,7 @@ export function JudgementTray({
 
   // Arrow keys judge too (right = correct, left = incorrect, down = pass/no penalty).
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || !window.addEventListener) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight') chooseRef.current(true);
       if (e.key === 'ArrowLeft') chooseRef.current(false, true);

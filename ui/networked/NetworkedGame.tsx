@@ -74,6 +74,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // replays (e.g. on a reconnect / state update).
   const introShownRef = useRef<Set<number>>(new Set());
   const [introRound, setIntroRound] = useState<number | null>(null);
+  // Latch to 1 the first time round 2 is reached — triggers the DJ board flash.
+  const boardAnimKeyRef = useRef(0);
 
   const dispatch = (action: Action) => {
     sendAction(transport, serverPeerId, action as unknown as Record<string, unknown>);
@@ -176,8 +178,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const round2Available = !!boardData && boardData.round2.length > 0;
   const round = round1Done && round2Available ? 2 : 1;
 
-  // Latch to 1 the first time round 2 is reached — triggers the DJ board flash.
-  const boardAnimKeyRef = useRef(0);
   if (round === 2 && boardAnimKeyRef.current === 0) boardAnimKeyRef.current = 1;
 
   const fullBoard = boardData ? toBoardDefinition(boardData, round) : demoBoard;
