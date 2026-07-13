@@ -84,25 +84,25 @@ export function PlayerScoreBlock({ name, score, activeTurn, disconnected }: Play
   }, [score, animVal, scoreScaleVal, borderFlashVal]);
 
   const diffOpacity = animVal.interpolate({
-    inputRange: [0, 0.1, 0.75, 1],
+    inputRange: [0, 0.1, 0.82, 1], // stays fully visible longer, then fades out faster (over 18% of timeline)
     outputRange: [0, 1, 1, 0],
     extrapolate: 'clamp',
   });
 
   const diffScale = animVal.interpolate({
-    inputRange: [0, 0.12, 0.22, 0.75, 1],
+    inputRange: [0, 0.12, 0.22, 0.82, 1],
     outputRange: [0.5, 1.15, 1, 1, 0.8],
     extrapolate: 'clamp',
   });
 
   const diffTranslateY = animVal.interpolate({
-    inputRange: [0, 0.12, 0.75, 1],
+    inputRange: [0, 0.12, 0.82, 1],
     outputRange: [8, 0, -8, -26],
   });
 
   const diffTranslateX = animVal.interpolate({
-    inputRange: [0, 0.75, 1],
-    outputRange: [0, 2, 8],
+    inputRange: [0, 0.12, 0.82, 1],
+    outputRange: [-4, 0, 2.5, 6], // continuous diagonal drift from bottom-left to top-right
   });
 
   const diffRotate = animVal.interpolate({
@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
   floatingDiff: {
     position: 'absolute',
     top: -6,
-    right: -34,
+    right: -28, // closer horizontally
     fontSize: 12,
     fontFamily: typeTokens.ui700,
     textShadowColor: 'rgba(0, 0, 0, 0.4)',
