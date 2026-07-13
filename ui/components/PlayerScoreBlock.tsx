@@ -19,7 +19,12 @@ function formatScore(score: number): string {
 export function PlayerScoreBlock({ name, score, activeTurn, disconnected }: PlayerScoreBlockProps) {
   const [displayedScore, setDisplayedScore] = useState(score);
   const [animDiff, setAnimDiff] = useState<number | null>(null);
-  const animVal = useRef(new Animated.Value(0)).current;
+  
+  // Animation drivers
+  const animVal = useRef(new Animated.Value(0)).current;        // diff tag (0 -> 1 spring, 1 -> 2 fade-out)
+  const scoreScaleVal = useRef(new Animated.Value(1)).current;  // main score text scale pulse
+  const borderFlashVal = useRef(new Animated.Value(0)).current; // block border glow overlay
+  
   const prevScoreRef = useRef(score);
 
   useEffect(() => {
@@ -28,21 +33,25 @@ export function PlayerScoreBlock({ name, score, activeTurn, disconnected }: Play
       prevScoreRef.current = score;
       const diff = score - prevScore;
       setAnimDiff(diff);
+      
+      // Reset drivers
       animVal.setValue(0);
+      scoreScaleVal.setValue(1);
+      borderFlashVal.setValue(0);
 
-      // Spring up, hold, then fade & float out
+      // 1. Tag spring and float-out sequence
       Animated.sequence([
         Animated.spring(animVal, {
           toValue: 1,
-          friction: 6,
-          tension: 100,
+          friction: 4,  // high bounce
+          tension: 130,
           useNativeDriver: true,
         }),
-        Animated.delay(450),
+        Animated.delay(400),
         Animated.timing(animVal, {
           toValue: 2,
-          duration: 300,
-          easing: Easing.linear,
+          duration: 250,
+          easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }),
       ]).start(({ finished }) => {
@@ -51,45 +60,98 @@ export function PlayerScoreBlock({ name, score, activeTurn, disconnected }: Play
         }
       });
 
-      // Update the main displayed score text after a brief beat (150ms)
+      // 2. Block colored flash overlay
+      Animated.timing(borderFlashVal, {
+        toValue: 1,
+        duration: 400,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start();
+
+      // 3. Delayed score value change + text scale pulse (just as the tag hits peak spring)
       const timer = setTimeout(() => {
         setDisplayedScore(score);
-      }, 150);
+        
+        Animated.sequence([
+          Animated.timing(scoreScaleVal, {
+            toValue: 1.3,
+            duration: 80,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.spring(scoreScaleVal, {
+            toValue: 1,
+            friction: 4,
+            tension: 120,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      }, 120);
 
       return () => clearTimeout(timer);
     }
-  }, [score, animVal]);
+  }, [score, animVal, scoreScaleVal, borderFlashVal]);
 
   const diffOpacity = animVal.interpolate({
-    inputRange: [0, 0.2, 1, 2],
+    inputRange: [0, 0.15, 1, 2],
     outputRange: [0, 1, 1, 0],
     extrapolate: 'clamp',
   });
 
   const diffScale = animVal.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.6, 1],
+    outputRange: [0.5, 1],
     extrapolate: 'clamp',
   });
 
   const diffTranslateY = animVal.interpolate({
     inputRange: [0, 1, 2],
-    outputRange: [4, 0, -12],
+    outputRange: [6, 0, -20],
+  });
+
+  const diffRotate = animVal.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', animDiff && animDiff > 0 ? '12deg' : '-12deg'],
+  });
+
+  const flashOpacity = borderFlashVal.interpolate({
+    inputRange: [0, 0.15, 1],
+    outputRange: [0, 0.45, 0],
   });
 
   return (
     <View style={[styles.block, activeTurn && styles.blockActive, disconnected && styles.blockDisconnected]}>
+      {/* Background colored flash overlay */}
+      {animDiff !== null && (
+        <Animated.View
+          style={[
+            styles.flashOverlay,
+            {
+              opacity: flashOpacity,
+              backgroundColor: animDiff > 0 ? '#2EB865' : '#E25550',
+            },
+          ]}
+          pointerEvents="none"
+        />
+      )}
+
       <Text style={styles.name} numberOfLines={1} allowFontScaling={false}>
         {name.toUpperCase()}
       </Text>
+      
       <View style={styles.scoreContainer}>
-        <Text
-          style={[styles.score, displayedScore < 0 && styles.scoreNegative]}
+        <Animated.Text
+          style={[
+            styles.score,
+            displayedScore < 0 && styles.scoreNegative,
+            { transform: [{ scale: scoreScaleVal }] },
+          ]}
           numberOfLines={1}
           allowFontScaling={false}
         >
           {formatScore(displayedScore)}
-        </Text>
+        </Animated.Text>
+        
         {animDiff !== null && (
           <Animated.Text
             style={[
@@ -100,6 +162,7 @@ export function PlayerScoreBlock({ name, score, activeTurn, disconnected }: Play
                 transform: [
                   { translateY: diffTranslateY },
                   { scale: diffScale },
+                  { rotate: diffRotate },
                 ],
               },
             ]}
@@ -115,6 +178,7 @@ export function PlayerScoreBlock({ name, score, activeTurn, disconnected }: Play
 
 const styles = StyleSheet.create({
   block: {
+    position: 'relative',
     flex: 1,
     flexDirection: 'row',
     backgroundColor: colors.cell,
@@ -126,6 +190,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    overflow: 'visible', // allows the floating tag to pop out of bounds
+  },
+  flashOverlay: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: radius - 1,
   },
   blockActive: {
     borderBottomColor: colors.activeOutline,
@@ -142,6 +211,7 @@ const styles = StyleSheet.create({
   },
   scoreContainer: {
     position: 'relative',
+    overflow: 'visible',
   },
   score: {
     fontFamily: typeTokens.ui700,
@@ -153,10 +223,13 @@ const styles = StyleSheet.create({
   },
   floatingDiff: {
     position: 'absolute',
-    top: -14,
-    left: -4,
-    fontSize: 11,
+    top: -18,
+    right: -12,
+    fontSize: 12,
     fontFamily: typeTokens.ui700,
+    textShadowColor: 'rgba(0, 0, 0, 0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   floatingDiffPositive: {
     color: '#2EB865',
