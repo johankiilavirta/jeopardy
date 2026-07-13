@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 
-const LIGHT_COUNT = 13;
-/** The buzzer-activation flash runs this long before going steady.
- *  Each of the two pulses takes 120ms (fade-in) + 80ms (hold) + 250ms (fade-out) + 150ms (hold-off) = 600ms.
- *  Then a final fade-in to steady lit takes 120ms.
- *  Total duration = 2 * 600ms + 120ms = 1320ms. */
-const FLASH_MS = 1320;
-/** Warm incandescent white, sampled from the gif's lit lamps. */
-const LIT = '#F7EFE8';
+const LIGHT_COUNT = 151;
+/** Hold the initial buzzer flash before the countdown begins. */
+const FLASH_MS = 1000;
+/** Fully-lit hold before the drain starts (both the buzzer flash and the
+ *  first second of the personal typing window). */
+const HOLD_MS = 1000;
+/** The glow-in ramp when the strip appears. */
+const RISE_MS = 120;
+/** Vibrant electric blue, matching the brilliant blue LEDs in the modern set. */
+const LIT = '#FFFFFF';
 /** Extinguished lamps stay faintly visible, like the real board's dark LEDs. */
 const OFF_OPACITY = 0.15;
 
@@ -22,13 +24,11 @@ interface ActivationLightsProps {
 }
 
 /**
- * The board's activation lights, doubling as the answer timer: a sparse row
- * of warm-white lamps in the dark band under the clue card. When the buzzers
- * open they pop at the broadcast cadence for a second, hold steady, then
- * extinguish linearly from the outermost pair inward until time is up —
- * the show's podium countdown, laid flat.
- *
- * It stays mounted and animates its overall opacity when lights are cleared.
+ * The board's activation lights, doubling as the answer timer: a dense row
+ * of electric-blue rectangular LED bars glued tightly under the clue card.
+ * When the buzzers open they pop at the broadcast cadence for a second, hold
+ * steady, then extinguish linearly from the outermost pair inward until time
+ * is up.
  */
 export function ActivationLights({ lights }: ActivationLightsProps) {
   const [activeLights, setActiveLights] = useState<NonNullable<ActivationLightsProps['lights']>>(() => {
@@ -65,74 +65,55 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
 
     glow.setValue(flash ? OFF_OPACITY : 1);
 
-    const pop = () => [
+    let drain: Animated.CompositeAnimation | null = null;
+    const startDrain = () => {
+      // Measured at drain start (after the hold), so the strip empties
+      // exactly at the deadline rather than a hold-length late.
+      const remaining = Math.max(0, deadline - Date.now());
+      progress.setValue(1 - remaining / durationMs);
+      drain = Animated.timing(progress, {
+        toValue: 1,
+        duration: remaining,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      });
+      drain.start();
+    };
+
+    // Both modes hold fully lit for a second before the countdown begins;
+    // the flash variant is the buzzer-activation moment.
+    const arm = Animated.sequence([
       Animated.timing(glow, {
         toValue: 1,
-        duration: 120,
+        duration: RISE_MS,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }),
-      Animated.delay(80),
-      Animated.timing(glow, {
-        toValue: OFF_OPACITY,
-        duration: 250,
-        easing: Easing.inOut(Easing.quad),
-        useNativeDriver: true,
-      }),
-      Animated.delay(150),
-    ];
-    const arm = flash
-      ? Animated.sequence([
-          ...pop(),
-          ...pop(),
-          Animated.timing(glow, {
-            toValue: 1,
-            duration: 120,
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-          }),
-        ])
-      : Animated.timing(glow, { toValue: 1, duration: 120, useNativeDriver: true });
-    arm.start();
+      Animated.delay((flash ? FLASH_MS : HOLD_MS) - RISE_MS),
+    ]);
 
-    const remaining = Math.max(0, deadline - Date.now());
-    progress.setValue(1 - remaining / durationMs);
-    const drain = Animated.timing(progress, {
-      toValue: 1,
-      duration: remaining,
-      easing: Easing.linear,
-      useNativeDriver: true,
+    arm.start(({ finished }) => {
+      if (finished) startDrain();
     });
-    drain.start();
+
     return () => {
       arm.stop();
-      drain.stop();
+      drain?.stop();
     };
   }, [glow, progress, deadline, durationMs, flash]);
 
   // Each lamp extinguishes when the elapsed fraction passes its threshold.
-  // Outermost pair first, center last.
+  // Outermost pair first, center last. The countdown range begins where the
+  // hold ends (as a fraction of the whole window), so every lamp gets a turn
+  // and the center lamp dies exactly at the deadline.
   const opacities = useMemo(() => {
     const tiers = Math.ceil(LIGHT_COUNT / 2);
+    const rangeStart = Math.min(0.9, (flash ? FLASH_MS : HOLD_MS) / durationMs);
+    const rangeLen = 1 - rangeStart;
     return Array.from({ length: LIGHT_COUNT }, (_, i) => {
       const edgeDistance = Math.min(i, LIGHT_COUNT - 1 - i);
-
-      let threshold: number;
-      let fadeStart: number;
-
-      if (flash) {
-        // For the buzz window (8s):
-        // Tier d (0 to 6) is fully off at progress = 0.4 + d * 0.1
-        // and starts fading at progress = 0.35 + d * 0.1
-        threshold = 0.4 + edgeDistance * 0.1;
-        fadeStart = 0.35 + edgeDistance * 0.1;
-      } else {
-        // For the personal typing window (10s):
-        // Tier d (0 to 6) is fully off at progress = (d + 1) / tiers
-        // and starts fading 0.05 before that.
-        threshold = (edgeDistance + 1) / tiers;
-        fadeStart = Math.max(0, threshold - 0.05);
-      }
+      const threshold = rangeStart + (edgeDistance + 1) * (rangeLen / tiers);
+      const fadeStart = Math.max(0, threshold - rangeLen / tiers);
 
       const step = progress.interpolate({
         inputRange: [fadeStart, threshold],
@@ -141,7 +122,7 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
       });
       return Animated.multiply(glow, step);
     });
-  }, [glow, progress, flash]);
+  }, [glow, progress, durationMs, flash]);
 
   return (
     <Animated.View style={[styles.band, { opacity: overallOpacity }]} pointerEvents="none">
@@ -155,25 +136,27 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
 }
 
 const styles = StyleSheet.create({
-  // Vertically centered in the card's 44px bottom-margin band.
   band: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 18,
+    bottom: 38, // glued tightly to the bottom of the card/grid (leaving a subtle 4px gap)
     alignItems: 'center',
   },
-  // Spans 75% of the card width up to 1200px max.
   row: {
-    width: '75%',
-    maxWidth: 1200,
+    width: '94.08%',
+    maxWidth: 1460,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   light: {
-    width: 8,
-    height: 8,
-    borderRadius: 2,
-    backgroundColor: LIT,
+    width: 2, // 2px square blocks
+    height: 2,
+    borderRadius: 0, // perfectly square like in the gif
+    backgroundColor: LIT, // white LED bulb
+    shadowColor: '#0088FF', // electric blue glow
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 3, // glowing halo effect
   },
 });

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { getBuzz, judgedPlayerId, reducer } from '../../src/reducer';
+import { computeReadingMs } from '../../src/readingTime';
 import type { Action, GameState, GameStatus } from '../../src/types';
 import { demoBoard } from '../fixtures/board';
 import { getClueContent } from '../fixtures/clues';
@@ -24,12 +25,13 @@ import type { CellRect } from '../components/BoardCell';
 // countdowns honest.
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number; action: Action }>> = {
   CLUE_READING: { ms: 5000, action: { type: 'BUZZER_OPEN' } },
-  BUZZ_OPEN: { ms: 8000, action: { type: 'TIMEOUT' } },
+  BUZZ_OPEN: { ms: 20000, action: { type: 'TIMEOUT' } },
   CLUE_EXPIRED: { ms: 5000, action: { type: 'DISMISS_CLUE' } },
 };
 
-/** Personal typing time, from each player's own buzz (mirrors answerMs). */
-const ANSWER_MS = 10000;
+/** Personal typing time, from each player's own buzz (mirrors answerMs).
+ *  The lights hold fully lit for the first second, then drain over the rest. */
+const ANSWER_MS = 20000;
 
 type DemoScreen = 'board' | 'clue' | 'judge';
 
@@ -68,7 +70,8 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
   // Deadlines (epoch ms) for the current phase window and the local player's
   // personal typing timer — they drive the activation lights' drain.
   const [phaseDeadline, setPhaseDeadline] = useState<number | null>(null);
-  const [personalDeadline, setPersonalDeadline] = useState<number | null>(null);
+  // Persists through BUZZ_OPEN → ANSWERING so post-buzz lights share the deadline.
+  const buzzWindowDeadlineRef = useRef<number | null>(null);
   const dispatch = (action: Action) => setState(s => reducer(s, action));
 
   const localBuzz = getBuzz(state, LOCAL_PLAYER_ID);
@@ -84,24 +87,24 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
       setPhaseDeadline(null);
       return;
     }
-    setPhaseDeadline(Date.now() + phase.ms);
-    const fire = setTimeout(() => dispatch(phase.action), phase.ms);
+    const ms = state.status === 'CLUE_READING' && state.activeClue
+      ? computeReadingMs(state.activeClue.text)
+      : phase.ms;
+    const deadline = Date.now() + ms;
+    setPhaseDeadline(deadline);
+    if (state.status === 'BUZZ_OPEN') buzzWindowDeadlineRef.current = deadline;
+    const fire = setTimeout(() => dispatch(phase.action), ms);
     return () => clearTimeout(fire);
   }, [state.status]);
 
-  // Personal typing timer: 10s from the local player's own buzz, surviving
-  // the BUZZ_OPEN → ANSWERING transition untouched (`typing` stays true).
-  // Locks the answer as-is when it runs out; swipe-down locks earlier and
-  // tears this down via the cleanup.
+  // Lock the answer when the buzz window expires — not a fresh personal timer.
+  // Swipe-down locks earlier and tears this down via the cleanup.
   useEffect(() => {
-    if (!typing) {
-      setPersonalDeadline(null);
-      return;
-    }
-    setPersonalDeadline(Date.now() + ANSWER_MS);
+    if (!typing) return;
+    const remaining = Math.max(50, (buzzWindowDeadlineRef.current ?? 0) - Date.now());
     const fire = setTimeout(
       () => dispatch({ type: 'LOCK_ANSWER', playerId: LOCAL_PLAYER_ID }),
-      ANSWER_MS,
+      remaining,
     );
     return () => clearTimeout(fire);
   }, [typing]);
@@ -146,11 +149,10 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
             clue={state.activeClue}
             canBuzz={state.status === 'BUZZ_OPEN' && !localBuzz}
             lights={
-              state.status === 'BUZZ_OPEN' && !localBuzz && phaseDeadline != null
-                ? { deadline: phaseDeadline, durationMs: PHASE_TIMERS.BUZZ_OPEN!.ms, flash: true }
-                : typing && personalDeadline != null
-                  ? { deadline: personalDeadline, durationMs: ANSWER_MS, flash: false }
-                  : null
+              (state.status === 'BUZZ_OPEN' && !localBuzz || typing) &&
+              buzzWindowDeadlineRef.current != null
+                ? { deadline: buzzWindowDeadlineRef.current, durationMs: PHASE_TIMERS.BUZZ_OPEN!.ms, flash: true }
+                : null
             }
             showKeyboard={typing}
             canJudge={false}
