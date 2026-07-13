@@ -2,8 +2,9 @@ import { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { BoardDefinition } from '../fixtures/board';
 import { colors, grid, type as typeTokens } from '../theme/tokens';
+import { fit as computeFit } from './AutoFitText';
 import { BoardCell, type CellRect } from './BoardCell';
-import { CategoryCell } from './CategoryCell';
+import { CategoryCell, CAT_PAD_X, CAT_PAD_Y } from './CategoryCell';
 
 interface BoardProps {
   board: BoardDefinition;
@@ -95,6 +96,35 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue, 
     valueFontSize = Math.max(8, Math.min(fByWidth, fByHeight) * VALUE_FILL);
   }
 
+  // Equal category text sizing: compute fits for every category, take the
+  // minimum font size, then re-fit each at that shared ceiling so line breaks
+  // are optimised for the final size. Mirrors the broadcast where all headers
+  // sit at the same visual weight. Falls back to per-cell AutoFitText on
+  // native (no canvas).
+  const categoryFits = useMemo(() => {
+    if (!boardSize) return null;
+    const cellW = (boardSize.w - (colCount - 1) * grid.lineWidth) / colCount;
+    const innerW = cellW - 2 * CAT_PAD_X;
+    const totalAvailH = boardSize.h - 5 * grid.lineWidth;
+    const catRowH = totalAvailH * 1.25 / ROW_FLEX_TOTAL;
+    const innerH = catRowH - 2 * CAT_PAD_Y;
+    if (innerW <= 0 || innerH <= 0) return null;
+
+    const names = board.categories.map(c => c.name.toUpperCase());
+    const individual = names.map(n =>
+      computeFit(n, innerW, innerH, typeTokens.board, '400', 0.85, 1.28, 3, 8, 44),
+    );
+    if (individual.some(f => f === null)) return null;
+
+    const minSize = Math.min(...individual.map(f => f!.fontSize));
+
+    // Re-fit with the shared ceiling so each name picks optimal line breaks
+    // at the final size.
+    return names.map(n =>
+      computeFit(n, innerW, innerH, typeTokens.board, '400', 0.85, 1.28, 3, 8, minSize),
+    );
+  }, [boardSize, board.categories, colCount]);
+
   return (
     <View
       style={styles.board}
@@ -120,11 +150,12 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue, 
       </Text>
 
       <View style={styles.categoryRow}>
-        {board.categories.map(category => (
+        {board.categories.map((category, i) => (
           <CategoryCell
             key={category.name}
             name={category.name}
             flashDelay={cellDelays ? catFlashDelay : undefined}
+            precomputedFit={categoryFits?.[i] ?? undefined}
           />
         ))}
       </View>
