@@ -34,7 +34,7 @@ export interface ServerOptions {
 }
 
 /** Actions clients are allowed to send. Timer actions are server-only. */
-const CLIENT_ACTIONS = new Set(['SELECT_CLUE', 'BUZZ', 'SET_ANSWER', 'LOCK_ANSWER', 'JUDGE_ANSWER', 'SKIP_CLUE']);
+const CLIENT_ACTIONS = new Set(['SELECT_CLUE', 'BUZZ', 'SET_ANSWER', 'LOCK_ANSWER', 'UNLOCK_ANSWER', 'JUDGE_ANSWER', 'SKIP_CLUE']);
 
 export function createServer(
   transport: Transport,

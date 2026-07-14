@@ -103,6 +103,11 @@ export interface LockAnswerAction {
   answer?: string;
 }
 
+export interface UnlockAnswerAction {
+  type: 'UNLOCK_ANSWER';
+  playerId: string;
+}
+
 export type Action =
   | SelectClueAction
   | BuzzAction
@@ -112,4 +117,5 @@ export type Action =
   | BuzzerOpenAction
   | DismissClueAction
   | LockAnswerAction
+  | UnlockAnswerAction
   | SkipClueAction;

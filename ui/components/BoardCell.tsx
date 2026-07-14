@@ -39,7 +39,7 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
   useEffect(() => {
     if (!inFlashMode) return;
     const t = setTimeout(() => {
-      Animated.timing(flashAnim, { toValue: 1, duration: 120, useNativeDriver: false }).start(() => setAnimDone(true));
+      Animated.timing(flashAnim, { toValue: 1, duration: 120, useNativeDriver: true }).start(() => setAnimDone(true));
     }, flashDelay!);
     return () => clearTimeout(t);
   }, []); // mount-only — delay captured at birth
@@ -63,11 +63,6 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
   };
 
   if (inFlashMode && !animDone) {
-    const bgColor = flashAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [colors.cellBurned, colors.cell],
-      extrapolate: 'clamp',
-    });
     const textOpacity = flashAnim.interpolate({
       inputRange: [0, 1],
       outputRange: [burnedValueOpacity, 1],
@@ -76,7 +71,8 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
 
     return (
       <View ref={wrapRef} style={styles.cellWrap}>
-        <Animated.View style={[styles.cell, { backgroundColor: bgColor }]}>
+        <View style={[styles.cell, { backgroundColor: colors.cellBurned }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: colors.cell, borderRadius: radius, opacity: flashAnim }]} pointerEvents="none" />
           <Pressable style={styles.pressableInner} onPress={handlePress} disabled={disabled}>
             <Animated.View style={[styles.valueRow, { opacity: textOpacity }]}>
               <Text
@@ -91,7 +87,7 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
               >{value}</Text>
             </Animated.View>
           </Pressable>
-        </Animated.View>
+        </View>
       </View>
     );
   }

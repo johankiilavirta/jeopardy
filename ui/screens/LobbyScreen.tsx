@@ -68,7 +68,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
     Animated.timing(contentOpacity, {
       toValue: 0,
       duration: 250,
-      useNativeDriver: false,
+      useNativeDriver: true,
     }).start(() => {
       props.onStart();
     });

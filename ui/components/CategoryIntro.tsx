@@ -58,7 +58,7 @@ export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
       Animated.timing(contentOpacity, {
         toValue: 1,
         duration: 600,
-        useNativeDriver: false,
+        useNativeDriver: true,
       })
     ];
     // Hold on each card, then push to the next; on the last card, hold and
@@ -71,7 +71,7 @@ export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
             toValue: -(i + 1) * w,
             duration: SLIDE_MS,
             easing: Easing.linear,
-            useNativeDriver: false,
+            useNativeDriver: true,
           }),
         );
       }
@@ -81,7 +81,7 @@ export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
       Animated.timing(containerOpacity, {
         toValue: 0,
         duration: 600,
-        useNativeDriver: false,
+        useNativeDriver: true,
       }),
     );
     Animated.sequence(steps).start(({ finished }) => {

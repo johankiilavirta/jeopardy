@@ -81,6 +81,8 @@ interface ClueScreenProps {
   onAnswerChange?: ((text: string) => void) | undefined;
   /** Swipe-down on the keyboard locks this final answer in. */
   onLockAnswer?: ((answer: string) => void) | undefined;
+  /** Tapping the card while locked unlocks the answer so they can edit it. */
+  onUnlockAnswer?: (() => void) | undefined;
   /** Set during REVEAL: the correct answer plus the judged player's attempt. */
   reveal?: RevealInfo | undefined;
   /** P key: skip this clue and return to the board without answering. */
@@ -100,6 +102,7 @@ export function ClueScreen({
   answer,
   onAnswerChange,
   onLockAnswer,
+  onUnlockAnswer,
   reveal,
   onSkip,
   lights,
@@ -157,6 +160,12 @@ export function ClueScreen({
   const kb = useRef(new Animated.Value(0)).current;
   // Live downward drag on the panel (swipe-to-lock follows the finger).
   const kbDrag = useRef(new Animated.Value(0)).current;
+  const answerOpacity = useRef(new Animated.Value(0)).current;
+  const dragFade = useMemo(() => kbDrag.interpolate({
+    inputRange: [0, 50],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  }), [kbDrag]);
 
   useEffect(() => {
     if (keyboardVisible) {
@@ -167,8 +176,22 @@ export function ClueScreen({
         speed: 16,
         bounciness: 4,
         useNativeDriver: true,
-      }).start();
+      }).start(({ finished }) => {
+        if (finished) {
+          Animated.timing(answerOpacity, {
+            toValue: 1,
+            duration: 150,
+            useNativeDriver: true,
+          }).start();
+        }
+      });
     } else {
+      Animated.timing(answerOpacity, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
+      }).start();
+
       // Interrupting this with a reopen calls back with finished: false,
       // so we never unmount mid-slide.
       Animated.timing(kb, {
@@ -179,7 +202,7 @@ export function ClueScreen({
         if (finished) setKbMounted(false);
       });
     }
-  }, [keyboardVisible, kb, kbDrag]);
+  }, [keyboardVisible, kb, kbDrag, answerOpacity]);
 
   // The sheet slides up from fully below the screen's bottom edge into place.
   const panelRise = kb.interpolate({
@@ -423,7 +446,9 @@ export function ClueScreen({
               ? onBuzz
               : dismissed
                 ? () => setDismissed(false)
-                : undefined
+                : onUnlockAnswer
+                  ? onUnlockAnswer
+                  : undefined
           }
         >
           <Animated.View style={[styles.header, { opacity: headerFade }]}>
@@ -494,7 +519,7 @@ export function ClueScreen({
             {...(lockResponder ? lockResponder.panHandlers : {})}
           >
             <Pressable onPress={() => {}} style={styles.sheetInner}>
-              <View style={styles.answerZone}>
+              <Animated.View style={[styles.answerZone, { opacity: Animated.multiply(answerOpacity, dragFade) }]}>
                 <Text
                   style={[styles.answerLine, !answer && styles.answerPlaceholder]}
                   numberOfLines={1}
@@ -503,7 +528,7 @@ export function ClueScreen({
                   {answer || 'TYPE YOUR ANSWER'}
                 </Text>
                 <Animated.View style={[styles.caret, { opacity: caretBlink }]} />
-              </View>
+              </Animated.View>
               <View style={styles.keyDeck}>
                 <View style={styles.keyDeckInner}>
                   <AnswerKeyboard onInsert={insertChar} onBackspace={backspaceChar} />

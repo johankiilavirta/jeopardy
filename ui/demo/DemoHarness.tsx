@@ -164,6 +164,11 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
             onLockAnswer={text =>
               dispatch({ type: 'LOCK_ANSWER', playerId: LOCAL_PLAYER_ID, answer: text })
             }
+            onUnlockAnswer={
+              localBuzz?.locked
+                ? () => dispatch({ type: 'UNLOCK_ANSWER', playerId: LOCAL_PLAYER_ID })
+                : undefined
+            }
             reveal={
               state.status === 'REVEAL' || state.status === 'CLUE_EXPIRED'
                 ? { correctAnswer: state.activeClue.answer }

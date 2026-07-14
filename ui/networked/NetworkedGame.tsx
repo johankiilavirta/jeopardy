@@ -314,6 +314,11 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               onLockAnswer={text =>
                 dispatch({ type: 'LOCK_ANSWER', playerId, answer: text })
               }
+              onUnlockAnswer={
+                localBuzz?.locked
+                  ? () => dispatch({ type: 'UNLOCK_ANSWER', playerId })
+                  : undefined
+              }
               reveal={
                 gameState.status === 'REVEAL' || gameState.status === 'CLUE_EXPIRED'
                   ? { correctAnswer: gameState.activeClue.answer }
