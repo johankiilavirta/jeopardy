@@ -251,38 +251,54 @@ export function ClueScreen({
     });
   }, [judgeActive, onJudge, pan, commitJudge]);
 
+  const stateRef = useRef({
+    canBuzz,
+    onBuzz,
+    judgeActive,
+    commitJudge,
+    onLockAnswer,
+    answer,
+    showKeyboard,
+    onAnswerChange,
+    dismissed,
+    onSkip,
+    setDismissed,
+  });
+  stateRef.current = { canBuzz, onBuzz, judgeActive, commitJudge, onLockAnswer, answer, showKeyboard, onAnswerChange, dismissed, onSkip, setDismissed };
+
   useEffect(() => {
     if (typeof window === 'undefined' || !window.addEventListener) return;
     const handler = (e: KeyboardEvent) => {
-      if ((e.key === 'p' || e.key === 'P') && onSkip) { e.preventDefault(); onSkip(); return; }
-      if (canBuzz && onBuzz && e.key === ' ') {
+      const s = stateRef.current;
+      if ((e.key === 'p' || e.key === 'P') && s.onSkip) { e.preventDefault(); s.onSkip(); return; }
+      if (s.canBuzz && s.onBuzz && e.key === ' ') {
         e.preventDefault();
-        onBuzz();
+        s.onBuzz();
         return;
       }
-      if (judgeActive && e.key === 'ArrowRight') { commitJudge(true); return; }
-      if (judgeActive && e.key === 'ArrowLeft') { commitJudge(false); return; }
-      if (onLockAnswer && answer && e.key === 'Enter') { onLockAnswer(answer); return; }
-      if (showKeyboard && onAnswerChange) {
-        if (e.key === 'ArrowDown' && !dismissed) {
+      if (s.judgeActive && e.key === 'ArrowRight') { s.commitJudge(true); return; }
+      if (s.judgeActive && e.key === 'ArrowLeft') { s.commitJudge(false); return; }
+      if (s.onLockAnswer && s.answer && e.key === 'Enter') { s.onLockAnswer(s.answer); return; }
+      if (s.showKeyboard && s.onAnswerChange) {
+        if (e.key === 'ArrowDown' && !s.dismissed) {
           e.preventDefault();
-          if (onLockAnswer && answer) {
-            onLockAnswer(answer);
+          if (s.onLockAnswer && s.answer) {
+            s.onLockAnswer(s.answer);
           } else {
-            setDismissed(true);
+            s.setDismissed(true);
           }
           return;
         }
-        if (e.key === 'ArrowUp' && dismissed) { e.preventDefault(); setDismissed(false); return; }
-        if (e.key === 'Backspace') { e.preventDefault(); onAnswerChange((answer ?? '').slice(0, -1)); return; }
+        if (e.key === 'ArrowUp' && s.dismissed) { e.preventDefault(); s.setDismissed(false); return; }
+        if (e.key === 'Backspace') { e.preventDefault(); s.onAnswerChange((s.answer ?? '').slice(0, -1)); return; }
         if (e.key.length === 1 && /[a-zA-Z0-9 ',.!?-]/.test(e.key)) {
-          onAnswerChange((answer ?? '') + e.key.toUpperCase());
+          s.onAnswerChange((s.answer ?? '') + e.key.toUpperCase());
         }
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [canBuzz, onBuzz, judgeActive, commitJudge, onLockAnswer, answer, showKeyboard, onAnswerChange, dismissed, onSkip]);
+  }, []);
 
   const correctOpacity = pan.interpolate({
     inputRange: [0, SWIPE_THRESHOLD],
