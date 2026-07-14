@@ -5,7 +5,7 @@ import { Board } from '../components/Board';
 import type { CellRect } from '../components/BoardCell';
 import { PLAYER_BAR_HEIGHT, PLAYER_BLOCK_HEIGHT, PlayerHeader } from '../components/PlayerHeader';
 import type { BoardDefinition } from '../fixtures/board';
-import { CARD_BOTTOM_MARGIN } from './ClueScreen';
+import { CARD_BOTTOM_MARGIN, CARD_H_PAD } from './ClueScreen';
 import { colors } from '../theme/tokens';
 
 interface ChooseClueScreenProps {
@@ -65,13 +65,15 @@ export function ChooseClueScreen({
           />
         )}
       </View>
-      <PlayerHeader
-        players={Object.values(state.players)}
-        currentTurnPlayerId={state.currentTurnPlayerId}
-        localPlayerId={localPlayerId}
-        disconnectedPlayerId={disconnectedPlayerId}
-        judgingPlayerId={judgingPlayerId}
-      />
+      <View style={styles.playerBarWrap}>
+        <PlayerHeader
+          players={Object.values(state.players)}
+          currentTurnPlayerId={state.currentTurnPlayerId}
+          localPlayerId={localPlayerId}
+          disconnectedPlayerId={disconnectedPlayerId}
+          judgingPlayerId={judgingPlayerId}
+        />
+      </View>
     </View>
   );
 }
@@ -81,15 +83,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bg,
     // The board occupies exactly the clue card's footprint, so the card
-    // expands over it edge-for-edge: same 2% side/top insets, and the gap
-    // below the board puts its bottom edge where the card's bottom edge
-    // lands (bar inset + card bottom margin, minus the bar itself).
-    paddingHorizontal: '2%',
+    // expands over it edge-for-edge: same 5% side / 2% top insets, and
+    // the gap below the board puts its bottom edge where the card's
+    // bottom edge lands (bar inset + card bottom margin, minus the bar
+    // itself).
     paddingTop: '2%',
     paddingBottom: 8,
     gap: PLAYER_BAR_HEIGHT + CARD_BOTTOM_MARGIN - (8 + PLAYER_BLOCK_HEIGHT),
   },
   boardWrap: {
     flex: 1,
+    marginHorizontal: CARD_H_PAD,
+  },
+  // The score bugs sit on their own, wider 2% rails (the judgement tray
+  // aligns to these), independent of the board/card inset.
+  playerBarWrap: {
+    paddingHorizontal: '2%',
   },
 });
