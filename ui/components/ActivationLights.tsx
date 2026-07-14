@@ -2,6 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 
 const LIGHT_COUNT = 171; // High density "electric blue LEDs" // Dense enough for modern look, sparse enough to avoid RN graph limits
+/** The band's resting distance above its layer's bottom edge — glued
+ *  tightly under the clue card (a subtle 4px gap). Exported so the clue
+ *  screen can compute the strip's ride up onto the answer sheet's crown. */
+export const LIGHTS_REST_BOTTOM = 38;
 /** The buzzer-activation flash runs this long before going steady.
  *  Each of the two pulses takes 120ms (fade-in) + 80ms (hold) + 250ms (fade-out) + 150ms (hold-off) = 600ms.
  *  Then a final fade-in to steady lit takes 120ms.
@@ -151,7 +155,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 38, // glued tightly to the bottom of the card/grid (leaving a subtle 4px gap)
+    bottom: LIGHTS_REST_BOTTOM,
     alignItems: 'center',
   },
   row: {
