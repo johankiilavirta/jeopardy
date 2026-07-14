@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, type as typeTokens } from '../theme/tokens';
 
@@ -47,7 +48,9 @@ function Key({
   );
 }
 
-export function AnswerKeyboard({ onInsert, onBackspace }: AnswerKeyboardProps) {
+/** Memoized: the keys are static, so with stable callbacks the whole deck
+ *  skips re-rendering on every keystroke. */
+export const AnswerKeyboard = memo(function AnswerKeyboard({ onInsert, onBackspace }: AnswerKeyboardProps) {
   return (
     <View style={styles.keyboard}>
       {LETTER_ROWS.map((row, i) => (
@@ -67,7 +70,7 @@ export function AnswerKeyboard({ onInsert, onBackspace }: AnswerKeyboardProps) {
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   // The keyboard fills whatever height its host gives it: rows share the

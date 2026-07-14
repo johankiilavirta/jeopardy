@@ -246,8 +246,9 @@ export function ClueScreen({
   // one character the gesture locks the answer in permanently. If the
   // answer is still empty the keyboard just dismisses — the player can
   // tap the card to bring it back and type before their timer expires.
+  const hasLockAnswer = !!onLockAnswer;
   const lockResponder = useMemo(() => {
-    if (!onLockAnswer) return null;
+    if (!hasLockAnswer) return null;
     const snapBack = () =>
       Animated.spring(kbDrag, { toValue: 0, useNativeDriver: true }).start();
 
@@ -259,18 +260,21 @@ export function ClueScreen({
       onPanResponderMove: (_e, g) => kbDrag.setValue(Math.max(0, g.dy)),
       onPanResponderRelease: (_e, g) => {
         if (g.dy > LOCK_THRESHOLD || (g.dy > 50 && g.vy > LOCK_VELOCITY)) {
-          if (answer) {
-            onLockAnswer(answer);
+          // Latest values via stateRef, so the responder never rebuilds
+          // mid-drag on a keystroke.
+          const s = stateRef.current;
+          if (s.answer) {
+            s.onLockAnswer?.(s.answer);
           } else {
             // Nothing typed — just dismiss, don't lock.
-            setDismissed(true);
+            s.setDismissed(true);
           }
         }
         snapBack();
       },
       onPanResponderTerminate: snapBack,
     });
-  }, [onLockAnswer, answer, kbDrag]);
+  }, [hasLockAnswer, kbDrag]);
 
   // Swiping judges the answer on the stand, only once the reveal is up.
   const judgeActive = !!onJudge && !!canJudge;
@@ -330,6 +334,17 @@ export function ClueScreen({
     setDismissed,
   });
   stateRef.current = { canBuzz, onBuzz, judgeActive, commitJudge, onLockAnswer, answer, showKeyboard, onAnswerChange, dismissed, onSkip, setDismissed };
+
+  // Stable key callbacks (same latest-ref pattern as the keydown handler),
+  // so the memoized AnswerKeyboard's 30 keys never re-render while typing.
+  const insertChar = useCallback((ch: string) => {
+    const s = stateRef.current;
+    s.onAnswerChange?.((s.answer ?? '') + ch);
+  }, []);
+  const backspaceChar = useCallback(() => {
+    const s = stateRef.current;
+    s.onAnswerChange?.((s.answer ?? '').slice(0, -1));
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.addEventListener) return;
@@ -491,10 +506,7 @@ export function ClueScreen({
               </View>
               <View style={styles.keyDeck}>
                 <View style={styles.keyDeckInner}>
-                  <AnswerKeyboard
-                    onInsert={ch => onAnswerChange((answer ?? '') + ch)}
-                    onBackspace={() => onAnswerChange((answer ?? '').slice(0, -1))}
-                  />
+                  <AnswerKeyboard onInsert={insertChar} onBackspace={backspaceChar} />
                 </View>
               </View>
             </Pressable>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 
 const LIGHT_COUNT = 171; // High density "electric blue LEDs" // Dense enough for modern look, sparse enough to avoid RN graph limits
@@ -36,8 +36,11 @@ interface ActivationLightsProps {
  * When the buzzers open they pop at the broadcast cadence for a second, hold
  * steady, then extinguish linearly from the outermost pair inward until time
  * is up.
+ *
+ * Memoized: the 171-lamp subtree renders only when the window prop's
+ * identity changes (the parent keeps it stable across unrelated renders).
  */
-export function ActivationLights({ lights }: ActivationLightsProps) {
+export const ActivationLights = memo(function ActivationLights({ lights }: ActivationLightsProps) {
   const [activeLights, setActiveLights] = useState<NonNullable<ActivationLightsProps['lights']>>(() => {
     return lights ?? { deadline: 0, durationMs: 1, flash: false };
   });
@@ -155,7 +158,7 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
       </Animated.View>
     </Animated.View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   band: {

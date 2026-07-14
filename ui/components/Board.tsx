@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { BoardDefinition } from '../fixtures/board';
 import { colors, grid, type as typeTokens } from '../theme/tokens';
@@ -37,7 +37,7 @@ function shuffle(n: number): number[] {
   return a;
 }
 
-export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boardAnimKey = 0 }: BoardProps) {
+function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boardAnimKey = 0 }: BoardProps) {
   const burned = new Set(burnedClueIds);
   const baseValue = board.categories.find(c => c.clues.length > 0)?.clues[0]?.value ?? 200;
   const [boardSize, setBoardSize] = useState<{ w: number; h: number } | null>(null);
@@ -230,6 +230,20 @@ export function Board({ board, burnedClueIds, locked, onSelectClue, onSkipClue, 
     </View>
   );
 }
+
+/** The board re-renders only when its inputs really change. Every network
+ *  STATE_UPDATE deserializes a fresh burned array, so it compares by
+ *  content; everything else compares by identity (the parent memoizes the
+ *  board object and callbacks). Typing and buzzing skip this subtree. */
+export const Board = memo(BoardImpl, (a, b) =>
+  a.board === b.board &&
+  a.locked === b.locked &&
+  a.onSelectClue === b.onSelectClue &&
+  a.onSkipClue === b.onSkipClue &&
+  a.boardAnimKey === b.boardAnimKey &&
+  a.burnedClueIds.length === b.burnedClueIds.length &&
+  a.burnedClueIds.every((id, i) => id === b.burnedClueIds[i]),
+);
 
 const styles = StyleSheet.create({
   board: {
