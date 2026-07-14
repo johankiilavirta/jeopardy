@@ -39,7 +39,7 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
   useEffect(() => {
     if (!inFlashMode) return;
     const t = setTimeout(() => {
-      Animated.timing(flashAnim, { toValue: 1, duration: 40, useNativeDriver: false }).start(() => setAnimDone(true));
+      Animated.timing(flashAnim, { toValue: 1, duration: 120, useNativeDriver: false }).start(() => setAnimDone(true));
     }, flashDelay!);
     return () => clearTimeout(t);
   }, []); // mount-only — delay captured at birth

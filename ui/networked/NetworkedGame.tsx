@@ -63,7 +63,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const playerId = initialState?.playerId ?? null;
   // Deadlines (epoch ms) for the current phase window and the local player's
   // personal typing timer — they drive the activation lights' drain.
-  const [phaseDeadline, setPhaseDeadline] = useState<number | null>(null);
+  const previousStatusRef = useRef<GameStatus | null>(null);
   const buzzWindowDeadlineRef = useRef<number | null>(null);
   // Window rect of the cell this device last tapped, so the clue card can grow
   // out of it. Only set for clues *we* picked — a clue another player selects
@@ -73,7 +73,13 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // usable. We track which rounds have already shown theirs so the intro never
   // replays (e.g. on a reconnect / state update).
   const introShownRef = useRef<Set<number>>(new Set());
-  const [introRound, setIntroRound] = useState<number | null>(null);
+  const [introRound, setIntroRound] = useState<number | null>(() => {
+    if (animationsEnabled && !introShownRef.current.has(1)) {
+      introShownRef.current.add(1);
+      return 1;
+    }
+    return null;
+  });
   // Latch to 1 the first time round 2 is reached — triggers the DJ board flash.
   const boardAnimKeyRef = useRef(0);
 
@@ -94,37 +100,19 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Phase deadline estimate (display-only, server is authoritative).
-  useEffect(() => {
-    if (!gameState) return;
-    const phase = PHASE_TIMERS[gameState.status];
-    if (!phase) {
-      setPhaseDeadline(null);
-      return;
+  // Update deadlines synchronously when the phase changes so we never render with a stale clock
+  if (gameState && gameState.status !== previousStatusRef.current) {
+    if (gameState.status === 'BUZZ_OPEN') {
+      buzzWindowDeadlineRef.current = Date.now() + PHASE_TIMERS.BUZZ_OPEN!.ms;
     }
-    const ms = gameState.status === 'CLUE_READING' && gameState.activeClue
-      ? computeReadingMs(gameState.activeClue.text)
-      : phase.ms;
-    const deadline = Date.now() + ms;
-    setPhaseDeadline(deadline);
-    if (gameState.status === 'BUZZ_OPEN') buzzWindowDeadlineRef.current = deadline;
-  }, [gameState?.status]);
+    previousStatusRef.current = gameState.status;
+  }
 
   const localBuzz = gameState && playerId ? getBuzz(gameState, playerId) : undefined;
   const typing =
     !!localBuzz &&
     !localBuzz.locked &&
     (gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING');
-
-
-  // Play the category fly-by once at the start of round 1 only. Round 2
-  // (Double Jeopardy) transitions silently — no intro animation.
-  useEffect(() => {
-    if (!animationsEnabled || !boardData) return;
-    if (introShownRef.current.has(1)) return;
-    introShownRef.current.add(1);
-    setIntroRound(1);
-  }, [animationsEnabled, boardData]);
 
   // Solo mode: auto-buzz when the buzz window opens — no tap required since
   // there's no opponent to race. This lets locking immediately trigger REVEAL.
@@ -196,8 +184,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // categories (marked " *") that will backfill as columns clear.
   // When visibleCategories >= 6, nothing is hidden so no "*" is needed.
   const introBoard =
-    introRound != null && boardData
-      ? toBoardDefinition(boardData, introRound as RoundNumber)
+    introRound != null
+      ? (boardData ? toBoardDefinition(boardData, introRound as RoundNumber) : demoBoard)
       : null;
   const introCategories =
     introBoard?.categories.map((c, i) =>
@@ -236,7 +224,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           localPlayerId={playerId}
           board={visibleBoard}
           disconnectedPlayerId={disconnectedPlayerId}
-          boardAnimKey={boardAnimKeyRef.current}
+          boardAnimKey={animationsEnabled ? boardAnimKeyRef.current : 0}
+          animationsEnabled={animationsEnabled}
           judgingPlayerId={gameState.status === 'REVEAL' ? onStand : null}
           onSelectClue={(clueId, rect) => {
             selectedCellRef.current = { clueId, rect };

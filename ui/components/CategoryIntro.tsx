@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
 import {
   Animated,
   Easing,
@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { colors, shadow, type as typeTokens } from '../theme/tokens';
 
@@ -35,8 +36,9 @@ interface CategoryIntroProps {
  */
 export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
   const tx = useRef(new Animated.Value(0)).current;
-  const opacity = useRef(new Animated.Value(1)).current;
-  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const contentOpacity = useRef(new Animated.Value(0)).current;
+  const containerOpacity = useRef(new Animated.Value(1)).current;
+  const { width: w, height: h } = useWindowDimensions();
   const startedRef = useRef(false);
   const doneRef = useRef(false);
 
@@ -46,69 +48,70 @@ export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
     onDone();
   }, [onDone]);
 
-  const begin = useCallback(
-    (e: LayoutChangeEvent) => {
-      const { width: w, height: h } = e.nativeEvent.layout;
-      if (startedRef.current || w <= 0) return;
-      startedRef.current = true;
-      setSize({ w, h });
+  useEffect(() => {
+    if (startedRef.current || w <= 0) return;
+    startedRef.current = true;
 
-      const n = categories.length;
-      // Hold on each card, then push to the next; on the last card, hold and
-      // then fade the whole overlay out to reveal the board already behind it.
-      const steps: Animated.CompositeAnimation[] = [];
-      for (let i = 0; i < n; i++) {
-        steps.push(Animated.delay(HOLD_MS));
-        if (i < n - 1) {
-          steps.push(
-            Animated.timing(tx, {
-              toValue: -(i + 1) * w,
-              duration: SLIDE_MS,
-              easing: Easing.linear,
-              useNativeDriver: true,
-            }),
-          );
-        }
+    const n = categories.length;
+    // Fade in the cards over the solid background
+    const steps: Animated.CompositeAnimation[] = [
+      Animated.timing(contentOpacity, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: false,
+      })
+    ];
+    // Hold on each card, then push to the next; on the last card, hold and
+    // then fade the whole overlay out to reveal the board already behind it.
+    for (let i = 0; i < n; i++) {
+      steps.push(Animated.delay(HOLD_MS));
+      if (i < n - 1) {
+        steps.push(
+          Animated.timing(tx, {
+            toValue: -(i + 1) * w,
+            duration: SLIDE_MS,
+            easing: Easing.linear,
+            useNativeDriver: false,
+          }),
+        );
       }
-      steps.push(
-        Animated.timing(opacity, {
-          toValue: 0,
-          duration: FADE_MS,
-          useNativeDriver: true,
-        }),
-      );
-      Animated.sequence(steps).start(({ finished }) => {
-        if (finished) finish();
-      });
-    },
-    [categories.length, finish, tx, opacity],
-  );
+    }
+    // Then fade out the entire container to reveal the board
+    steps.push(
+      Animated.timing(containerOpacity, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: false,
+      }),
+    );
+    Animated.sequence(steps).start(({ finished }) => {
+      if (finished) finish();
+    });
+  }, [w, categories.length, finish, tx, contentOpacity, containerOpacity]);
 
   // Dark frame around the blue card, matching the broadcast proportions:
   // ~7% of width on the sides, ~12% of height top and bottom.
-  const pad = size ? { paddingHorizontal: size.w * 0.07, paddingVertical: size.h * 0.12 } : null;
+  const pad = { paddingHorizontal: w * 0.07, paddingVertical: h * 0.12 };
 
   return (
-    <Animated.View style={[styles.fill, { opacity }]}>
-      <Pressable style={styles.fill} onPress={finish} onLayout={begin}>
-        {size && (
-          <Animated.View
-            style={[
-              styles.strip,
-              { width: size.w * categories.length, transform: [{ translateX: tx }] },
-            ]}
-          >
-            {categories.map((name, i) => (
-              <View key={i} style={[styles.slot, { width: size.w }, pad]}>
-                <View style={styles.card}>
-                  <Text style={styles.categoryText} adjustsFontSizeToFit numberOfLines={4}>
-                    {name.toUpperCase()}
-                  </Text>
-                </View>
+    <Animated.View style={[styles.fill, { opacity: containerOpacity }]}>
+      <Pressable style={styles.fill} onPress={finish}>
+        <Animated.View
+          style={[
+            styles.strip,
+            { width: w * categories.length, transform: [{ translateX: tx }], opacity: contentOpacity },
+          ]}
+        >
+          {categories.map((name, i) => (
+            <View key={i} style={[styles.slot, { width: w }, pad]}>
+              <View style={styles.card}>
+                <Text style={styles.categoryText} adjustsFontSizeToFit numberOfLines={4}>
+                  {name.toUpperCase()}
+                </Text>
               </View>
-            ))}
-          </Animated.View>
-        )}
+            </View>
+          ))}
+        </Animated.View>
       </Pressable>
     </Animated.View>
   );
@@ -145,7 +148,6 @@ const styles = StyleSheet.create({
   categoryText: {
     fontFamily: typeTokens.board,
     fontSize: 48,
-    lineHeight: 54,
     color: colors.categoryText,
     textAlign: 'center',
     transform: [{ scaleX: 0.85 }],
