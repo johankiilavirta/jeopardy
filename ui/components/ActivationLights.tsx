@@ -63,6 +63,7 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
   useEffect(() => {
     if (deadline === 0) return;
 
+    progress.setValue(0);
     glow.setValue(flash ? OFF_OPACITY : 1);
 
     let drain: Animated.CompositeAnimation | null = null;

@@ -232,7 +232,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           localPlayerId={playerId}
           board={visibleBoard}
           disconnectedPlayerId={disconnectedPlayerId}
-          boardAnimKey={boardAnimKeyRef.current}
+          boardAnimKey={animationsEnabled ? boardAnimKeyRef.current : 0}
+          animationsEnabled={animationsEnabled}
           judgingPlayerId={gameState.status === 'REVEAL' ? onStand : null}
           onSelectClue={(clueId, rect) => {
             selectedCellRef.current = { clueId, rect };

@@ -29,9 +29,11 @@ interface PlayerHeaderProps {
   disconnectedPlayerId?: string | null | undefined;
   /** The player whose answer is currently shown in the judgment tray. */
   judgingPlayerId?: string | null | undefined;
+  /** Whether animations should play. */
+  animationsEnabled?: boolean;
 }
 
-export function PlayerHeader({ players, currentTurnPlayerId, localPlayerId, disconnectedPlayerId, judgingPlayerId }: PlayerHeaderProps) {
+export function PlayerHeader({ players, currentTurnPlayerId, localPlayerId, disconnectedPlayerId, judgingPlayerId, animationsEnabled = true }: PlayerHeaderProps) {
   // While an answer is being judged, only the judged player is highlighted.
   const highlightId = judgingPlayerId ?? currentTurnPlayerId;
 
@@ -44,6 +46,7 @@ export function PlayerHeader({ players, currentTurnPlayerId, localPlayerId, disc
           score={player.score}
           activeTurn={player.id === highlightId}
           disconnected={player.id === disconnectedPlayerId}
+          animationsEnabled={animationsEnabled}
         />
       ))}
     </View>

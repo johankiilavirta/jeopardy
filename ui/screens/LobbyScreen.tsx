@@ -61,6 +61,10 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const contentOpacity = useRef(new Animated.Value(1)).current;
   const handleStartPress = useCallback(() => {
     if (!canStart) return;
+    if (props.animationsEnabled === false) {
+      props.onStart();
+      return;
+    }
     Animated.timing(contentOpacity, {
       toValue: 0,
       duration: 250,
