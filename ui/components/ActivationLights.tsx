@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 
-const LIGHT_COUNT = 39; // Dense enough for modern look, sparse enough to avoid RN graph limits
+const LIGHT_COUNT = 151; // High density "electric blue LEDs" // Dense enough for modern look, sparse enough to avoid RN graph limits
 /** The buzzer-activation flash runs this long before going steady.
  *  Each of the two pulses takes 120ms (fade-in) + 80ms (hold) + 250ms (fade-out) + 150ms (hold-off) = 600ms.
  *  Then a final fade-in to steady lit takes 120ms.
@@ -176,10 +176,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   light: {
-    width: 6, // Larger blocks since there are fewer of them
-    height: 4,
-    borderRadius: 1,
-    backgroundColor: LIT, // white LED bulb
+    width: 2, // 2px square blocks
+    height: 2,
+    borderRadius: 0, // perfectly square like in the gif
+    backgroundColor: '#FFFFFF', // The physical LED color when lit
     shadowColor: '#0088FF', // electric blue glow
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,
