@@ -85,33 +85,15 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
       drain.start();
     };
 
-    const pop = () => [
-      Animated.timing(glow, {
-        toValue: 1,
-        duration: 120,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
-      Animated.delay(80),
-      Animated.timing(glow, {
-        toValue: OFF_OPACITY,
-        duration: 250,
-        easing: Easing.inOut(Easing.quad),
-        useNativeDriver: true,
-      }),
-      Animated.delay(150),
-    ];
-
     const arm = flash
       ? Animated.sequence([
-          ...pop(),
-          ...pop(),
           Animated.timing(glow, {
             toValue: 1,
             duration: 120,
             easing: Easing.out(Easing.quad),
             useNativeDriver: true,
           }),
+          Animated.delay(1200),
         ])
       : Animated.timing(glow, { toValue: 1, duration: 120, useNativeDriver: true });
 
