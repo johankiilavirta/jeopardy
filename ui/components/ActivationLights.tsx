@@ -51,7 +51,7 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
 
       Animated.timing(overallOpacity, {
         toValue: 1,
-        duration: 200,
+        duration: 100, // Twice as fast fade-in
         useNativeDriver: true,
       }).start();
     } else {
@@ -92,13 +92,13 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
       ? Animated.sequence([
           Animated.timing(glow, {
             toValue: 1,
-            duration: 120,
+            duration: 60, // Twice as fast flash
             easing: Easing.out(Easing.quad),
             useNativeDriver: true,
           }),
-          Animated.delay(1200),
+          Animated.delay(1260), // Preserves exactly 1320ms FLASH_MS
         ])
-      : Animated.timing(glow, { toValue: 1, duration: 120, useNativeDriver: true });
+      : Animated.timing(glow, { toValue: 1, duration: 60, useNativeDriver: true });
 
     arm.start(({ finished }) => {
       if (finished) startDrain();
