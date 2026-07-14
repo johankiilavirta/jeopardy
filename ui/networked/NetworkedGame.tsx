@@ -114,17 +114,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     !localBuzz.locked &&
     (gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING');
 
-  // Solo mode: auto-buzz when the buzz window opens — no tap required since
-  // there's no opponent to race. This lets locking immediately trigger REVEAL.
-  useEffect(() => {
-    if (!gameState || !playerId) return;
-    if (Object.keys(gameState.players).length !== 1) return;
-    if (gameState.status !== 'BUZZ_OPEN') return;
-    if (gameState.buzzes.some(b => b.playerId === playerId)) return;
-    dispatch({ type: 'BUZZ', playerId });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState?.status, gameState?.activeClue?.id, playerId]);
-
   // Solo mode: auto-dismiss the reveal after 2.5 s. The player can still
   // swipe or use arrow keys to self-judge (and record a score) before then.
   useEffect(() => {
