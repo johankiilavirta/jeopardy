@@ -71,7 +71,11 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
       // Measured at drain start (after the hold), so the strip empties
       // exactly at the deadline rather than a hold-length late.
       const remaining = Math.max(0, deadline - Date.now());
-      progress.setValue(1 - remaining / durationMs);
+      
+      // Start exactly at rangeStart so no lights snap off instantly if there was network delay!
+      const rangeStart = Math.min(0.9, (flash ? FLASH_MS : HOLD_MS) / durationMs);
+      progress.setValue(rangeStart);
+      
       drain = Animated.timing(progress, {
         toValue: 1,
         duration: remaining,
