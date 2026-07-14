@@ -20,6 +20,10 @@ interface ExpandingClueOverlayProps {
   children: React.ReactNode;
 }
 
+/** The card's width as a fraction of the screen — must equal
+ *  1 - 2 * CARD_H_PAD (the card's 5% side margins in ClueScreen). */
+const CARD_WIDTH_FRACTION = 0.9;
+
 /**
  * Full-screen overlay for the active clue. When `animate` and a `fromRect` are
  * given, the overlay starts scaled + translated to sit exactly over the tapped
@@ -49,9 +53,8 @@ export function ExpandingClueOverlay({ fromRect, animate, bottomInset = 0, child
   }, [willAnimate, progress]);
 
   // Calculate start parameters synchronously.
-  // The card has marginHorizontal: '2%' (meaning 96% width) at scale 1.
   // We calculate the start scale `k` so the inner blue card matches the cell width exactly.
-  const cardWidth = ow * 0.96;
+  const cardWidth = ow * CARD_WIDTH_FRACTION;
   const start = fromRect
     ? {
         cx: fromRect.x + fromRect.width / 2,

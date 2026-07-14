@@ -52,6 +52,12 @@ const SHEET_MIN_HEIGHT_PCT = 0.3;
  *  footprint exactly. */
 export const CARD_BOTTOM_MARGIN = 44;
 
+/** The card's (and board's) side inset — a deliberate step in from the
+ *  score bugs' 2% rails. Exported so the board matches the card's
+ *  footprint; ExpandingClueOverlay's CARD_WIDTH_FRACTION must equal
+ *  1 - 2 * this. */
+export const CARD_H_PAD = '5%';
+
 interface RevealInfo {
   /** The clue's correct answer, shown on the card in gold. */
   correctAnswer: string;
@@ -529,7 +535,7 @@ const styles = StyleSheet.create({
   cardWrap: {
     flex: 1,
     overflow: 'hidden',
-    marginHorizontal: '2%',
+    marginHorizontal: CARD_H_PAD,
     marginTop: '2%',
     // The overlay fills the screen, so the card itself keeps the
     // player-bar strip clear in addition to its own bottom margin.
