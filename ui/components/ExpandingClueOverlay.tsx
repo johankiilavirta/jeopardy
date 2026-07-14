@@ -11,10 +11,18 @@ interface ExpandingClueOverlayProps {
   fromRect: CellRect | null;
   /** When false, the overlay just fills the screen instantly. */
   animate: boolean;
-  /** Leaves a persistent UI element (such as the player bar) uncovered. */
+  /** How much space the child's layout keeps clear at the bottom (the
+   *  player bar). The overlay itself fills the whole screen — so bottom
+   *  sheets inside can dock to the true bottom edge and stay tappable —
+   *  and this is only used to aim the grow animation at the card's
+   *  visual center. */
   bottomInset?: number | undefined;
   children: React.ReactNode;
 }
+
+/** The card's width as a fraction of the screen — must equal
+ *  1 - 2 * CARD_H_PAD (the card's 5% side margins in ClueScreen). */
+const CARD_WIDTH_FRACTION = 0.9;
 
 /**
  * Full-screen overlay for the active clue. When `animate` and a `fromRect` are
@@ -45,33 +53,33 @@ export function ExpandingClueOverlay({ fromRect, animate, bottomInset = 0, child
   }, [willAnimate, progress]);
 
   // Calculate start parameters synchronously.
-  // The card has marginHorizontal: '2%' (meaning 96% width) at scale 1.
   // We calculate the start scale `k` so the inner blue card matches the cell width exactly.
-  const cardWidth = ow * 0.96;
+  const cardWidth = ow * CARD_WIDTH_FRACTION;
   const start = fromRect
     ? {
         cx: fromRect.x + fromRect.width / 2,
         cy: fromRect.y + fromRect.height / 2,
-        centerX: ow / 2,
-        centerY: (oh - bottomInset) / 2,
         k: fromRect.width / cardWidth,
       }
     : null;
 
-  // Scale is uniform and anchored at the element's center, so we translate the
-  // center from the cell's center to the screen's center as it grows.
+  // Scale is uniform and anchored at the overlay's center, so we translate
+  // to put the card's center over the cell's center at the start. The card's
+  // visual center sits bottomInset/2 above the overlay center (its layout
+  // leaves bottomInset clear at the bottom), and that offset shrinks with
+  // the scale — hence the `k` term.
   const transform = start
     ? [
         {
           translateX: progress.interpolate({
             inputRange: [0, 1],
-            outputRange: [start.cx - start.centerX, 0],
+            outputRange: [start.cx - ow / 2, 0],
           }),
         },
         {
           translateY: progress.interpolate({
             inputRange: [0, 1],
-            outputRange: [start.cy - start.centerY, 0],
+            outputRange: [start.cy - oh / 2 + (bottomInset / 2) * start.k, 0],
           }),
         },
         {
@@ -88,7 +96,6 @@ export function ExpandingClueOverlay({ fromRect, animate, bottomInset = 0, child
       style={[
         styles.fill,
         {
-          bottom: bottomInset,
           transformOrigin: 'center',
           transform,
         },
