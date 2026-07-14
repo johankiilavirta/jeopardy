@@ -350,7 +350,9 @@ export function ClueScreen({
           const isSwipeUp = g.dy < -30 || (g.dy < -10 && g.vy < -0.1);
           if (isSwipeUp) {
             const s = stateRef.current;
-            if (s.dismissed) {
+            if (s.canBuzz && s.onBuzz) {
+              s.onBuzz();
+            } else if (s.dismissed) {
               s.setDismissed(false);
             } else if (onUnlockAnswer) {
               onUnlockAnswer();
