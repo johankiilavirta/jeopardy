@@ -129,31 +129,34 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
   // Outermost pair first, center last. The countdown range begins where the
   // hold ends (as a fraction of the whole window), so every lamp gets a turn
   // and the center lamp dies exactly at the deadline.
-  const opacities = useMemo(() => {
+  const tierOpacities = useMemo(() => {
     const tiers = Math.ceil(LIGHT_COUNT / 2);
     const rangeStart = Math.min(0.9, (flash ? FLASH_MS : HOLD_MS) / durationMs);
     const rangeLen = 1 - rangeStart;
-    return Array.from({ length: LIGHT_COUNT }, (_, i) => {
-      const edgeDistance = Math.min(i, LIGHT_COUNT - 1 - i);
-      const threshold = rangeStart + (edgeDistance + 1) * (rangeLen / tiers);
+    
+    // Create exactly `tiers` animated nodes (one for each distance from the edge)
+    return Array.from({ length: tiers }, (_, d) => {
+      const threshold = rangeStart + (d + 1) * (rangeLen / tiers);
       const fadeStart = Math.max(0, threshold - rangeLen / tiers);
 
-      const step = progress.interpolate({
+      return progress.interpolate({
         inputRange: [fadeStart, threshold],
         outputRange: [1, OFF_OPACITY],
         extrapolate: 'clamp',
       });
-      return Animated.multiply(glow, step);
     });
-  }, [glow, progress, durationMs, flash]);
+  }, [progress, durationMs, flash]);
 
   return (
     <Animated.View style={[styles.band, { opacity: overallOpacity }]} pointerEvents="none">
-      <View style={styles.row}>
-        {opacities.map((opacity, i) => (
-          <Animated.View key={i} style={[styles.light, { opacity }]} />
-        ))}
-      </View>
+      <Animated.View style={[styles.row, { opacity: glow }]}>
+        {Array.from({ length: LIGHT_COUNT }).map((_, i) => {
+          const edgeDistance = Math.min(i, LIGHT_COUNT - 1 - i);
+          return (
+            <Animated.View key={i} style={[styles.light, { opacity: tierOpacities[edgeDistance] }]} />
+          );
+        })}
+      </Animated.View>
     </Animated.View>
   );
 }
