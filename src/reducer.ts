@@ -57,6 +57,8 @@ export function reducer(state: GameState, action: Action): GameState {
       return handleDismissClue(state);
     case 'LOCK_ANSWER':
       return handleLockAnswer(state, action);
+    case 'UNLOCK_ANSWER':
+      return handleUnlockAnswer(state, action);
     case 'SKIP_CLUE':
       return handleSkipClue(state, action);
     default:
@@ -154,6 +156,22 @@ function handleLockAnswer(state: GameState, action: Extract<Action, { type: 'LOC
   return {
     ...state,
     status: reveal ? 'REVEAL' : state.status,
+    buzzes,
+  };
+}
+
+function handleUnlockAnswer(state: GameState, action: Extract<Action, { type: 'UNLOCK_ANSWER' }>): GameState {
+  if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING') return state;
+
+  const buzz = getBuzz(state, action.playerId);
+  if (!buzz || !buzz.locked) return state;
+
+  const buzzes = state.buzzes.map(b =>
+    b.playerId === action.playerId ? { ...b, locked: false } : b
+  );
+
+  return {
+    ...state,
     buzzes,
   };
 }

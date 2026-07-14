@@ -11,6 +11,21 @@
  * session, open a second browser tab at the same URL.
  */
 import { spawn, type ChildProcess } from 'child_process';
+import os from 'os';
+
+function getLocalIp(): string {
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]!) {
+      if (net.family === 'IPv4' && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+  return 'localhost';
+}
+
+const localIp = getLocalIp();
 
 function arg(name: string, fallback: string): string {
   const hit = process.argv.find(a => a.startsWith(`--${name}=`));
@@ -29,6 +44,9 @@ const env = {
   EXPO_PUBLIC_ROOM: room,
   EXPO_PUBLIC_PLAYERS: players,
   EXPO_PUBLIC_GAME: game,
+  // Dynamically set packager hostname and relay host to current LAN IP
+  REACT_NATIVE_PACKAGER_HOSTNAME: localIp,
+  EXPO_PUBLIC_RELAY_HOST: localIp,
 };
 
 console.log(`\n  Solo dev: room ${room}, ${players} player(s), game #${game}\n`);

@@ -34,7 +34,7 @@ export interface ServerOptions {
 }
 
 /** Actions clients are allowed to send. Timer actions are server-only. */
-const CLIENT_ACTIONS = new Set(['SELECT_CLUE', 'BUZZ', 'SET_ANSWER', 'LOCK_ANSWER', 'JUDGE_ANSWER', 'SKIP_CLUE']);
+const CLIENT_ACTIONS = new Set(['SELECT_CLUE', 'BUZZ', 'SET_ANSWER', 'LOCK_ANSWER', 'UNLOCK_ANSWER', 'JUDGE_ANSWER', 'SKIP_CLUE']);
 
 export function createServer(
   transport: Transport,
@@ -154,11 +154,22 @@ export function createServer(
   function tryAssign(peerId: string, playerName?: string): void {
     const players = server.history.current.players;
     const playerIds = Object.keys(players);
-    const assignedIds = new Set(server.playerPeers.values());
-    // Try to match by name first (reconnecting player keeps their stats)
+    
+    // Try to match by name first (even if already assigned to a stale peer)
     const byName = playerName
-      ? playerIds.find(id => !assignedIds.has(id) && players[id]?.name === playerName)
+      ? playerIds.find(id => players[id]?.name === playerName)
       : undefined;
+
+    if (byName) {
+      // Clean up old peer mapping for this player slot
+      for (const [pId, plId] of server.playerPeers.entries()) {
+        if (plId === byName && pId !== peerId) {
+          server.playerPeers.delete(pId);
+        }
+      }
+    }
+
+    const assignedIds = new Set(server.playerPeers.values());
     const available = byName ?? playerIds.find(id => !assignedIds.has(id));
     if (available) {
       server.playerPeers.set(peerId, available);

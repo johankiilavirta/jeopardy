@@ -149,7 +149,7 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
             clue={state.activeClue}
             canBuzz={state.status === 'BUZZ_OPEN' && !localBuzz}
             lights={
-              (state.status === 'BUZZ_OPEN' && !localBuzz || typing) &&
+              (state.status === 'BUZZ_OPEN' || state.status === 'ANSWERING') &&
               buzzWindowDeadlineRef.current != null
                 ? { deadline: buzzWindowDeadlineRef.current, durationMs: PHASE_TIMERS.BUZZ_OPEN!.ms, flash: true }
                 : null
@@ -163,6 +163,11 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
             }
             onLockAnswer={text =>
               dispatch({ type: 'LOCK_ANSWER', playerId: LOCAL_PLAYER_ID, answer: text })
+            }
+            onUnlockAnswer={
+              localBuzz?.locked
+                ? () => dispatch({ type: 'UNLOCK_ANSWER', playerId: LOCAL_PLAYER_ID })
+                : undefined
             }
             reveal={
               state.status === 'REVEAL' || state.status === 'CLUE_EXPIRED'
