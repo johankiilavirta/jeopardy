@@ -92,7 +92,7 @@ export default function App() {
   });
 
   const [screen, setScreen] = useState<AppScreen>(() => (UI_LAB ? { type: 'demo' } : { type: 'menu' }));
-  const [playerName, setPlayerName] = useState(randomPlayerName);
+  const [playerName, setPlayerName] = useState('');
   const [relayHost, setRelayHost] = useState(DEFAULT_RELAY_HOST);
   const [relayPort, setRelayPort] = useState('8787');
   const [gameId, setGameId] = useState('');
@@ -503,7 +503,13 @@ export default function App() {
         loadSnapshot(),
       ]);
       if (stale) return;
-      if (name) setPlayerName(name);
+      if (name) {
+        setPlayerName(name);
+      } else {
+        const fallbackName = randomPlayerName();
+        setPlayerName(fallbackName);
+        void savePlayerName(fallbackName);
+      }
       setResumeAvailable(!!snapshot);
       if (session) startReconnectRef.current(session);
     })();
