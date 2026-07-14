@@ -265,40 +265,6 @@ export function ClueScreen({
     return () => loop.stop();
   }, [kbMounted, caretBlink]);
 
-  // Swipe-down on the keyboard panel: if the player has typed at least
-  // one character the gesture locks the answer in permanently. If the
-  // answer is still empty the keyboard just dismisses — the player can
-  // tap the card to bring it back and type before their timer expires.
-  const hasLockAnswer = !!onLockAnswer;
-  const lockResponder = useMemo(() => {
-    if (!hasLockAnswer) return null;
-    const snapBack = () =>
-      Animated.spring(kbDrag, { toValue: 0, useNativeDriver: true }).start();
-
-    return PanResponder.create({
-      // Claim only clearly-vertical downward drags (mirrors the horizontal
-      // judging heuristic), so key taps still land on the keys.
-      onMoveShouldSetPanResponder: (_e, g) =>
-        g.dy > 12 && g.dy > Math.abs(g.dx) * 1.5,
-      onPanResponderMove: (_e, g) => kbDrag.setValue(Math.max(0, g.dy)),
-      onPanResponderRelease: (_e, g) => {
-        if (g.dy > LOCK_THRESHOLD || (g.dy > 50 && g.vy > LOCK_VELOCITY)) {
-          // Latest values via stateRef, so the responder never rebuilds
-          // mid-drag on a keystroke.
-          const s = stateRef.current;
-          if (s.answer) {
-            s.onLockAnswer?.(s.answer);
-          } else {
-            // Nothing typed — just dismiss, don't lock.
-            s.setDismissed(true);
-          }
-        }
-        snapBack();
-      },
-      onPanResponderTerminate: snapBack,
-    });
-  }, [hasLockAnswer, kbDrag]);
-
   // Swiping judges the answer on the stand, only once the reveal is up.
   const judgeActive = !!onJudge && !!canJudge;
 
@@ -320,39 +286,67 @@ export function ClueScreen({
   }, [onJudge, pan, width]);
 
   const panResponder = useMemo(() => {
+    if (!judgeActive || !onJudge) return null;
     const snapBack = () =>
       Animated.spring(pan, { toValue: 0, useNativeDriver: false }).start();
 
     return PanResponder.create({
-      onMoveShouldSetPanResponder: (_e, g) => {
-        if (judgeActive && onJudge) {
-          // Swipe to judge
-          return Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5;
+      // Claim the gesture only for clearly horizontal drags, so plain taps
+      // still reach the Pressable underneath.
+      onMoveShouldSetPanResponder: (_e, g) =>
+        Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+      onPanResponderMove: Animated.event([null, { dx: pan }], {
+        useNativeDriver: false,
+      }),
+      onPanResponderRelease: (_e, g) => {
+        if (Math.abs(g.dx) > SWIPE_THRESHOLD || (Math.abs(g.dx) > 50 && Math.abs(g.vx) > SWIPE_VELOCITY)) {
+          commitJudge(g.dx > 0);
         } else {
-          // Swipe up to unlock/type (dy < -12 and vertical dominates)
-          return g.dy < -12 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5;
+          snapBack();
         }
+      },
+      onPanResponderTerminate: snapBack,
+    });
+  }, [judgeActive, onJudge, pan, commitJudge]);
+
+  // Screen-wide responder for vertical swipes: swipe-up to summon/unlock,
+  // and swipe-down to drag/dismiss the keyboard from anywhere on screen.
+  const screenPanResponder = useMemo(() => {
+    const snapBack = () =>
+      Animated.spring(kbDrag, { toValue: 0, useNativeDriver: true }).start();
+
+    return PanResponder.create({
+      onMoveShouldSetPanResponder: (_e, g) => {
+        const isVertical = Math.abs(g.dy) > 15 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5;
+        if (!isVertical) return false;
+        if (keyboardVisible && g.dy > 0) return true;
+        if (!keyboardVisible && g.dy < 0) return true;
+        return false;
       },
       onMoveShouldSetPanResponderCapture: (_e, g) => {
-        if (judgeActive && onJudge) {
-          return Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5;
-        } else {
-          return g.dy < -12 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5;
-        }
+        const isVertical = Math.abs(g.dy) > 15 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5;
+        if (!isVertical) return false;
+        if (keyboardVisible && g.dy > 0) return true;
+        if (!keyboardVisible && g.dy < 0) return true;
+        return false;
       },
       onPanResponderMove: (_e, g) => {
-        if (judgeActive && onJudge) {
-          pan.setValue(g.dx);
+        if (keyboardVisible && g.dy > 0) {
+          kbDrag.setValue(g.dy);
         }
       },
       onPanResponderRelease: (_e, g) => {
-        if (judgeActive && onJudge) {
-          if (Math.abs(g.dx) > SWIPE_THRESHOLD || (Math.abs(g.dx) > 50 && Math.abs(g.vx) > SWIPE_VELOCITY)) {
-            commitJudge(g.dx > 0);
-          } else {
-            snapBack();
+        if (keyboardVisible && g.dy > 0) {
+          if (g.dy > LOCK_THRESHOLD || (g.dy > 50 && g.vy > LOCK_VELOCITY)) {
+            const s = stateRef.current;
+            if (s.answer) {
+              s.onLockAnswer?.(s.answer);
+            } else {
+              s.setDismissed(true);
+            }
           }
-        } else {
+          snapBack();
+        } else if (!keyboardVisible) {
           const isSwipeUp = g.dy < -30 || (g.dy < -10 && g.vy < -0.1);
           if (isSwipeUp) {
             const s = stateRef.current;
@@ -364,11 +358,9 @@ export function ClueScreen({
           }
         }
       },
-      onPanResponderTerminate: () => {
-        if (judgeActive && onJudge) snapBack();
-      },
+      onPanResponderTerminate: snapBack,
     });
-  }, [judgeActive, onJudge, pan, commitJudge, onUnlockAnswer]);
+  }, [keyboardVisible, kbDrag, onUnlockAnswer]);
 
   const stateRef = useRef({
     canBuzz,
@@ -442,7 +434,7 @@ export function ClueScreen({
   });
 
   return (
-    <View style={styles.root}>
+    <View style={styles.root} {...screenPanResponder.panHandlers}>
       {/* Verdict backgrounds revealed as the card slides away */}
       <Animated.View
         style={[StyleSheet.absoluteFill, styles.bgCorrect, { opacity: correctOpacity }]}
@@ -543,7 +535,6 @@ export function ClueScreen({
           <View
             style={[styles.sheet, { minHeight: Math.round(height * SHEET_MIN_HEIGHT_PCT) }]}
             onLayout={e => setPanelHeight(e.nativeEvent.layout.height)}
-            {...(lockResponder ? lockResponder.panHandlers : {})}
           >
             <Pressable onPress={() => {}} style={styles.sheetInner}>
               <Animated.View style={[styles.answerZone, { opacity: Animated.multiply(answerOpacity, dragFade) }]}>
