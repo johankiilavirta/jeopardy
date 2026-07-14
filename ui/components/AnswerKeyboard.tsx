@@ -1,13 +1,13 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { radius, type as typeTokens } from '../theme/tokens';
+import { colors, type as typeTokens } from '../theme/tokens';
 
 /**
  * Deliberately simple in-app keyboard so we never summon the iOS system
  * keyboard: uppercase letters, space and backspace. No shift, no
- * autocorrect, no nonsense. Designed to float directly over the dark clue
- * card — the keys are faint frost chips. The space bar expands to fill
- * most of the bottom row, with a narrow strip on the left for the clue
- * card's status line (just countdown numbers: "8s", "3s", etc).
+ * autocorrect, no nonsense. Speaks the score widget's color language:
+ * cell-blue key chips set into the sheet's recessed deck, flashing the
+ * active-turn highlight blue when pressed. The space bar sits centered
+ * on the bottom row.
  */
 
 const LETTER_ROWS = [
@@ -16,7 +16,10 @@ const LETTER_ROWS = [
   ['Z', 'X', 'C', 'V', 'B', 'N', 'M'],
 ];
 
-const BACKSPACE = '\u232b';
+const BACKSPACE = '⌫';
+
+/** Softly rounded keys, echoing the sheet's rounded top corners. */
+const KEY_RADIUS = 8;
 
 interface AnswerKeyboardProps {
   onInsert: (char: string) => void;
@@ -58,38 +61,43 @@ export function AnswerKeyboard({ onInsert, onBackspace }: AnswerKeyboardProps) {
         </View>
       ))}
       <View style={styles.row}>
-        <View style={styles.statusGap} />
+        <View style={styles.spacer} />
         <Key label="SPACE" flex={4} onPress={() => onInsert(' ')} />
+        <View style={styles.spacer} />
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  // The keyboard fills whatever height its host gives it: rows share the
+  // space equally and never compress below a comfortable tap target.
   keyboard: {
+    flex: 1,
     gap: 5,
   },
   row: {
+    flex: 1,
+    minHeight: 40,
     flexDirection: 'row',
     gap: 5,
   },
-  /** Narrow strip on the left for the countdown display ("8s", "3s", etc). */
-  statusGap: {
-    flex: 1,
+  /** Symmetric gutters keeping the space bar at 40% of the deck width. */
+  spacer: {
+    flex: 3,
   },
   key: {
-    height: 40,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    borderRadius: radius,
+    backgroundColor: colors.cell,
+    borderRadius: KEY_RADIUS,
     alignItems: 'center',
     justifyContent: 'center',
   },
   keyPressed: {
-    backgroundColor: 'rgba(255,255,255,0.35)',
+    backgroundColor: colors.activeOutline,
   },
   keyText: {
     fontFamily: typeTokens.ui500,
-    fontSize: 15,
+    fontSize: 17,
     color: '#FFFFFF',
   },
 });

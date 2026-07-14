@@ -2,6 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 
 const LIGHT_COUNT = 151;
+/** The band's resting distance above its layer's bottom edge — glued
+ *  tightly under the clue card (a subtle 4px gap). Exported so the clue
+ *  screen can compute the strip's ride up onto the answer sheet's crown. */
+export const LIGHTS_REST_BOTTOM = 38;
 /** Hold the initial buzzer flash before the countdown begins. */
 const FLASH_MS = 1000;
 /** Fully-lit hold before the drain starts (both the buzzer flash and the
@@ -140,7 +144,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 38, // glued tightly to the bottom of the card/grid (leaving a subtle 4px gap)
+    bottom: LIGHTS_REST_BOTTOM,
     alignItems: 'center',
   },
   row: {

@@ -10,8 +10,9 @@ import {
   View,
 } from 'react-native';
 import type { ActiveClue } from '../../src/types';
-import { ActivationLights } from '../components/ActivationLights';
+import { ActivationLights, LIGHTS_REST_BOTTOM } from '../components/ActivationLights';
 import { AnswerKeyboard } from '../components/AnswerKeyboard';
+import { PLAYER_BAR_HEIGHT } from '../components/PlayerHeader';
 import { colors, shadow, type as typeTokens } from '../theme/tokens';
 
 /** Horizontal drag (px) past which a release commits the judgement. */
@@ -27,14 +28,28 @@ const LOCK_VELOCITY = 0.5;
 /** How long the CORRECT/WRONG verdict color holds before committing. */
 const VERDICT_HOLD_MS = 500;
 
-/** Keyboard panel's resting distance from the bottom edge. The space row
- *  leaves a narrow strip on the left for the countdown display. */
-const KEYBOARD_BOTTOM = 12;
+/** Distance from the answer sheet's top lip down to the activation-lights
+ *  strip while the sheet is up — the strip lands right under the typed
+ *  answer, underlining it as the time drains. */
+const LIGHTS_SHEET_OFFSET = 50;
 
-/** The clue card's fixed bottom margin inside its overlay (which is itself
- *  inset by PLAYER_BAR_HEIGHT): keeps the card 10px clear of the judgement
- *  tab's resting top at any screen size. Exported so the board can match
- *  the card's footprint exactly. */
+/** Rounded top corners on the answer sheet — the same slid-up-from-below
+ *  treatment as the judgement tray's tab. */
+const SHEET_RADIUS = 18;
+
+/** The sheet shares the clue card's and score bugs' 2% side insets, so
+ *  every broad surface in the game sits on the same horizontal rails. */
+const SHEET_WIDTH_PCT = 0.96;
+
+/** Minimum sheet height as a fraction of the screen; the keys stretch to
+ *  fill it, and on short screens the content's own minimum wins instead. */
+const SHEET_MIN_HEIGHT_PCT = 0.3;
+
+/** The clue card's fixed bottom margin above the player-bar strip (the
+ *  overlay fills the screen, so the card keeps PLAYER_BAR_HEIGHT clear
+ *  itself): keeps the card 10px clear of the judgement tab's resting top
+ *  at any screen size. Exported so the board can match the card's
+ *  footprint exactly. */
 export const CARD_BOTTOM_MARGIN = 44;
 
 interface RevealInfo {
@@ -83,7 +98,7 @@ export function ClueScreen({
   onSkip,
   lights,
 }: ClueScreenProps) {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const pan = useRef(new Animated.Value(0)).current;
 
   const revealAnim = useRef(new Animated.Value(0)).current;
@@ -132,7 +147,7 @@ export function ClueScreen({
   // so rapid open/close just retargets one animation.
   const keyboardVisible = !!showKeyboard && !dismissed && !!onAnswerChange;
   const [kbMounted, setKbMounted] = useState(false);
-  const [panelHeight, setPanelHeight] = useState(240);
+  const [panelHeight, setPanelHeight] = useState(300);
   const kb = useRef(new Animated.Value(0)).current;
   // Live downward drag on the panel (swipe-to-lock follows the finger).
   const kbDrag = useRef(new Animated.Value(0)).current;
@@ -160,22 +175,66 @@ export function ClueScreen({
     }
   }, [keyboardVisible, kb, kbDrag]);
 
-  // Panel slides up from just below the bottom edge into place.
+  // The sheet slides up from fully below the screen's bottom edge into place.
   const panelRise = kb.interpolate({
     inputRange: [0, 1],
-    outputRange: [panelHeight + KEYBOARD_BOTTOM, 0],
+    outputRange: [panelHeight, 0],
   });
-  // The clue glides up in lockstep so it re-centers in the space left
-  // above the panel (half the panel's height) instead of hiding behind
-  // the glass, shrinking a touch to keep clear of the header.
+  // The clue glides up in lockstep so it re-centers in the visible card
+  // area left above the sheet, shrinking a touch. The card's bottom edge
+  // sits CARD_BOTTOM_MARGIN + PLAYER_BAR_HEIGHT above the screen bottom;
+  // the sheet's top sits panelHeight above it — half the difference
+  // recenters the text, plus half the header strip that fades out while
+  // typing (category and value give their space to the clue).
   const clueRise = kb.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, -panelHeight / 2],
+    outputRange: [0, -(panelHeight - CARD_BOTTOM_MARGIN - PLAYER_BAR_HEIGHT) / 2 - 14],
   });
   const clueScale = kb.interpolate({
     inputRange: [0, 1],
     outputRange: [1, 0.9],
   });
+  // Category and value fade away while the keyboard is up — every visible
+  // pixel of the card belongs to the clue while answering.
+  const headerFade = kb.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
+  });
+  // The activation lights ride along: from their resting band just under
+  // the card (LIGHTS_REST_BOTTOM above the player-bar strip) up onto the
+  // sheet, landing right under the typed answer. One instance the whole
+  // time, so the drain animation never restarts mid-flight.
+  const lightsRise = kb.interpolate({
+    inputRange: [0, 1],
+    outputRange: [
+      0,
+      -(panelHeight - PLAYER_BAR_HEIGHT - LIGHTS_REST_BOTTOM - LIGHTS_SHEET_OFFSET),
+    ],
+  });
+  // At rest the strip spans the card (94% of the screen, see
+  // ActivationLights); the sheet is narrower, so the strip compresses
+  // horizontally in flight to land just inside the sheet's edges.
+  const stripWidth = Math.min(width * 0.9408, 1460);
+  const sheetWidth = width * SHEET_WIDTH_PCT;
+  const lightsSqueeze = kb.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, (sheetWidth - 44) / stripWidth],
+  });
+
+  // Hard on/off caret blink next to the typed answer, broadcast style.
+  const caretBlink = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!kbMounted) return;
+    caretBlink.setValue(1);
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(caretBlink, { toValue: 0, duration: 40, delay: 520, useNativeDriver: true }),
+        Animated.timing(caretBlink, { toValue: 1, duration: 40, delay: 520, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [kbMounted, caretBlink]);
 
   // Swipe-down on the keyboard panel: if the player has typed at least
   // one character the gesture locks the answer in permanently. If the
@@ -313,8 +372,6 @@ export function ClueScreen({
         </Text>
       </Animated.View>
 
-      <ActivationLights lights={lights} />
-
       <Animated.View
         style={[styles.cardWrap, { transform: [{ translateX: pan }] }]}
         {...(panResponder ? panResponder.panHandlers : {})}
@@ -332,14 +389,14 @@ export function ClueScreen({
                 : undefined
           }
         >
-          <View style={styles.header}>
+          <Animated.View style={[styles.header, { opacity: headerFade }]}>
             <Text style={styles.category} numberOfLines={1} allowFontScaling={false}>
               {clue.category.toUpperCase()}
             </Text>
             <Text style={styles.value} numberOfLines={1} allowFontScaling={false}>
               ${clue.value}
             </Text>
-          </View>
+          </Animated.View>
 
           <View style={styles.body}>
             <Animated.View
@@ -377,36 +434,69 @@ export function ClueScreen({
           </View>
         </Pressable>
 
-        {/* Floating keyboard: slides up over the lower card with the typed
-            answer right above the keys. No panel background — only the keys
-            and answer line float over the card, so the static status line
-            in the corner stays visible. The noop Pressable keeps taps
-            between keys from falling through to the card underneath.
-            Swiping the whole panel down locks the answer in. */}
-        {onAnswerChange && kbMounted && (
-          <Animated.View
-            style={[
-              styles.keyboardOverlay,
-              { transform: [{ translateY: Animated.add(panelRise, kbDrag) }] },
-            ]}
+      </Animated.View>
+
+      {/* The answer sheet: a floating console docked to the true screen
+          bottom — centered, at least half the screen tall — sliding up
+          over the score bugs and the card's lower edge. One recessed-blue
+          surface: the typed answer up top, the lights strip underlining it
+          (it rides up from under the card), and the cell-blue keys filling
+          the rest. The noop Pressable keeps taps between keys from falling
+          through. Swiping the whole sheet down locks the answer in. */}
+      {onAnswerChange && kbMounted && (
+        <Animated.View
+          pointerEvents="box-none"
+          style={[
+            styles.sheetWrap,
+            { transform: [{ translateY: Animated.add(panelRise, kbDrag) }] },
+          ]}
+        >
+          <View
+            style={[styles.sheet, { minHeight: Math.round(height * SHEET_MIN_HEIGHT_PCT) }]}
             onLayout={e => setPanelHeight(e.nativeEvent.layout.height)}
             {...(lockResponder ? lockResponder.panHandlers : {})}
           >
-            <Pressable onPress={() => {}} style={styles.panel}>
-              <Text
-                style={[styles.answerLine, !answer && styles.answerPlaceholder]}
-                numberOfLines={1}
-                allowFontScaling={false}
-              >
-                {answer || 'TYPE YOUR ANSWER'}
-              </Text>
-              <AnswerKeyboard
-                onInsert={ch => onAnswerChange((answer ?? '') + ch)}
-                onBackspace={() => onAnswerChange((answer ?? '').slice(0, -1))}
-              />
+            <Pressable onPress={() => {}} style={styles.sheetInner}>
+              <View style={styles.answerZone}>
+                <Text
+                  style={[styles.answerLine, !answer && styles.answerPlaceholder]}
+                  numberOfLines={1}
+                  allowFontScaling={false}
+                >
+                  {answer || 'TYPE YOUR ANSWER'}
+                </Text>
+                <Animated.View style={[styles.caret, { opacity: caretBlink }]} />
+              </View>
+              <View style={styles.keyDeck}>
+                <View style={styles.keyDeckInner}>
+                  <AnswerKeyboard
+                    onInsert={ch => onAnswerChange((answer ?? '') + ch)}
+                    onBackspace={() => onAnswerChange((answer ?? '').slice(0, -1))}
+                  />
+                </View>
+              </View>
             </Pressable>
-          </Animated.View>
-        )}
+          </View>
+        </Animated.View>
+      )}
+
+      {/* The activation lights live in their own layer, above the sheet,
+          inset by the player-bar strip so their resting spot stays glued
+          under the card. The sheet's rise (and any live lock-drag) carries
+          them up onto it, squeezing to the sheet's width, and back. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.lightsLayer,
+          {
+            transform: [
+              { translateY: Animated.add(lightsRise, kbDrag) },
+              { scaleX: lightsSqueeze },
+            ],
+          },
+        ]}
+      >
+        <ActivationLights lights={lights} />
       </Animated.View>
     </View>
   );
@@ -441,7 +531,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginHorizontal: '2%',
     marginTop: '2%',
-    marginBottom: CARD_BOTTOM_MARGIN,
+    // The overlay fills the screen, so the card itself keeps the
+    // player-bar strip clear in addition to its own bottom margin.
+    marginBottom: CARD_BOTTOM_MARGIN + PLAYER_BAR_HEIGHT,
   },
   card: {
     flex: 1,
@@ -509,23 +601,73 @@ const styles = StyleSheet.create({
     textShadowOffset: shadow.valueText.textShadowOffset,
     textShadowRadius: shadow.valueText.textShadowRadius,
   },
-  keyboardOverlay: {
+  // Full-width carrier for the slide animation; the sheet centers inside
+  // it and touches beside the sheet fall through.
+  sheetWrap: {
     position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: KEYBOARD_BOTTOM,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
   },
-  panel: {
-    // Fully transparent — just lays out the answer line over the keys.
-    padding: 8,
-    gap: 6,
+  // One surface in the judgement tray's recessed blue — the slid-up-from-
+  // below layer of the design language. Sits on the card's horizontal
+  // rails, at least SHEET_MIN_HEIGHT_PCT of the screen tall (set inline),
+  // growing if the keys need more room.
+  sheet: {
+    width: `${SHEET_WIDTH_PCT * 100}%`,
+    backgroundColor: colors.cellRecessed,
+    borderTopLeftRadius: SHEET_RADIUS,
+    borderTopRightRadius: SHEET_RADIUS,
+    overflow: 'hidden',
+  },
+  sheetInner: {
+    flex: 1,
+  },
+  // The typed answer sits at the top of the sheet; the lights strip rides
+  // up to underline it (the bottom padding is that strip's landing band).
+  answerZone: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingTop: 8,
+    paddingBottom: LIGHTS_SHEET_OFFSET - 30,
+    paddingHorizontal: 24,
   },
   answerLine: {
+    flexShrink: 1,
     fontFamily: typeTokens.ui500,
-    fontSize: 18,
-    letterSpacing: 1,
+    fontSize: 24,
+    letterSpacing: 1.5,
     color: colors.categoryText,
-    textAlign: 'center',
-    paddingVertical: 2,
+  },
+  // Gold caret — the score widget's value color, blinking where the next
+  // character lands.
+  caret: {
+    width: 3,
+    height: 26,
+    borderRadius: 1.5,
+    backgroundColor: colors.gold,
+  },
+  // The deck takes all the height left under the answer; the keyboard's
+  // rows stretch to share it, so a taller sheet means bigger keys.
+  keyDeck: {
+    flex: 1,
+    alignItems: 'center',
+    paddingBottom: 12,
+    paddingHorizontal: 12,
+  },
+  keyDeckInner: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 880,
+  },
+  lightsLayer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: PLAYER_BAR_HEIGHT,
   },
 });
