@@ -314,6 +314,11 @@ function startServer(portIndex: number): void {
                 relaySend(p.ws, { type: 'peer-connected', peerId });
               }
             }
+            // If the room has only 1 connected player, it means the other player is disconnected.
+            // Tell the rejoining player immediately so they show the disconnected status.
+            if (room.players.length < 2) {
+              relaySend(ws, { type: 'peer-disconnected', peerId: 'other' });
+            }
           } else {
             broadcastLobbyUpdate(room);
           }
