@@ -320,28 +320,48 @@ export function ClueScreen({
   }, [onJudge, pan, width]);
 
   const panResponder = useMemo(() => {
-    if (!judgeActive || !onJudge) return null;
     const snapBack = () =>
       Animated.spring(pan, { toValue: 0, useNativeDriver: false }).start();
 
     return PanResponder.create({
-      // Claim the gesture only for clearly horizontal drags, so plain taps
-      // still reach the Pressable underneath.
-      onMoveShouldSetPanResponder: (_e, g) =>
-        Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
-      onPanResponderMove: Animated.event([null, { dx: pan }], {
-        useNativeDriver: false,
-      }),
-      onPanResponderRelease: (_e, g) => {
-        if (Math.abs(g.dx) > SWIPE_THRESHOLD || (Math.abs(g.dx) > 50 && Math.abs(g.vx) > SWIPE_VELOCITY)) {
-          commitJudge(g.dx > 0);
+      onMoveShouldSetPanResponder: (_e, g) => {
+        if (judgeActive && onJudge) {
+          // Swipe to judge
+          return Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5;
         } else {
-          snapBack();
+          // Swipe up to unlock/type (dy < -12 and vertical dominates)
+          return g.dy < -12 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5;
         }
       },
-      onPanResponderTerminate: snapBack,
+      onPanResponderMove: (_e, g) => {
+        if (judgeActive && onJudge) {
+          pan.setValue(g.dx);
+        }
+      },
+      onPanResponderRelease: (_e, g) => {
+        if (judgeActive && onJudge) {
+          if (Math.abs(g.dx) > SWIPE_THRESHOLD || (Math.abs(g.dx) > 50 && Math.abs(g.vx) > SWIPE_VELOCITY)) {
+            commitJudge(g.dx > 0);
+          } else {
+            snapBack();
+          }
+        } else {
+          const isSwipeUp = g.dy < -30 || (g.dy < -10 && g.vy < -0.1);
+          if (isSwipeUp) {
+            const s = stateRef.current;
+            if (s.dismissed) {
+              s.setDismissed(false);
+            } else if (onUnlockAnswer) {
+              onUnlockAnswer();
+            }
+          }
+        }
+      },
+      onPanResponderTerminate: () => {
+        if (judgeActive && onJudge) snapBack();
+      },
     });
-  }, [judgeActive, onJudge, pan, commitJudge]);
+  }, [judgeActive, onJudge, pan, commitJudge, onUnlockAnswer]);
 
   const stateRef = useRef({
     canBuzz,
