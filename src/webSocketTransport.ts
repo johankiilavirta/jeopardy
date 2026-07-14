@@ -63,6 +63,12 @@ export class WebSocketTransport implements Transport {
   discover(): void {}
   stop(): void { this.ws.close(); }
 
+  /** True once the underlying socket is closing/closed (e.g. after the app
+   *  was suspended). Used to detect a dead connection on wake. */
+  get isClosed(): boolean {
+    return this.ws.readyState === WebSocket.CLOSING || this.ws.readyState === WebSocket.CLOSED;
+  }
+
   send(peerId: string, message: string): void {
     this.ws.send(JSON.stringify({ type: 'send', to: peerId, payload: message }));
   }

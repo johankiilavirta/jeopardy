@@ -18,6 +18,21 @@ export function createInitialState(playerNames: string[], totalClues = 30): Game
   };
 }
 
+/** Prepare a saved state for resuming in a fresh server: any in-flight clue
+ *  is abandoned (unburned, so it can be picked again) and buzzes are
+ *  discarded — the game resumes at the board. Scores, burned clues, and
+ *  whose turn it is all carry over. */
+export function normalizeForResume(state: GameState): GameState {
+  if (state.status === 'CHOOSE_CLUE') return state;
+  return {
+    ...state,
+    status: 'CHOOSE_CLUE',
+    activeClue: null,
+    buzzes: [],
+    clueSelectPlayerId: null,
+  };
+}
+
 // --- Selectors ---
 
 /** The buzz entry for a given player, if they buzzed on the active clue. */

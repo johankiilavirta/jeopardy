@@ -3,9 +3,14 @@ import * as http from 'http';
 import * as path from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from '../src/server.js';
+import { normalizeForResume } from '../src/reducer.js';
+import type { GameState } from '../src/types.js';
 import { Room, RoomPlayer, RoomServerTransport } from './room.js';
 
 const TOTAL_CLUES_DEMO = 25; // 5×5 fallback board
+
+/** How long an in-progress room survives with zero players connected. */
+const EMPTY_ROOM_GRACE_MS = 5 * 60 * 1000;
 
 // --- Game data lookup (runs server-side, loads files on demand) ---
 // Assumes the relay is started from the project root (npm run relay).
@@ -155,9 +160,16 @@ function removeFromRoom(peerId: string): void {
       relaySend(p.ws, { type: 'peer-disconnected', peerId });
     }
     if (room.players.length === 0) {
-      room.serverTransport?.stop();
-      rooms.delete(roomCode);
-      console.log(`  Room ${roomCode} dissolved (empty)`);
+      // Don't dissolve immediately — both phones may have dropped at once
+      // (locked screens on a train). Hold the room so they can rejoin.
+      if (room.emptyTimer) clearTimeout(room.emptyTimer);
+      room.emptyTimer = setTimeout(() => {
+        if (room.players.length > 0) return;
+        room.serverTransport?.stop();
+        rooms.delete(roomCode);
+        console.log(`  Room ${roomCode} dissolved (empty past grace period)`);
+      }, EMPTY_ROOM_GRACE_MS);
+      console.log(`  Room ${roomCode} empty — holding for ${EMPTY_ROOM_GRACE_MS / 1000}s`);
     }
   } else {
     // During lobby phase
@@ -206,6 +218,11 @@ function startServer(portIndex: number): void {
   });
 
   const wss = new WebSocketServer({ server: httpServer });
+
+  // ws re-emits server errors (e.g. EADDRINUSE) on the WebSocketServer;
+  // without a listener that throws and kills the process before the
+  // httpServer 'error' handler below can fall through to the next port.
+  wss.on('error', () => {});
 
   httpServer.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE' && portIndex < TRY_PORTS.length - 1) {
@@ -279,13 +296,17 @@ function startServer(portIndex: number): void {
           }
           room.players.push({ peerId, name: String(msg.playerName ?? 'Guest'), ws });
           peerToRoom.set(peerId, code);
+          if (room.emptyTimer) {
+            clearTimeout(room.emptyTimer);
+            room.emptyTimer = null;
+          }
           console.log(`  ${peerId} joined room ${code}`);
 
           if (room.phase === 'playing') {
             // Rejoin a game in progress — skip lobby, go straight to game
             const playerName = String(msg.playerName ?? 'Guest');
             const serverPeerId = 'server';
-            relaySend(ws, { type: 'game-started', serverPeerId });
+            relaySend(ws, { type: 'game-started', serverPeerId, board: room.gameData ?? null });
             room.serverTransport?.notifyConnect(peerId, playerName);
             // Notify existing players that someone reconnected
             for (const p of room.players) {
@@ -317,26 +338,46 @@ function startServer(portIndex: number): void {
             return;
           }
 
+          // Resuming a saved game? The host sends the snapshot it kept on
+          // device: the full GameState plus the board it was playing.
+          const resume = msg.resume as { state?: GameState; board?: FullGameData | null } | undefined;
+          const resumeState = resume?.state && typeof resume.state === 'object'
+            && resume.state.players && Array.isArray(resume.state.burnedClueIds)
+            ? normalizeForResume(resume.state)
+            : null;
+          if (resume && !resumeState) {
+            relaySend(ws, { type: 'room-error', message: 'Saved game data is invalid' });
+            return;
+          }
+
           const gameId = msg.gameId ? Number(msg.gameId) : null;
-          const gameData = gameId ? lookupFullGame(gameId) : null;
+          const gameData = resumeState
+            ? (resume?.board ?? null)
+            : gameId ? lookupFullGame(gameId) : null;
           // Count both rounds so the game spans Jeopardy! + Double Jeopardy!
           // and ends only when every clue (across both) is burned. Counts
           // actual clues, so incomplete categories are handled correctly.
           const countClues = (cats: CategoryData[]): number =>
             cats.reduce((n, c) => n + c.clues.length, 0);
-          const totalClues = gameData
-            ? countClues(gameData.round1) + countClues(gameData.round2)
-            : TOTAL_CLUES_DEMO;
+          const totalClues = resumeState
+            ? resumeState.totalClues
+            : gameData
+              ? countClues(gameData.round1) + countClues(gameData.round2)
+              : TOTAL_CLUES_DEMO;
 
           room.phase = 'playing';
+          room.gameData = gameData ?? null;
           const serverTransport = new RoomServerTransport(room);
           room.serverTransport = serverTransport;
 
           const playerNames = room.players.map(p => p.name);
-          createServer(serverTransport, playerNames, { totalClues });
+          createServer(serverTransport, playerNames, {
+            totalClues,
+            ...(resumeState ? { initialState: resumeState } : {}),
+          });
 
           const serverPeerId = 'server';
-          console.log(`  Room ${roomCode} game started (game #${gameId ?? 'demo'})`);
+          console.log(`  Room ${roomCode} game ${resumeState ? 'resumed' : 'started'} (game #${gameId ?? 'demo'})`);
 
           // Notify all players, then simulate connections
           for (const p of room.players) {
