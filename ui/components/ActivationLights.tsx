@@ -17,6 +17,9 @@ const HOLD_MS = 1000;
 const LIT = '#FFFFFF';
 /** Extinguished lamps stay faintly visible, like the real board's dark LEDs. */
 const OFF_OPACITY = 0.15;
+/** The strip spans 96% of the clue card, which spans 90% of the screen
+ *  (CARD_H_PAD's 5% side insets). Keep styles.row's width in sync. */
+export const LIGHTS_WIDTH_PCT = 0.96 * 0.9;
 
 interface ActivationLightsProps {
   /** The light configurations, or null/undefined to fade out. */
@@ -45,8 +48,12 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
   /** Fraction of the window elapsed, 0 → 1, advanced linearly to `deadline`. */
   const progress = useRef(new Animated.Value(0)).current;
 
-  const prevLightsRef = useRef(lights);
-  if (lights !== prevLightsRef.current) {
+  // Compare the window by value, not object identity: parents rebuild the
+  // prop object every render, and a spurious "new window" here would reset
+  // the glow to its off state with no arm effect re-run to re-light it.
+  const lightsKey = lights ? `${lights.deadline}/${lights.durationMs}/${lights.flash}` : null;
+  const prevLightsKeyRef = useRef(lightsKey);
+  if (lightsKey !== prevLightsKeyRef.current) {
     if (lights) {
       setActiveLights(lights);
       // Synchronously reset animated values before React commits the first frame to the screen!
@@ -65,7 +72,7 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
         useNativeDriver: true,
       }).start();
     }
-    prevLightsRef.current = lights;
+    prevLightsKeyRef.current = lightsKey;
   }
 
   const { deadline, durationMs, flash } = activeLights;
@@ -159,7 +166,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   row: {
-    width: '94.08%',
+    width: '86.4%', // LIGHTS_WIDTH_PCT
     flexDirection: 'row',
     justifyContent: 'space-between',
   },

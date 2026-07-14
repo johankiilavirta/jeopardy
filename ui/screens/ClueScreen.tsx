@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import type { ActiveClue } from '../../src/types';
-import { ActivationLights, LIGHTS_REST_BOTTOM } from '../components/ActivationLights';
+import { ActivationLights, LIGHTS_REST_BOTTOM, LIGHTS_WIDTH_PCT } from '../components/ActivationLights';
 import { AnswerKeyboard } from '../components/AnswerKeyboard';
 import { PLAYER_BAR_HEIGHT } from '../components/PlayerHeader';
 import { colors, shadow, type as typeTokens } from '../theme/tokens';
@@ -217,10 +217,10 @@ export function ClueScreen({
       -(panelHeight - PLAYER_BAR_HEIGHT - LIGHTS_REST_BOTTOM - LIGHTS_SHEET_OFFSET),
     ],
   });
-  // At rest the strip spans the card (94% of the screen, see
-  // ActivationLights); the sheet is narrower, so the strip compresses
-  // horizontally in flight to land just inside the sheet's edges.
-  const stripWidth = Math.min(width * 0.9408, 1460);
+  // At rest the strip spans 96% of the clue card (see ActivationLights);
+  // the sheet is narrower, so the strip compresses horizontally in flight
+  // to land just inside the sheet's edges.
+  const stripWidth = Math.min(width * LIGHTS_WIDTH_PCT, 1460);
   const sheetWidth = width * SHEET_WIDTH_PCT;
   const lightsSqueeze = kb.interpolate({
     inputRange: [0, 1],
