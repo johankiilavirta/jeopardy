@@ -21,6 +21,7 @@ interface ChooseClueScreenProps {
   boardAnimKey?: number | undefined;
   /** Highlights the player whose answer is being judged. */
   judgingPlayerId?: string | null | undefined;
+  animationsEnabled?: boolean;
 }
 
 export function ChooseClueScreen({
@@ -32,6 +33,7 @@ export function ChooseClueScreen({
   disconnectedPlayerId,
   boardAnimKey,
   judgingPlayerId,
+  animationsEnabled = true,
 }: ChooseClueScreenProps) {
   // null currentTurnPlayerId means anyone may pick the first clue.
   const locked =
@@ -72,6 +74,7 @@ export function ChooseClueScreen({
           localPlayerId={localPlayerId}
           disconnectedPlayerId={disconnectedPlayerId}
           judgingPlayerId={judgingPlayerId}
+          animationsEnabled={animationsEnabled}
         />
       </View>
     </View>

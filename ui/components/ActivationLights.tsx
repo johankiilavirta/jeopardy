@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 
-const LIGHT_COUNT = 151;
+const LIGHT_COUNT = 171; // High density "electric blue LEDs" // Dense enough for modern look, sparse enough to avoid RN graph limits
 /** The band's resting distance above its layer's bottom edge — glued
  *  tightly under the clue card (a subtle 4px gap). Exported so the clue
  *  screen can compute the strip's ride up onto the answer sheet's crown. */
 export const LIGHTS_REST_BOTTOM = 38;
-/** Hold the initial buzzer flash before the countdown begins. */
-const FLASH_MS = 1000;
-/** Fully-lit hold before the drain starts (both the buzzer flash and the
- *  first second of the personal typing window). */
+/** The buzzer-activation flash runs this long before going steady.
+ *  Each of the two pulses takes 120ms (fade-in) + 80ms (hold) + 250ms (fade-out) + 150ms (hold-off) = 600ms.
+ *  Then a final fade-in to steady lit takes 120ms.
+ *  Total duration = 2 * 600ms + 120ms = 1320ms. */
+const FLASH_MS = 1320;
+/** Fully-lit hold before the drain starts (for the personal typing window). */
 const HOLD_MS = 1000;
-/** The glow-in ramp when the strip appears. */
-const RISE_MS = 120;
 /** Vibrant electric blue, matching the brilliant blue LEDs in the modern set. */
 const LIT = '#FFFFFF';
 /** Extinguished lamps stay faintly visible, like the real board's dark LEDs. */
@@ -28,7 +28,7 @@ interface ActivationLightsProps {
 }
 
 /**
- * The board's activation lights, doubling as the answer timer: a dense row
+ * The board's activation lights, doubling as the answer timer: a row
  * of electric-blue rectangular LED bars glued tightly under the clue card.
  * When the buzzers open they pop at the broadcast cadence for a second, hold
  * steady, then extinguish linearly from the outermost pair inward until time
@@ -41,12 +41,21 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
 
   const overallOpacity = useRef(new Animated.Value(lights ? 1 : 0)).current;
 
-  useEffect(() => {
+  const glow = useRef(new Animated.Value(lights?.flash ? OFF_OPACITY : 1)).current;
+  /** Fraction of the window elapsed, 0 → 1, advanced linearly to `deadline`. */
+  const progress = useRef(new Animated.Value(0)).current;
+
+  const prevLightsRef = useRef(lights);
+  if (lights !== prevLightsRef.current) {
     if (lights) {
       setActiveLights(lights);
+      // Synchronously reset animated values before React commits the first frame to the screen!
+      progress.setValue(0);
+      glow.setValue(lights.flash ? OFF_OPACITY : 1);
+
       Animated.timing(overallOpacity, {
         toValue: 1,
-        duration: 200,
+        duration: 100, // Twice as fast fade-in
         useNativeDriver: true,
       }).start();
     } else {
@@ -56,25 +65,24 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
         useNativeDriver: true,
       }).start();
     }
-  }, [lights, overallOpacity]);
+    prevLightsRef.current = lights;
+  }
 
   const { deadline, durationMs, flash } = activeLights;
 
-  const glow = useRef(new Animated.Value(flash ? OFF_OPACITY : 1)).current;
-  /** Fraction of the window elapsed, 0 → 1, advanced linearly to `deadline`. */
-  const progress = useRef(new Animated.Value(0)).current;
-
   useEffect(() => {
     if (deadline === 0) return;
-
-    glow.setValue(flash ? OFF_OPACITY : 1);
 
     let drain: Animated.CompositeAnimation | null = null;
     const startDrain = () => {
       // Measured at drain start (after the hold), so the strip empties
       // exactly at the deadline rather than a hold-length late.
       const remaining = Math.max(0, deadline - Date.now());
-      progress.setValue(1 - remaining / durationMs);
+      
+      // Start exactly at rangeStart so no lights snap off instantly if there was network delay!
+      const rangeStart = Math.min(0.9, (flash ? FLASH_MS : HOLD_MS) / durationMs);
+      progress.setValue(rangeStart);
+      
       drain = Animated.timing(progress, {
         toValue: 1,
         duration: remaining,
@@ -84,17 +92,17 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
       drain.start();
     };
 
-    // Both modes hold fully lit for a second before the countdown begins;
-    // the flash variant is the buzzer-activation moment.
-    const arm = Animated.sequence([
-      Animated.timing(glow, {
-        toValue: 1,
-        duration: RISE_MS,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
-      Animated.delay((flash ? FLASH_MS : HOLD_MS) - RISE_MS),
-    ]);
+    const arm = flash
+      ? Animated.sequence([
+          Animated.timing(glow, {
+            toValue: 1,
+            duration: 60, // Twice as fast flash
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.delay(1260), // Preserves exactly 1320ms FLASH_MS
+        ])
+      : Animated.timing(glow, { toValue: 1, duration: 60, useNativeDriver: true });
 
     arm.start(({ finished }) => {
       if (finished) startDrain();
@@ -110,31 +118,34 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
   // Outermost pair first, center last. The countdown range begins where the
   // hold ends (as a fraction of the whole window), so every lamp gets a turn
   // and the center lamp dies exactly at the deadline.
-  const opacities = useMemo(() => {
+  const tierOpacities = useMemo(() => {
     const tiers = Math.ceil(LIGHT_COUNT / 2);
     const rangeStart = Math.min(0.9, (flash ? FLASH_MS : HOLD_MS) / durationMs);
     const rangeLen = 1 - rangeStart;
-    return Array.from({ length: LIGHT_COUNT }, (_, i) => {
-      const edgeDistance = Math.min(i, LIGHT_COUNT - 1 - i);
-      const threshold = rangeStart + (edgeDistance + 1) * (rangeLen / tiers);
+    
+    // Create exactly `tiers` animated nodes (one for each distance from the edge)
+    return Array.from({ length: tiers }, (_, d) => {
+      const threshold = rangeStart + (d + 1) * (rangeLen / tiers);
       const fadeStart = Math.max(0, threshold - rangeLen / tiers);
 
-      const step = progress.interpolate({
+      return progress.interpolate({
         inputRange: [fadeStart, threshold],
         outputRange: [1, OFF_OPACITY],
         extrapolate: 'clamp',
       });
-      return Animated.multiply(glow, step);
     });
-  }, [glow, progress, durationMs, flash]);
+  }, [progress, durationMs, flash]);
 
   return (
     <Animated.View style={[styles.band, { opacity: overallOpacity }]} pointerEvents="none">
-      <View style={styles.row}>
-        {opacities.map((opacity, i) => (
-          <Animated.View key={i} style={[styles.light, { opacity }]} />
-        ))}
-      </View>
+      <Animated.View style={[styles.row, { opacity: glow }]}>
+        {Array.from({ length: LIGHT_COUNT }).map((_, i) => {
+          const edgeDistance = Math.min(i, LIGHT_COUNT - 1 - i);
+          return (
+            <Animated.View key={i} style={[styles.light, { opacity: tierOpacities[edgeDistance] }]} />
+          );
+        })}
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -149,7 +160,6 @@ const styles = StyleSheet.create({
   },
   row: {
     width: '94.08%',
-    maxWidth: 1460,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
@@ -157,7 +167,7 @@ const styles = StyleSheet.create({
     width: 2, // 2px square blocks
     height: 2,
     borderRadius: 0, // perfectly square like in the gif
-    backgroundColor: LIT, // white LED bulb
+    backgroundColor: '#FFFFFF', // The physical LED color when lit
     shadowColor: '#0088FF', // electric blue glow
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,

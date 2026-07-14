@@ -9,6 +9,8 @@ interface PlayerScoreBlockProps {
   activeTurn: boolean;
   /** Whether this player has disconnected. */
   disconnected?: boolean;
+  /** Whether to animate score changes. */
+  animationsEnabled?: boolean;
 }
 
 function formatScore(score: number): string {
@@ -16,7 +18,7 @@ function formatScore(score: number): string {
   return score < 0 ? `-$${abs}` : `$${abs}`;
 }
 
-export function PlayerScoreBlock({ name, score, activeTurn, disconnected }: PlayerScoreBlockProps) {
+export function PlayerScoreBlock({ name, score, activeTurn, disconnected, animationsEnabled = true }: PlayerScoreBlockProps) {
   const [displayedScore, setDisplayedScore] = useState(score);
   const [animDiff, setAnimDiff] = useState<number | null>(null);
   
@@ -31,6 +33,12 @@ export function PlayerScoreBlock({ name, score, activeTurn, disconnected }: Play
     const prevScore = prevScoreRef.current;
     if (score !== prevScore) {
       prevScoreRef.current = score;
+      
+      if (!animationsEnabled) {
+        setDisplayedScore(score);
+        return;
+      }
+
       const diff = score - prevScore;
       setAnimDiff(diff);
       
@@ -81,7 +89,7 @@ export function PlayerScoreBlock({ name, score, activeTurn, disconnected }: Play
 
       return () => clearTimeout(timer);
     }
-  }, [score, animVal, scoreScaleVal, borderFlashVal]);
+  }, [score, animVal, scoreScaleVal, borderFlashVal, animationsEnabled]);
 
   const diffOpacity = animVal.interpolate({
     inputRange: [0, 0.1, 0.82, 1], // stays fully visible longer, then fades out faster (over 18% of timeline)
