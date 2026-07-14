@@ -1,22 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 
-const LIGHT_COUNT = 171; // High density "electric blue LEDs" // Dense enough for modern look, sparse enough to avoid RN graph limits
-/** The band's resting distance above its layer's bottom edge — glued
- *  tightly under the clue card (a subtle 4px gap). Exported so the clue
- *  screen can compute the strip's ride up onto the answer sheet's crown. */
-export const LIGHTS_REST_BOTTOM = 38;
-/** The buzzer-activation flash runs this long before going steady.
- *  Each of the two pulses takes 120ms (fade-in) + 80ms (hold) + 250ms (fade-out) + 150ms (hold-off) = 600ms.
- *  Then a final fade-in to steady lit takes 120ms.
- *  Total duration = 2 * 600ms + 120ms = 1320ms. */
-const FLASH_MS = 1320;
-/** Fully-lit hold before the drain starts (for the personal typing window). */
-const HOLD_MS = 1000;
-/** Vibrant electric blue, matching the brilliant blue LEDs in the modern set. */
-const LIT = '#FFFFFF';
-/** Extinguished lamps stay faintly visible, like the real board's dark LEDs. */
-const OFF_OPACITY = 0.15;
+import {
+  FLASH_MS,
+  HOLD_MS,
+  LIGHT_COUNT,
+  LIGHTS_REST_BOTTOM,
+  OFF_OPACITY,
+} from './activationLightsMetrics';
+
+export { LIGHTS_REST_BOTTOM, LIGHTS_WIDTH_PCT } from './activationLightsMetrics';
 
 interface ActivationLightsProps {
   /** The light configurations, or null/undefined to fade out. */
@@ -33,8 +26,11 @@ interface ActivationLightsProps {
  * When the buzzers open they pop at the broadcast cadence for a second, hold
  * steady, then extinguish linearly from the outermost pair inward until time
  * is up.
+ *
+ * Memoized: the 171-lamp subtree renders only when the window prop's
+ * identity changes (the parent keeps it stable across unrelated renders).
  */
-export function ActivationLights({ lights }: ActivationLightsProps) {
+export const ActivationLights = memo(function ActivationLights({ lights }: ActivationLightsProps) {
   const [activeLights, setActiveLights] = useState<NonNullable<ActivationLightsProps['lights']>>(() => {
     return lights ?? { deadline: 0, durationMs: 1, flash: false };
   });
@@ -45,8 +41,12 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
   /** Fraction of the window elapsed, 0 → 1, advanced linearly to `deadline`. */
   const progress = useRef(new Animated.Value(0)).current;
 
-  const prevLightsRef = useRef(lights);
-  if (lights !== prevLightsRef.current) {
+  // Compare the window by value, not object identity: parents rebuild the
+  // prop object every render, and a spurious "new window" here would reset
+  // the glow to its off state with no arm effect re-run to re-light it.
+  const lightsKey = lights ? `${lights.deadline}/${lights.durationMs}/${lights.flash}` : null;
+  const prevLightsKeyRef = useRef(lightsKey);
+  if (lightsKey !== prevLightsKeyRef.current) {
     if (lights) {
       setActiveLights(lights);
       // Synchronously reset animated values before React commits the first frame to the screen!
@@ -65,7 +65,7 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
         useNativeDriver: true,
       }).start();
     }
-    prevLightsRef.current = lights;
+    prevLightsKeyRef.current = lightsKey;
   }
 
   const { deadline, durationMs, flash } = activeLights;
@@ -148,7 +148,7 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
       </Animated.View>
     </Animated.View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   band: {
@@ -159,7 +159,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   row: {
-    width: '94.08%',
+    width: '86.4%', // LIGHTS_WIDTH_PCT
     flexDirection: 'row',
     justifyContent: 'space-between',
   },

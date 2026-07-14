@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import { sendAction } from '../../src/client';
 import { computeReadingMs } from '../../src/readingTime';
@@ -83,9 +83,9 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // Latch to 1 the first time round 2 is reached — triggers the DJ board flash.
   const boardAnimKeyRef = useRef(0);
 
-  const dispatch = (action: Action) => {
+  const dispatch = useCallback((action: Action) => {
     sendAction(transport, serverPeerId, action as unknown as Record<string, unknown>);
-  };
+  }, [transport, serverPeerId]);
 
   // Dev shortcut: Y key burns all-but-one clue on the current board.
   const yKeyHandlerRef = useRef<(() => void) | null>(null);
@@ -114,16 +114,81 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     !localBuzz.locked &&
     (gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING');
 
-  // Solo mode: auto-buzz when the buzz window opens — no tap required since
-  // there's no opponent to race. This lets locking immediately trigger REVEAL.
-  useEffect(() => {
-    if (!gameState || !playerId) return;
-    if (Object.keys(gameState.players).length !== 1) return;
-    if (gameState.status !== 'BUZZ_OPEN') return;
-    if (gameState.buzzes.some(b => b.playerId === playerId)) return;
-    dispatch({ type: 'BUZZ', playerId });
+  // Every STATE_UPDATE deserializes a fresh object tree, so identity can't
+  // signal change here. Key the board pipeline on the burned list's content
+  // — the only game input the board derives from — so actions that don't
+  // burn anything (typing, buzzing) leave every board object untouched and
+  // the memoized Board subtree skips entirely.
+  const burnedKey = gameState ? gameState.burnedClueIds.join(',') : '';
+  const burnedClueIds = useMemo(
+    () => gameState?.burnedClueIds ?? [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState?.status, gameState?.activeClue?.id, playerId]);
+    [burnedKey],
+  );
+
+  // Round transition: once every Jeopardy! (round 1) clue is burned, switch
+  // the board to Double Jeopardy! (round 2). Round 2 clue ids live in their
+  // own range, so the two never collide and round 1 stays fully burned.
+  const round1Done = useMemo(() => {
+    const round1Board = boardData ? toBoardDefinition(boardData, 1) : demoBoard;
+    const ids = round1Board.categories.flatMap(c => c.clues.map(cl => cl.id));
+    return ids.length > 0 && ids.every(id => burnedClueIds.includes(id));
+  }, [boardData, burnedClueIds]);
+  const round2Available = !!boardData && boardData.round2.length > 0;
+  const round = round1Done && round2Available ? 2 : 1;
+
+  // Latch the DJ board flash the first time round 2 is reached.
+  if (round === 2 && boardAnimKeyRef.current === 0) boardAnimKeyRef.current = 1;
+
+  const fullBoard = useMemo(
+    () => (boardData ? toBoardDefinition(boardData, round) : demoBoard),
+    [boardData, round],
+  );
+  const getClue = useMemo(
+    () => (boardData ? makeClueGetter(boardData) : getClueContent),
+    [boardData],
+  );
+  const visibleBoard = useMemo(
+    () => getVisibleBoard(fullBoard, burnedClueIds, visibleCategories),
+    [fullBoard, burnedClueIds, visibleCategories],
+  );
+
+  const handleSelectClue = useCallback((clueId: number, rect: CellRect) => {
+    if (!playerId) return;
+    selectedCellRef.current = { clueId, rect };
+    dispatch({ type: 'SELECT_CLUE', playerId, clue: getClue(clueId) });
+  }, [dispatch, playerId, getClue]);
+
+  const handleSkipClue = useCallback((clueId: number) => {
+    if (playerId) dispatch({ type: 'SKIP_CLUE', playerId, clueId });
+  }, [dispatch, playerId]);
+
+  // Stable identity so the memoized ActivationLights can skip re-rendering
+  // its 171 lamps on renders that don't change the timer window.
+  const lights = useMemo(() => {
+    const show = (gameState?.status === 'BUZZ_OPEN' && !localBuzz) || typing;
+    if (!show || buzzWindowDeadlineRef.current == null) return null;
+    return {
+      deadline: buzzWindowDeadlineRef.current,
+      durationMs: PHASE_TIMERS.BUZZ_OPEN!.ms,
+      flash: true,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState?.status, !!localBuzz, typing]);
+
+  // Answers echo locally the instant a key lands; SET_ANSWER still syncs
+  // through the relay, but the round-trip no longer gates what the typer
+  // sees. Server state stays authoritative: once the buzz locks (or the
+  // clue changes) the echo is ignored and the synced answer shows.
+  const [localEcho, setLocalEcho] = useState<{ clueId: number; text: string } | null>(null);
+  const activeClueId = gameState?.activeClue?.id ?? null;
+  const handleAnswerChange = useCallback((text: string) => {
+    if (playerId == null) return;
+    if (activeClueId != null) setLocalEcho({ clueId: activeClueId, text });
+    dispatch({ type: 'SET_ANSWER', playerId, text });
+  }, [dispatch, playerId, activeClueId]);
+  const shownAnswer =
+    typing && localEcho?.clueId === activeClueId ? localEcho.text : localBuzz?.answer ?? '';
 
   // Solo mode: auto-dismiss the reveal after 2.5 s. The player can still
   // swipe or use arrow keys to self-judge (and record a score) before then.
@@ -153,27 +218,11 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     ? Object.keys(gameState.players).find(id => id !== playerId) ?? null
     : null;
 
-  // Round transition: once every Jeopardy! (round 1) clue is burned, switch
-  // the board to Double Jeopardy! (round 2). Round 2 clue ids live in their
-  // own range, so the two never collide and round 1 stays fully burned.
-  const round1Board = boardData ? toBoardDefinition(boardData, 1) : demoBoard;
-  const round1Ids = round1Board.categories.flatMap(c => c.clues.map(cl => cl.id));
-  const round1Done =
-    round1Ids.length > 0 && round1Ids.every(id => gameState.burnedClueIds.includes(id));
-  const round2Available = !!boardData && boardData.round2.length > 0;
-  const round = round1Done && round2Available ? 2 : 1;
-
-  if (round === 2 && boardAnimKeyRef.current === 0) boardAnimKeyRef.current = 1;
-
-  const fullBoard = boardData ? toBoardDefinition(boardData, round) : demoBoard;
-  const getClue = boardData ? makeClueGetter(boardData) : getClueContent;
-  const visibleBoard = getVisibleBoard(fullBoard, gameState.burnedClueIds, visibleCategories);
-
   // Update the Y-key handler every render so it closes over fresh state.
   yKeyHandlerRef.current = () => {
     if (gameState.activeClue) return;
     const allIds = fullBoard.categories.flatMap(c => c.clues.map(cl => cl.id));
-    const unburned = allIds.filter(id => !gameState.burnedClueIds.includes(id));
+    const unburned = allIds.filter(id => !burnedClueIds.includes(id));
     if (unburned.length <= 1) return;
     unburned.slice(0, -1).forEach(clueId => {
       dispatch({ type: 'SKIP_CLUE', playerId, clueId });
@@ -227,17 +276,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           boardAnimKey={animationsEnabled ? boardAnimKeyRef.current : 0}
           animationsEnabled={animationsEnabled}
           judgingPlayerId={gameState.status === 'REVEAL' ? onStand : null}
-          onSelectClue={(clueId, rect) => {
-            selectedCellRef.current = { clueId, rect };
-            dispatch({
-              type: 'SELECT_CLUE',
-              playerId,
-              clue: getClue(clueId),
-            });
-          }}
-          onSkipClue={clueId => {
-            dispatch({ type: 'SKIP_CLUE', playerId, clueId });
-          }}
+          onSelectClue={handleSelectClue}
+          onSkipClue={handleSkipClue}
         />
 
         {peerDisconnected && !gameState.activeClue && (
@@ -262,22 +302,15 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
             <ClueScreen
               clue={gameState.activeClue}
               canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz}
-              lights={
-                (gameState.status === 'BUZZ_OPEN' && !localBuzz || typing) &&
-                buzzWindowDeadlineRef.current != null
-                  ? { deadline: buzzWindowDeadlineRef.current, durationMs: PHASE_TIMERS.BUZZ_OPEN!.ms, flash: true }
-                  : null
-              }
+              lights={lights}
               showKeyboard={typing}
               onSkip={() => {
                 if (gameState.activeClue) dispatch({ type: 'SKIP_CLUE', playerId, clueId: gameState.activeClue.id });
               }}
               canJudge={false}
               onBuzz={() => dispatch({ type: 'BUZZ', playerId })}
-              answer={localBuzz?.answer ?? ''}
-              onAnswerChange={text =>
-                dispatch({ type: 'SET_ANSWER', playerId, text })
-              }
+              answer={shownAnswer}
+              onAnswerChange={handleAnswerChange}
               onLockAnswer={text =>
                 dispatch({ type: 'LOCK_ANSWER', playerId, answer: text })
               }

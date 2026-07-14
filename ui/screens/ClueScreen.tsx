@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import type { ActiveClue } from '../../src/types';
-import { ActivationLights, LIGHTS_REST_BOTTOM } from '../components/ActivationLights';
+import { ActivationLights, LIGHTS_REST_BOTTOM, LIGHTS_WIDTH_PCT } from '../components/ActivationLights';
 import { AnswerKeyboard } from '../components/AnswerKeyboard';
 import { PLAYER_BAR_HEIGHT } from '../components/PlayerHeader';
 import { colors, shadow, type as typeTokens } from '../theme/tokens';
@@ -217,10 +217,10 @@ export function ClueScreen({
       -(panelHeight - PLAYER_BAR_HEIGHT - LIGHTS_REST_BOTTOM - LIGHTS_SHEET_OFFSET),
     ],
   });
-  // At rest the strip spans the card (94% of the screen, see
-  // ActivationLights); the sheet is narrower, so the strip compresses
-  // horizontally in flight to land just inside the sheet's edges.
-  const stripWidth = Math.min(width * 0.9408, 1460);
+  // At rest the strip spans 96% of the clue card (see ActivationLights);
+  // the sheet is narrower, so the strip compresses horizontally in flight
+  // to land just inside the sheet's edges.
+  const stripWidth = Math.min(width * LIGHTS_WIDTH_PCT, 1460);
   const sheetWidth = width * SHEET_WIDTH_PCT;
   const lightsSqueeze = kb.interpolate({
     inputRange: [0, 1],
@@ -246,8 +246,9 @@ export function ClueScreen({
   // one character the gesture locks the answer in permanently. If the
   // answer is still empty the keyboard just dismisses — the player can
   // tap the card to bring it back and type before their timer expires.
+  const hasLockAnswer = !!onLockAnswer;
   const lockResponder = useMemo(() => {
-    if (!onLockAnswer) return null;
+    if (!hasLockAnswer) return null;
     const snapBack = () =>
       Animated.spring(kbDrag, { toValue: 0, useNativeDriver: true }).start();
 
@@ -259,18 +260,21 @@ export function ClueScreen({
       onPanResponderMove: (_e, g) => kbDrag.setValue(Math.max(0, g.dy)),
       onPanResponderRelease: (_e, g) => {
         if (g.dy > LOCK_THRESHOLD || (g.dy > 50 && g.vy > LOCK_VELOCITY)) {
-          if (answer) {
-            onLockAnswer(answer);
+          // Latest values via stateRef, so the responder never rebuilds
+          // mid-drag on a keystroke.
+          const s = stateRef.current;
+          if (s.answer) {
+            s.onLockAnswer?.(s.answer);
           } else {
             // Nothing typed — just dismiss, don't lock.
-            setDismissed(true);
+            s.setDismissed(true);
           }
         }
         snapBack();
       },
       onPanResponderTerminate: snapBack,
     });
-  }, [onLockAnswer, answer, kbDrag]);
+  }, [hasLockAnswer, kbDrag]);
 
   // Swiping judges the answer on the stand, only once the reveal is up.
   const judgeActive = !!onJudge && !!canJudge;
@@ -316,38 +320,65 @@ export function ClueScreen({
     });
   }, [judgeActive, onJudge, pan, commitJudge]);
 
+  const stateRef = useRef({
+    canBuzz,
+    onBuzz,
+    judgeActive,
+    commitJudge,
+    onLockAnswer,
+    answer,
+    showKeyboard,
+    onAnswerChange,
+    dismissed,
+    onSkip,
+    setDismissed,
+  });
+  stateRef.current = { canBuzz, onBuzz, judgeActive, commitJudge, onLockAnswer, answer, showKeyboard, onAnswerChange, dismissed, onSkip, setDismissed };
+
+  // Stable key callbacks (same latest-ref pattern as the keydown handler),
+  // so the memoized AnswerKeyboard's 30 keys never re-render while typing.
+  const insertChar = useCallback((ch: string) => {
+    const s = stateRef.current;
+    s.onAnswerChange?.((s.answer ?? '') + ch);
+  }, []);
+  const backspaceChar = useCallback(() => {
+    const s = stateRef.current;
+    s.onAnswerChange?.((s.answer ?? '').slice(0, -1));
+  }, []);
+
   useEffect(() => {
     if (typeof window === 'undefined' || !window.addEventListener) return;
     const handler = (e: KeyboardEvent) => {
-      if ((e.key === 'p' || e.key === 'P') && onSkip) { e.preventDefault(); onSkip(); return; }
-      if (canBuzz && onBuzz && e.key === ' ') {
+      const s = stateRef.current;
+      if ((e.key === 'p' || e.key === 'P') && s.onSkip) { e.preventDefault(); s.onSkip(); return; }
+      if (s.canBuzz && s.onBuzz && e.key === ' ') {
         e.preventDefault();
-        onBuzz();
+        s.onBuzz();
         return;
       }
-      if (judgeActive && e.key === 'ArrowRight') { commitJudge(true); return; }
-      if (judgeActive && e.key === 'ArrowLeft') { commitJudge(false); return; }
-      if (onLockAnswer && answer && e.key === 'Enter') { onLockAnswer(answer); return; }
-      if (showKeyboard && onAnswerChange) {
-        if (e.key === 'ArrowDown' && !dismissed) {
+      if (s.judgeActive && e.key === 'ArrowRight') { s.commitJudge(true); return; }
+      if (s.judgeActive && e.key === 'ArrowLeft') { s.commitJudge(false); return; }
+      if (s.onLockAnswer && s.answer && e.key === 'Enter') { s.onLockAnswer(s.answer); return; }
+      if (s.showKeyboard && s.onAnswerChange) {
+        if (e.key === 'ArrowDown' && !s.dismissed) {
           e.preventDefault();
-          if (onLockAnswer && answer) {
-            onLockAnswer(answer);
+          if (s.onLockAnswer && s.answer) {
+            s.onLockAnswer(s.answer);
           } else {
-            setDismissed(true);
+            s.setDismissed(true);
           }
           return;
         }
-        if (e.key === 'ArrowUp' && dismissed) { e.preventDefault(); setDismissed(false); return; }
-        if (e.key === 'Backspace') { e.preventDefault(); onAnswerChange((answer ?? '').slice(0, -1)); return; }
+        if (e.key === 'ArrowUp' && s.dismissed) { e.preventDefault(); s.setDismissed(false); return; }
+        if (e.key === 'Backspace') { e.preventDefault(); s.onAnswerChange((s.answer ?? '').slice(0, -1)); return; }
         if (e.key.length === 1 && /[a-zA-Z0-9 ',.!?-]/.test(e.key)) {
-          onAnswerChange((answer ?? '') + e.key.toUpperCase());
+          s.onAnswerChange((s.answer ?? '') + e.key.toUpperCase());
         }
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [canBuzz, onBuzz, judgeActive, commitJudge, onLockAnswer, answer, showKeyboard, onAnswerChange, dismissed, onSkip]);
+  }, []);
 
   const correctOpacity = pan.interpolate({
     inputRange: [0, SWIPE_THRESHOLD],
@@ -475,10 +506,7 @@ export function ClueScreen({
               </View>
               <View style={styles.keyDeck}>
                 <View style={styles.keyDeckInner}>
-                  <AnswerKeyboard
-                    onInsert={ch => onAnswerChange((answer ?? '') + ch)}
-                    onBackspace={() => onAnswerChange((answer ?? '').slice(0, -1))}
-                  />
+                  <AnswerKeyboard onInsert={insertChar} onBackspace={backspaceChar} />
                 </View>
               </View>
             </Pressable>

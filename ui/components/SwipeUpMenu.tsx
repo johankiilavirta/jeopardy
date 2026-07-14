@@ -64,18 +64,22 @@ export function SwipeUpMenu({ children, renderMenu, renderSettings, disabled }: 
   const showSettings = useCallback(() => setOverlayPage('settings'), []);
   const showMenu = useCallback(() => setOverlayPage('menu'), []);
 
+  const stateRef = useRef({ menuVisible, disabled, openMenu, closeMenu });
+  stateRef.current = { menuVisible, disabled, openMenu, closeMenu };
+
   useEffect(() => {
     if (typeof window === 'undefined' || !window.addEventListener) return;
     const handler = (e: KeyboardEvent) => {
-      if (menuVisible) {
-        if (e.key === 'Escape' || e.key === 'm' || e.key === 'M' || e.key === 'ArrowDown') closeMenu();
-      } else if (!disabled && (e.key === 'm' || e.key === 'M')) {
-        openMenu();
+      const s = stateRef.current;
+      if (s.menuVisible) {
+        if (e.key === 'Escape' || e.key === 'm' || e.key === 'M' || e.key === 'ArrowDown') s.closeMenu();
+      } else if (!s.disabled && (e.key === 'm' || e.key === 'M')) {
+        s.openMenu();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [menuVisible, disabled, openMenu, closeMenu]);
+  }, []);
 
   // Swipe-up on the children area to open the menu.
   const openResponder = useMemo(() => {
