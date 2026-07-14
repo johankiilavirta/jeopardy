@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 
-const LIGHT_COUNT = 151;
-/** Hold the initial buzzer flash before the countdown begins. */
-const FLASH_MS = 1000;
-/** Fully-lit hold before the drain starts (both the buzzer flash and the
- *  first second of the personal typing window). */
+const LIGHT_COUNT = 39; // Dense enough for modern look, sparse enough to avoid RN graph limits
+/** The buzzer-activation flash runs this long before going steady.
+ *  Each of the two pulses takes 120ms (fade-in) + 80ms (hold) + 250ms (fade-out) + 150ms (hold-off) = 600ms.
+ *  Then a final fade-in to steady lit takes 120ms.
+ *  Total duration = 2 * 600ms + 120ms = 1320ms. */
+const FLASH_MS = 1320;
+/** Fully-lit hold before the drain starts (for the personal typing window). */
 const HOLD_MS = 1000;
-/** The glow-in ramp when the strip appears. */
-const RISE_MS = 120;
 /** Vibrant electric blue, matching the brilliant blue LEDs in the modern set. */
 const LIT = '#FFFFFF';
 /** Extinguished lamps stay faintly visible, like the real board's dark LEDs. */
@@ -24,7 +24,7 @@ interface ActivationLightsProps {
 }
 
 /**
- * The board's activation lights, doubling as the answer timer: a dense row
+ * The board's activation lights, doubling as the answer timer: a row
  * of electric-blue rectangular LED bars glued tightly under the clue card.
  * When the buzzers open they pop at the broadcast cadence for a second, hold
  * steady, then extinguish linearly from the outermost pair inward until time
@@ -85,17 +85,35 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
       drain.start();
     };
 
-    // Both modes hold fully lit for a second before the countdown begins;
-    // the flash variant is the buzzer-activation moment.
-    const arm = Animated.sequence([
+    const pop = () => [
       Animated.timing(glow, {
         toValue: 1,
-        duration: RISE_MS,
+        duration: 120,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }),
-      Animated.delay((flash ? FLASH_MS : HOLD_MS) - RISE_MS),
-    ]);
+      Animated.delay(80),
+      Animated.timing(glow, {
+        toValue: OFF_OPACITY,
+        duration: 250,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.delay(150),
+    ];
+
+    const arm = flash
+      ? Animated.sequence([
+          ...pop(),
+          ...pop(),
+          Animated.timing(glow, {
+            toValue: 1,
+            duration: 120,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ])
+      : Animated.timing(glow, { toValue: 1, duration: 120, useNativeDriver: true });
 
     arm.start(({ finished }) => {
       if (finished) startDrain();
@@ -155,9 +173,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   light: {
-    width: 2, // 2px square blocks
-    height: 2,
-    borderRadius: 0, // perfectly square like in the gif
+    width: 6, // Larger blocks since there are fewer of them
+    height: 4,
+    borderRadius: 1,
     backgroundColor: LIT, // white LED bulb
     shadowColor: '#0088FF', // electric blue glow
     shadowOffset: { width: 0, height: 0 },
