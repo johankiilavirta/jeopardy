@@ -74,14 +74,32 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // replays (e.g. on a reconnect / state update).
   const introShownRef = useRef<Set<number>>(new Set());
   const [introRound, setIntroRound] = useState<number | null>(() => {
-    if (animationsEnabled && !introShownRef.current.has(1)) {
+    // If we are connecting to a game already in progress (e.g., clues burned or active clue is open),
+    // skip the category intro animation.
+    const hasProgress = gameState && (gameState.burnedClueIds.length > 0 || gameState.activeClue != null);
+    if (animationsEnabled && !hasProgress && !introShownRef.current.has(1)) {
       introShownRef.current.add(1);
       return 1;
+    }
+    // Mark round 1 as shown if skipping
+    if (hasProgress) {
+      introShownRef.current.add(1);
     }
     return null;
   });
   // Latch to 1 the first time round 2 is reached — triggers the DJ board flash.
+  // If we connect directly into round 2, initialize to 1 so we skip the flash.
   const boardAnimKeyRef = useRef(0);
+  const round1DoneInitially = useMemo(() => {
+    const round1Board = boardData ? toBoardDefinition(boardData, 1) : demoBoard;
+    const ids = round1Board.categories.flatMap(c => c.clues.map(cl => cl.id));
+    return ids.length > 0 && ids.every(id => (gameState?.burnedClueIds ?? []).includes(id));
+  }, [boardData, gameState?.burnedClueIds]);
+  const round2AvailableInitially = !!boardData && boardData.round2.length > 0;
+  if (round1DoneInitially && round2AvailableInitially && boardAnimKeyRef.current === 0) {
+    boardAnimKeyRef.current = 1;
+    introShownRef.current.add(2); // Skip round 2 category intro as well
+  }
 
   const dispatch = useCallback((action: Action) => {
     sendAction(transport, serverPeerId, action as unknown as Record<string, unknown>);
