@@ -37,9 +37,18 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
 
   const overallOpacity = useRef(new Animated.Value(lights ? 1 : 0)).current;
 
-  useEffect(() => {
+  const glow = useRef(new Animated.Value(lights?.flash ? OFF_OPACITY : 1)).current;
+  /** Fraction of the window elapsed, 0 → 1, advanced linearly to `deadline`. */
+  const progress = useRef(new Animated.Value(0)).current;
+
+  const prevLightsRef = useRef(lights);
+  if (lights !== prevLightsRef.current) {
     if (lights) {
       setActiveLights(lights);
+      // Synchronously reset animated values before React commits the first frame to the screen!
+      progress.setValue(0);
+      glow.setValue(lights.flash ? OFF_OPACITY : 1);
+
       Animated.timing(overallOpacity, {
         toValue: 1,
         duration: 200,
@@ -52,19 +61,13 @@ export function ActivationLights({ lights }: ActivationLightsProps) {
         useNativeDriver: true,
       }).start();
     }
-  }, [lights, overallOpacity]);
+    prevLightsRef.current = lights;
+  }
 
   const { deadline, durationMs, flash } = activeLights;
 
-  const glow = useRef(new Animated.Value(flash ? OFF_OPACITY : 1)).current;
-  /** Fraction of the window elapsed, 0 → 1, advanced linearly to `deadline`. */
-  const progress = useRef(new Animated.Value(0)).current;
-
   useEffect(() => {
     if (deadline === 0) return;
-
-    progress.setValue(0);
-    glow.setValue(flash ? OFF_OPACITY : 1);
 
     let drain: Animated.CompositeAnimation | null = null;
     const startDrain = () => {
