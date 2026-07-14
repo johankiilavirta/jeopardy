@@ -333,6 +333,13 @@ export function ClueScreen({
           return g.dy < -12 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5;
         }
       },
+      onMoveShouldSetPanResponderCapture: (_e, g) => {
+        if (judgeActive && onJudge) {
+          return Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5;
+        } else {
+          return g.dy < -12 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5;
+        }
+      },
       onPanResponderMove: (_e, g) => {
         if (judgeActive && onJudge) {
           pan.setValue(g.dx);

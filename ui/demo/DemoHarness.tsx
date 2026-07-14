@@ -149,7 +149,7 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
             clue={state.activeClue}
             canBuzz={state.status === 'BUZZ_OPEN' && !localBuzz}
             lights={
-              (state.status === 'BUZZ_OPEN' && !localBuzz || typing) &&
+              (state.status === 'BUZZ_OPEN' || state.status === 'ANSWERING') &&
               buzzWindowDeadlineRef.current != null
                 ? { deadline: buzzWindowDeadlineRef.current, durationMs: PHASE_TIMERS.BUZZ_OPEN!.ms, flash: true }
                 : null

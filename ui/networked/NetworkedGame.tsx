@@ -166,7 +166,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // Stable identity so the memoized ActivationLights can skip re-rendering
   // its 171 lamps on renders that don't change the timer window.
   const lights = useMemo(() => {
-    const show = (gameState?.status === 'BUZZ_OPEN' && !localBuzz) || typing;
+    const show = gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING';
     if (!show || buzzWindowDeadlineRef.current == null) return null;
     return {
       deadline: buzzWindowDeadlineRef.current,
@@ -174,7 +174,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       flash: true,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState?.status, !!localBuzz, typing]);
+  }, [gameState?.status]);
 
   // Answers echo locally the instant a key lands; SET_ANSWER still syncs
   // through the relay, but the round-trip no longer gates what the typer
