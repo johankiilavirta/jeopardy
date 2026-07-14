@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -55,6 +56,19 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const [airDate, setAirDate] = useState<string | null>(null);
   const [seasonNumber, setSeasonNumber] = useState<number | null>(null);
   const [gameInfoStatus, setGameInfoStatus] = useState<'idle' | 'loading' | 'not-found'>('idle');
+
+  // Animation for fading out the lobby
+  const contentOpacity = useRef(new Animated.Value(1)).current;
+  const handleStartPress = useCallback(() => {
+    if (!canStart) return;
+    Animated.timing(contentOpacity, {
+      toValue: 0,
+      duration: 250,
+      useNativeDriver: false,
+    }).start(() => {
+      props.onStart();
+    });
+  }, [canStart, props, contentOpacity]);
 
   useEffect(() => {
     const id = props.gameId;
@@ -121,49 +135,50 @@ export function LobbyScreen(props: LobbyScreenProps) {
       )}
     >
       <View style={styles.root}>
-        <Pressable style={styles.leaveButton} onPress={props.onLeave}>
-          <Text style={styles.leaveText}>← LEAVE</Text>
-        </Pressable>
+        <Animated.View style={[StyleSheet.absoluteFill, styles.contentWrap, { opacity: contentOpacity }]}>
+          <Pressable style={styles.leaveButton} onPress={props.onLeave}>
+            <Text style={styles.leaveText}>← LEAVE</Text>
+          </Pressable>
 
-        {props.roomCode > 0 ? (
-          <>
-            <Text style={styles.roomCode}>{props.roomCode}</Text>
-            <Text style={styles.subtitle}>Share this code with your friend</Text>
-          </>
-        ) : (
-          <>
-            <Text style={styles.creatingText}>Creating room...</Text>
-            <Text style={styles.subtitle}> </Text>
-          </>
-        )}
+          {props.roomCode > 0 ? (
+            <>
+              <Text style={styles.roomCode}>{props.roomCode}</Text>
+              <Text style={styles.subtitle}>Share this code with your friend</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.creatingText}>Creating room...</Text>
+              <Text style={styles.subtitle}> </Text>
+            </>
+          )}
 
-        <View style={styles.playerList}>
-          {slots.map((player, i) => (
-            <View key={player?.peerId ?? `empty-${i}`} style={styles.playerRow}>
-              <Text style={styles.slotLabel}>P{i + 1}</Text>
-              {player ? (
-                <>
-                  <Text style={styles.playerName}>{player.name}</Text>
-                  {player.isHost && <Text style={styles.hostBadge}>HOST</Text>}
-                </>
-              ) : (
-                <Text style={styles.emptySlot}>Open</Text>
-              )}
-            </View>
-          ))}
-        </View>
+          <View style={styles.playerList}>
+            {slots.map((player, i) => (
+              <View key={player?.peerId ?? `empty-${i}`} style={styles.playerRow}>
+                <Text style={styles.slotLabel}>P{i + 1}</Text>
+                {player ? (
+                  <>
+                    <Text style={styles.playerName}>{player.name}</Text>
+                    {player.isHost && <Text style={styles.hostBadge}>HOST</Text>}
+                  </>
+                ) : (
+                  <Text style={styles.emptySlot}>Open</Text>
+                )}
+              </View>
+            ))}
+          </View>
 
-        {props.isHost && (
-          <>
-            <Pressable
-              style={[styles.startButton, !canStart && styles.startButtonDisabled]}
-              onPress={props.onStart}
-              disabled={!canStart}
-            >
-              <Text style={[styles.startButtonText, !canStart && styles.startButtonTextDisabled]}>
-                START GAME
-              </Text>
-            </Pressable>
+          {props.isHost && (
+            <>
+              <Pressable
+                style={[styles.startButton, !canStart && styles.startButtonDisabled]}
+                onPress={handleStartPress}
+                disabled={!canStart}
+              >
+                <Text style={[styles.startButtonText, !canStart && styles.startButtonTextDisabled]}>
+                  START GAME
+                </Text>
+              </Pressable>
 
             <Pressable
               style={styles.advancedToggle}
@@ -299,6 +314,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
             <Text style={styles.statusLine}>{props.error}</Text>
           </View>
         )}
+        </Animated.View>
       </View>
     </SwipeUpMenu>
   );
@@ -308,6 +324,8 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.bg,
+  },
+  contentWrap: {
     alignItems: 'center',
     justifyContent: 'center',
     padding: 32,

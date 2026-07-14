@@ -73,7 +73,13 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // usable. We track which rounds have already shown theirs so the intro never
   // replays (e.g. on a reconnect / state update).
   const introShownRef = useRef<Set<number>>(new Set());
-  const [introRound, setIntroRound] = useState<number | null>(null);
+  const [introRound, setIntroRound] = useState<number | null>(() => {
+    if (animationsEnabled && !introShownRef.current.has(1)) {
+      introShownRef.current.add(1);
+      return 1;
+    }
+    return null;
+  });
   // Latch to 1 the first time round 2 is reached — triggers the DJ board flash.
   const boardAnimKeyRef = useRef(0);
 
@@ -115,16 +121,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     !!localBuzz &&
     !localBuzz.locked &&
     (gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING');
-
-
-  // Play the category fly-by once at the start of round 1 only. Round 2
-  // (Double Jeopardy) transitions silently — no intro animation.
-  useEffect(() => {
-    if (!animationsEnabled || !boardData) return;
-    if (introShownRef.current.has(1)) return;
-    introShownRef.current.add(1);
-    setIntroRound(1);
-  }, [animationsEnabled, boardData]);
 
   // Solo mode: auto-buzz when the buzz window opens — no tap required since
   // there's no opponent to race. This lets locking immediately trigger REVEAL.
@@ -196,8 +192,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // categories (marked " *") that will backfill as columns clear.
   // When visibleCategories >= 6, nothing is hidden so no "*" is needed.
   const introBoard =
-    introRound != null && boardData
-      ? toBoardDefinition(boardData, introRound as RoundNumber)
+    introRound != null
+      ? (boardData ? toBoardDefinition(boardData, introRound as RoundNumber) : demoBoard)
       : null;
   const introCategories =
     introBoard?.categories.map((c, i) =>
