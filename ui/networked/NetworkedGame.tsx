@@ -63,7 +63,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const playerId = initialState?.playerId ?? null;
   // Deadlines (epoch ms) for the current phase window and the local player's
   // personal typing timer — they drive the activation lights' drain.
-  const [phaseDeadline, setPhaseDeadline] = useState<number | null>(null);
+  const previousStatusRef = useRef<GameStatus | null>(null);
   const buzzWindowDeadlineRef = useRef<number | null>(null);
   // Window rect of the cell this device last tapped, so the clue card can grow
   // out of it. Only set for clues *we* picked — a clue another player selects
@@ -100,21 +100,13 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Phase deadline estimate (display-only, server is authoritative).
-  useEffect(() => {
-    if (!gameState) return;
-    const phase = PHASE_TIMERS[gameState.status];
-    if (!phase) {
-      setPhaseDeadline(null);
-      return;
+  // Update deadlines synchronously when the phase changes so we never render with a stale clock
+  if (gameState && gameState.status !== previousStatusRef.current) {
+    if (gameState.status === 'BUZZ_OPEN') {
+      buzzWindowDeadlineRef.current = Date.now() + PHASE_TIMERS.BUZZ_OPEN!.ms;
     }
-    const ms = gameState.status === 'CLUE_READING' && gameState.activeClue
-      ? computeReadingMs(gameState.activeClue.text)
-      : phase.ms;
-    const deadline = Date.now() + ms;
-    setPhaseDeadline(deadline);
-    if (gameState.status === 'BUZZ_OPEN') buzzWindowDeadlineRef.current = deadline;
-  }, [gameState?.status]);
+    previousStatusRef.current = gameState.status;
+  }
 
   const localBuzz = gameState && playerId ? getBuzz(gameState, playerId) : undefined;
   const typing =
