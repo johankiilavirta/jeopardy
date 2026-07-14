@@ -176,6 +176,20 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState?.status, !!localBuzz, typing]);
 
+  // Answers echo locally the instant a key lands; SET_ANSWER still syncs
+  // through the relay, but the round-trip no longer gates what the typer
+  // sees. Server state stays authoritative: once the buzz locks (or the
+  // clue changes) the echo is ignored and the synced answer shows.
+  const [localEcho, setLocalEcho] = useState<{ clueId: number; text: string } | null>(null);
+  const activeClueId = gameState?.activeClue?.id ?? null;
+  const handleAnswerChange = useCallback((text: string) => {
+    if (playerId == null) return;
+    if (activeClueId != null) setLocalEcho({ clueId: activeClueId, text });
+    dispatch({ type: 'SET_ANSWER', playerId, text });
+  }, [dispatch, playerId, activeClueId]);
+  const shownAnswer =
+    typing && localEcho?.clueId === activeClueId ? localEcho.text : localBuzz?.answer ?? '';
+
   // Solo mode: auto-dismiss the reveal after 2.5 s. The player can still
   // swipe or use arrow keys to self-judge (and record a score) before then.
   useEffect(() => {
@@ -295,10 +309,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               }}
               canJudge={false}
               onBuzz={() => dispatch({ type: 'BUZZ', playerId })}
-              answer={localBuzz?.answer ?? ''}
-              onAnswerChange={text =>
-                dispatch({ type: 'SET_ANSWER', playerId, text })
-              }
+              answer={shownAnswer}
+              onAnswerChange={handleAnswerChange}
               onLockAnswer={text =>
                 dispatch({ type: 'LOCK_ANSWER', playerId, answer: text })
               }
