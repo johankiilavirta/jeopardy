@@ -41,8 +41,8 @@ function midGameState(): GameState {
   return {
     ...createInitialState(['Alice', 'Bob'], 25),
     players: {
-      alice: { id: 'alice', name: 'Alice', score: 800 },
-      bob: { id: 'bob', name: 'Bob', score: -200 },
+      alice: { id: 'alice', name: 'Alice', score: 800, correct: 4, incorrect: 0, scoreHistory: [0, 200, 400, 600, 800] },
+      bob: { id: 'bob', name: 'Bob', score: -200, correct: 0, incorrect: 1, scoreHistory: [0, -200] },
     },
     currentTurnPlayerId: 'bob',
     burnedClueIds: [0, 1, 5],
