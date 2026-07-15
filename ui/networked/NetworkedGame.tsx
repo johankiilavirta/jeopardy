@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { sendAction } from '../../src/client';
 import { computeReadingMs } from '../../src/readingTime';
 import { getBuzz, judgedPlayerId } from '../../src/reducer';
@@ -109,6 +109,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
   // Dev shortcut: Y key burns all-but-one clue on the current board.
   const yKeyHandlerRef = useRef<(() => void) | null>(null);
+  const devBurnKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
@@ -380,6 +381,34 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
             onDone={() => setIntroRound(null)}
           />
         )}
+
+        {/* DEV ONLY: burns all but one clue on the current board (same as
+            the Y key on web) for testing round transitions and DJ resume. */}
+        {!gameState.activeClue && (
+          <Pressable
+            style={styles.devBurnButton}
+            onPress={() => {
+              if (devBurnKeyRef.current === burnedKey) return;
+              devBurnKeyRef.current = burnedKey;
+              yKeyHandlerRef.current?.();
+            }}
+          >
+            <Text style={styles.devBurnText}>DEV: BURN</Text>
+          </Pressable>
+        )}
+
+        {gameState.status === 'GAME_OVER' && (
+          <View style={styles.gameOverOverlay}>
+            <Text style={styles.gameOverText}>GAME OVER</Text>
+            {Object.values(gameState.players)
+              .sort((a, b) => b.score - a.score)
+              .map(p => (
+                <Text key={p.id} style={styles.gameOverScore}>
+                  {p.name}: ${p.score.toLocaleString()}
+                </Text>
+              ))}
+          </View>
+        )}
       </View>
     </SwipeUpMenu>
   );
@@ -419,5 +448,41 @@ const styles = StyleSheet.create({
     fontFamily: typeTokens.ui500,
     fontSize: 20,
     color: colors.categoryText,
+  },
+  devBurnButton: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 40,
+    backgroundColor: 'red',
+    paddingVertical: 14,
+    alignItems: 'center' as const,
+    zIndex: 9999,
+    elevation: 9999,
+  },
+  devBurnText: {
+    fontFamily: typeTokens.ui700,
+    fontSize: 18,
+    fontWeight: 'bold' as const,
+    color: '#fff',
+  },
+  gameOverOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10000,
+  },
+  gameOverText: {
+    fontFamily: typeTokens.board,
+    fontSize: 36,
+    color: colors.boardValue,
+    marginBottom: 20,
+  },
+  gameOverScore: {
+    fontFamily: typeTokens.ui700,
+    fontSize: 20,
+    color: '#fff',
+    marginVertical: 4,
   },
 });
