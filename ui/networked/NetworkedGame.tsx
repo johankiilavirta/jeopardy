@@ -11,6 +11,7 @@ import { ExpandingClueOverlay } from '../components/ExpandingClueOverlay';
 import { PLAYER_BAR_HEIGHT } from '../components/PlayerHeader';
 import { JudgementTray } from '../components/JudgementTray';
 import { SwipeUpMenu } from '../components/SwipeUpMenu';
+import { UndoRedoSwipe } from '../components/UndoRedoSwipe';
 import { demoBoard } from '../fixtures/board';
 import { getClueContent } from '../fixtures/clues';
 import { toBoardDefinition, makeClueGetter, getVisibleBoard } from '../../data/gameLoader';
@@ -264,6 +265,12 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     ) ?? null;
 
   return (
+    <UndoRedoSwipe
+      canUndo={initialState?.canUndo ?? false}
+      canRedo={initialState?.canRedo ?? false}
+      onUndo={() => sendAction(transport, serverPeerId, { type: 'UNDO' })}
+      onRedo={() => sendAction(transport, serverPeerId, { type: 'REDO' })}
+    >
     <View style={styles.root}>
     <SwipeUpMenu
       disabled={!!gameState.activeClue}
@@ -433,30 +440,10 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           );
         })()}
 
-        <View style={styles.undoRedoBar}>
-          <Pressable
-            style={[styles.undoRedoButton, !initialState?.canUndo && styles.undoRedoDisabled]}
-            onPress={() => {
-              console.log('UNDO pressed, canUndo:', initialState?.canUndo);
-              sendAction(transport, serverPeerId, { type: 'UNDO' });
-            }}
-          >
-            <Text style={styles.undoRedoText}>{'\u21A9'} Undo</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.undoRedoButton, !initialState?.canRedo && styles.undoRedoDisabled]}
-            onPress={() => {
-              console.log('REDO pressed, canRedo:', initialState?.canRedo);
-              sendAction(transport, serverPeerId, { type: 'REDO' });
-            }}
-          >
-            <Text style={styles.undoRedoText}>Redo {'\u21AA'}</Text>
-          </Pressable>
-        </View>
-
       </View>
     </SwipeUpMenu>
     </View>
+    </UndoRedoSwipe>
   );
 }
 
@@ -494,31 +481,6 @@ const styles = StyleSheet.create({
     fontFamily: typeTokens.ui500,
     fontSize: 20,
     color: colors.categoryText,
-  },
-  undoRedoBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    zIndex: 10001,
-    elevation: 10001,
-  },
-  undoRedoButton: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  undoRedoDisabled: {
-    opacity: 0.3,
-  },
-  undoRedoText: {
-    fontFamily: typeTokens.ui500,
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
   },
   gameOverOverlay: {
     ...StyleSheet.absoluteFill,

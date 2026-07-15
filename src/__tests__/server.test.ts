@@ -245,6 +245,54 @@ describe('GameServer', () => {
     expect(count()).toBe(0);
   });
 
+  it('redo after full undo fast-forwards to REVEAL and broadcasts flags', () => {
+    const { timer, fire } = createMockTimer();
+    const host = new MockTransport('host');
+    const server = createServer(host, ['Alice', 'Bob'], { timer });
+
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    const p1Messages = captureMessages(p1);
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    // Play a full clue: select, buzz, lock, judge both
+    p1.send('host', selectClueMsg);
+    fire(); // reading lockout ends → buzz window
+    p2.send('host', JSON.stringify({ type: 'BUZZ' }));
+    p2.send('host', JSON.stringify({ type: 'LOCK_ANSWER', answer: 'guess' }));
+    fire(); // buzz window closes → REVEAL
+    expect(server.history.current.status).toBe('REVEAL');
+    p2.send('host', JSON.stringify({ type: 'JUDGE_ANSWER', playerId: 'bob', correct: true }));
+    expect(server.history.current.status).toBe('CHOOSE_CLUE');
+
+    // Undo repeatedly until nothing is left to undo
+    p1.send('host', JSON.stringify({ type: 'UNDO' })); // → REVEAL
+    expect(server.history.current.status).toBe('REVEAL');
+    p1.send('host', JSON.stringify({ type: 'UNDO' })); // → initial board
+    expect(server.history.current.status).toBe('CHOOSE_CLUE');
+
+    // Client should now see canUndo=false, canRedo=true
+    let msg = JSON.parse(p1Messages[p1Messages.length - 1]![1]);
+    expect(msg.canUndo).toBe(false);
+    expect(msg.canRedo).toBe(true);
+
+    // Redo fast-forwards past intermediates and stops at REVEAL
+    p1.send('host', JSON.stringify({ type: 'REDO' }));
+    expect(server.history.current.status).toBe('REVEAL');
+    msg = JSON.parse(p1Messages[p1Messages.length - 1]![1]);
+    expect(msg.state.status).toBe('REVEAL');
+    expect(msg.canUndo).toBe(true);
+    expect(msg.canRedo).toBe(true);
+
+    // Redo again lands back at the post-judging board
+    p1.send('host', JSON.stringify({ type: 'REDO' }));
+    expect(server.history.current.status).toBe('CHOOSE_CLUE');
+    expect(server.history.current.players['bob']!.score).toBe(200);
+    msg = JSON.parse(p1Messages[p1Messages.length - 1]![1]);
+    expect(msg.canRedo).toBe(false);
+  });
+
   it('runs the full phase cascade: reading → buzz window → expired → board', () => {
     const { timer, fire, pendingMs, count } = createMockTimer();
     const host = new MockTransport('host');

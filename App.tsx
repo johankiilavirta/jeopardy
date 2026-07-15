@@ -226,8 +226,8 @@ export default function App() {
             // Stay on the Reconnecting screen until the first STATE_UPDATE
             // arrives, so the game mounts with real state (see connectAndDo).
             let gameMounted = false;
-            createClient(transport, (state, pid) => {
-              handleStateUpdate(state, pid);
+            createClient(transport, (state, pid, cu, cr) => {
+              handleStateUpdate(state, pid, cu, cr);
               if (!gameMounted) {
                 gameMounted = true;
                 setScreen(gameScreen);
@@ -362,8 +362,8 @@ export default function App() {
             isResume: !!msg.isResume,
           };
           let gameMounted = false;
-          createClient(transport, (state, pid) => {
-            handleStateUpdate(state, pid);
+          createClient(transport, (state, pid, cu, cr) => {
+            handleStateUpdate(state, pid, cu, cr);
             // Mount the game screen only once the first STATE_UPDATE is in,
             // so NetworkedGame's mount-time animation decisions (category
             // intro, DJ board flash) always see the real game state instead
@@ -434,8 +434,8 @@ export default function App() {
           break;
         }
         case 'game-started':
-          createClient(transport, (state, pid) => {
-            setInitialGameState({ state, playerId: pid });
+          createClient(transport, (state, pid, cu, cr) => {
+            handleStateUpdate(state, pid, cu, cr);
           });
           setBoardData((msg.board as GameData) ?? null);
           setScreen({ type: 'game', serverPeerId: msg.serverPeerId as string, roomCode: DEV_ROOM });
