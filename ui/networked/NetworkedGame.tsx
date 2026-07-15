@@ -119,17 +119,25 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         statsRef.current[p.id] = { correct: 0, incorrect: 0, scoreHistory: [p.score] };
       }
     }
-    // A clue just resolved: burnedClueIds grew
+    // A clue just resolved: burnedClueIds grew. Only record a history
+    // point when at least one player's score changed (skips don't count).
     if (prevScoresRef.current && burnedCount > prevBurnedCountRef.current) {
+      let anyScoreChanged = false;
       for (const p of Object.values(gameState.players)) {
         const prev = prevScoresRef.current[p.id] ?? 0;
         const stats = statsRef.current[p.id]!;
         if (p.score > prev) {
           stats.correct++;
+          anyScoreChanged = true;
         } else if (p.score < prev) {
           stats.incorrect++;
+          anyScoreChanged = true;
         }
-        stats.scoreHistory.push(p.score);
+      }
+      if (anyScoreChanged) {
+        for (const p of Object.values(gameState.players)) {
+          statsRef.current[p.id]!.scoreHistory.push(p.score);
+        }
       }
     }
     prevBurnedCountRef.current = burnedCount;
