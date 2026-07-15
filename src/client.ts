@@ -10,7 +10,7 @@ export interface GameClient {
 
 export function createClient(
   transport: Transport,
-  onStateUpdate?: (state: GameState, playerId: string | null) => void,
+  onStateUpdate?: (state: GameState, playerId: string | null, canUndo?: boolean, canRedo?: boolean) => void,
 ): GameClient {
   const client: GameClient = {
     state: null,
@@ -18,7 +18,7 @@ export function createClient(
   };
 
   transport.onMessage((_peerId, message) => {
-    let parsed: { type: string; state?: GameState; playerId?: string };
+    let parsed: { type: string; state?: GameState; playerId?: string; canUndo?: boolean; canRedo?: boolean };
     try {
       parsed = JSON.parse(message);
     } catch {
@@ -28,7 +28,7 @@ export function createClient(
     if (parsed.type === 'STATE_UPDATE' && parsed.state) {
       client.state = parsed.state;
       client.playerId = parsed.playerId ?? null;
-      onStateUpdate?.(client.state, client.playerId);
+      onStateUpdate?.(client.state, client.playerId, parsed.canUndo, parsed.canRedo);
     }
   });
 
