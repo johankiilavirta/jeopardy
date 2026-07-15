@@ -110,6 +110,9 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const statsRef = useRef<Record<string, PlayerStats>>({});
   const prevScoresRef = useRef<Record<string, number> | null>(null);
   const prevBurnedCountRef = useRef(0);
+  // Track whether a clue was actually played (activeClue was open) vs
+  // skipped from the board. Only played clues create chart data points.
+  const hadActiveClueRef = useRef(false);
 
   if (gameState) {
     const burnedCount = gameState.burnedClueIds.length;
@@ -119,27 +122,28 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         statsRef.current[p.id] = { correct: 0, incorrect: 0, scoreHistory: [p.score] };
       }
     }
-    // A clue just resolved: burnedClueIds grew. Only record a history
-    // point when at least one player's score changed (skips don't count).
+    // A clue just resolved: burnedClueIds grew
     if (prevScoresRef.current && burnedCount > prevBurnedCountRef.current) {
-      let anyScoreChanged = false;
+      // Only record chart points for clues that were actually played
+      // (activeClue was open before this burn). Board skips (DEV: BURN)
+      // go straight from CHOOSE_CLUE → CHOOSE_CLUE with no activeClue.
+      const wasPlayed = hadActiveClueRef.current;
       for (const p of Object.values(gameState.players)) {
         const prev = prevScoresRef.current[p.id] ?? 0;
         const stats = statsRef.current[p.id]!;
         if (p.score > prev) {
           stats.correct++;
-          anyScoreChanged = true;
         } else if (p.score < prev) {
           stats.incorrect++;
-          anyScoreChanged = true;
         }
       }
-      if (anyScoreChanged) {
+      if (wasPlayed) {
         for (const p of Object.values(gameState.players)) {
           statsRef.current[p.id]!.scoreHistory.push(p.score);
         }
       }
     }
+    hadActiveClueRef.current = gameState.activeClue != null;
     prevBurnedCountRef.current = burnedCount;
     prevScoresRef.current = Object.fromEntries(
       Object.values(gameState.players).map(p => [p.id, p.score]),
