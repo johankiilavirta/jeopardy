@@ -294,6 +294,8 @@ function handleDismissClue(state: GameState): GameState {
 // either player may skip any clue. The burn is server-authoritative, so the
 // clue grays out for both players.
 function handleSkipClue(state: GameState, action: Extract<Action, { type: 'SKIP_CLUE' }>): GameState {
+  if (state.status === 'GAME_OVER') return state;
+
   // If a clue is currently up, skip that one regardless of the id sent.
   const skippingActive = state.activeClue != null;
   const clueId = skippingActive ? state.activeClue!.id : action.clueId;

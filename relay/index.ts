@@ -7,7 +7,10 @@ import { normalizeForResume } from '../src/reducer.js';
 import type { GameState } from '../src/types.js';
 import { Room, RoomPlayer, RoomServerTransport } from './room.js';
 
-const TOTAL_CLUES_DEMO = 25; // 5×5 fallback board
+const TOTAL_CLUES_DEMO = 30; // 6×5 fallback board
+
+/** How long an in-progress room survives with zero players connected. */
+const EMPTY_ROOM_GRACE_MS = 5 * 60 * 1000;
 
 /** How long an in-progress room survives with zero players connected. */
 const EMPTY_ROOM_GRACE_MS = 5 * 60 * 1000;
