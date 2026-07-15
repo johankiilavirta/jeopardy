@@ -11,6 +11,9 @@ export interface Player {
   id: string;
   name: string;
   score: number;
+  correct: number;
+  incorrect: number;
+  scoreHistory: number[];
 }
 
 export interface ActiveClue {

@@ -21,8 +21,8 @@ function makeState(opts: {
   return {
     status: 'CHOOSE_CLUE',
     players: {
-      you: { id: 'you', name: 'You', score: opts.yourScore },
-      opponent: { id: 'opponent', name: 'Opponent', score: opts.opponentScore },
+      you: { id: 'you', name: 'You', score: opts.yourScore, correct: 0, incorrect: 0, scoreHistory: [0] },
+      opponent: { id: 'opponent', name: 'Opponent', score: opts.opponentScore, correct: 0, incorrect: 0, scoreHistory: [0] },
     },
     currentTurnPlayerId: opts.currentTurnPlayerId,
     clueSelectPlayerId: null,

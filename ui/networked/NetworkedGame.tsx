@@ -105,51 +105,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     introShownRef.current.add(2); // Skip round 2 category intro as well
   }
 
-  // --- Per-player stats tracking (derived from score diffs on each burn) ---
-  interface PlayerStats { correct: number; incorrect: number; scoreHistory: number[] }
-  const statsRef = useRef<Record<string, PlayerStats>>({});
-  const prevScoresRef = useRef<Record<string, number> | null>(null);
-  const prevBurnedCountRef = useRef(0);
-  // Track whether a clue was actually played (activeClue was open) vs
-  // skipped from the board. Only played clues create chart data points.
-  const hadActiveClueRef = useRef(false);
-
-  if (gameState) {
-    const burnedCount = gameState.burnedClueIds.length;
-    // Initialize stats for any new player
-    for (const p of Object.values(gameState.players)) {
-      if (!statsRef.current[p.id]) {
-        statsRef.current[p.id] = { correct: 0, incorrect: 0, scoreHistory: [p.score] };
-      }
-    }
-    // A clue just resolved: burnedClueIds grew
-    if (prevScoresRef.current && burnedCount > prevBurnedCountRef.current) {
-      // Only record chart points for clues that were actually played
-      // (activeClue was open before this burn). Board skips (DEV: BURN)
-      // go straight from CHOOSE_CLUE → CHOOSE_CLUE with no activeClue.
-      const wasPlayed = hadActiveClueRef.current;
-      for (const p of Object.values(gameState.players)) {
-        const prev = prevScoresRef.current[p.id] ?? 0;
-        const stats = statsRef.current[p.id]!;
-        if (p.score > prev) {
-          stats.correct++;
-        } else if (p.score < prev) {
-          stats.incorrect++;
-        }
-      }
-      if (wasPlayed) {
-        for (const p of Object.values(gameState.players)) {
-          statsRef.current[p.id]!.scoreHistory.push(p.score);
-        }
-      }
-    }
-    hadActiveClueRef.current = gameState.activeClue != null;
-    prevBurnedCountRef.current = burnedCount;
-    prevScoresRef.current = Object.fromEntries(
-      Object.values(gameState.players).map(p => [p.id, p.score]),
-    );
-  }
-
   const dispatch = useCallback((action: Action) => {
     sendAction(transport, serverPeerId, action as unknown as Record<string, unknown>);
   }, [transport, serverPeerId]);
@@ -454,16 +409,14 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       const chartPlayers = sorted.map((p, i) => ({
         name: p.name,
         color: PLAYER_COLORS[i % PLAYER_COLORS.length]!,
-        scores: statsRef.current[p.id]?.scoreHistory ?? [p.score],
+        scores: p.scoreHistory,
       }));
       const chartW = Math.min(windowWidth - 48, 400);
 
       return (
         <View style={styles.gameOverOverlay}>
           <Text style={styles.gameOverText}>GAME OVER</Text>
-          {sorted.map((p, i) => {
-            const stats = statsRef.current[p.id];
-            return (
+          {sorted.map((p, i) => (
               <View key={p.id} style={styles.gameOverPlayerRow}>
                 <View style={styles.gameOverNameRow}>
                   <View style={[styles.gameOverColorDot, { backgroundColor: PLAYER_COLORS[i % PLAYER_COLORS.length] }]} />
@@ -471,14 +424,11 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                     {p.name}: ${p.score.toLocaleString()}
                   </Text>
                 </View>
-                {stats && (
-                  <Text style={styles.gameOverStats}>
-                    {stats.correct} correct · {stats.incorrect} incorrect
-                  </Text>
-                )}
+                <Text style={styles.gameOverStats}>
+                  {p.correct} correct · {p.incorrect} incorrect
+                </Text>
               </View>
-            );
-          })}
+          ))}
           <ScoreChart players={chartPlayers} width={chartW} height={160} />
         </View>
       );

@@ -43,6 +43,15 @@ describe('createInitialState', () => {
     expect(state.currentTurnPlayerId).toBeNull();
     expect(state.buzzes).toEqual([]);
   });
+
+  it('initializes per-player stats fields', () => {
+    const state = createInitialState(['Alice', 'Bob']);
+    for (const p of Object.values(state.players)) {
+      expect(p.correct).toBe(0);
+      expect(p.incorrect).toBe(0);
+      expect(p.scoreHistory).toEqual([0]);
+    }
+  });
 });
 
 describe('SELECT_CLUE', () => {
@@ -554,5 +563,105 @@ describe('GAME_OVER', () => {
 
     expect(state.status).toBe('GAME_OVER');
     expect(state.burnedClueIds).toHaveLength(30);
+  });
+});
+
+describe('per-player stats', () => {
+  it('increments correct count and pushes scoreHistory on correct answer', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = bothAnswered(state, 1, 400);
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: true });
+
+    expect(state.players['bob']!.correct).toBe(1);
+    expect(state.players['bob']!.incorrect).toBe(0);
+    expect(state.players['bob']!.scoreHistory).toEqual([0, 400]);
+    // Other player gets a flat history point
+    expect(state.players['alice']!.scoreHistory).toEqual([0, 0]);
+    expect(state.players['alice']!.correct).toBe(0);
+  });
+
+  it('increments incorrect count on wrong answer when clue burns', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = bothAnswered(state, 1, 200);
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'alice', correct: false });
+
+    expect(state.players['bob']!.incorrect).toBe(1);
+    expect(state.players['alice']!.incorrect).toBe(1);
+    expect(state.players['bob']!.scoreHistory).toEqual([0, -200]);
+    expect(state.players['alice']!.scoreHistory).toEqual([0, -200]);
+  });
+
+  it('increments incorrect for first wrong buzzer without history point (clue not burned)', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = bothAnswered(state, 1, 200);
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
+
+    // Bob is incorrect but clue is still live — no scoreHistory push yet
+    expect(state.players['bob']!.incorrect).toBe(1);
+    expect(state.players['bob']!.scoreHistory).toEqual([0]); // unchanged
+    expect(state.players['alice']!.scoreHistory).toEqual([0]); // unchanged
+    expect(state.status).toBe('REVEAL'); // alice on the stand
+  });
+
+  it('correct after wrong: both get stats and history updated on burn', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = bothAnswered(state, 1, 200);
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'alice', correct: true });
+
+    expect(state.players['bob']!.incorrect).toBe(1);
+    expect(state.players['bob']!.score).toBe(-200);
+    expect(state.players['alice']!.correct).toBe(1);
+    expect(state.players['alice']!.score).toBe(200);
+    // scoreHistory: bob got no point on his wrong (clue still live), alice's correct burns it
+    expect(state.players['alice']!.scoreHistory).toEqual([0, 200]);
+    expect(state.players['bob']!.scoreHistory).toEqual([0, -200]);
+  });
+
+  it('pushes flat scoreHistory on DISMISS_CLUE (nobody buzzed)', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'TIMEOUT' });
+    state = reducer(state, { type: 'DISMISS_CLUE' });
+
+    expect(state.players['alice']!.scoreHistory).toEqual([0, 0]);
+    expect(state.players['bob']!.scoreHistory).toEqual([0, 0]);
+    expect(state.players['alice']!.correct).toBe(0);
+    expect(state.players['alice']!.incorrect).toBe(0);
+  });
+
+  it('does NOT push scoreHistory on SKIP_CLUE (board skip)', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = reducer(state, { type: 'SKIP_CLUE', playerId: 'alice', clueId: 7 });
+
+    expect(state.players['alice']!.scoreHistory).toEqual([0]);
+    expect(state.players['bob']!.scoreHistory).toEqual([0]);
+  });
+
+  it('accumulates stats across multiple clues', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+
+    // Clue 1: bob correct (alice picks since no turn set yet)
+    state = bothAnswered(state, 1, 200);
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: true });
+    expect(state.currentTurnPlayerId).toBe('bob');
+
+    // Clue 2: bob wrong, alice correct (bob picks since he won clue 1)
+    state = openClue(state, 'bob', 2, 400);
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    state = reducer(state, { type: 'BUZZ', playerId: 'alice' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice' });
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'alice', correct: true });
+
+    expect(state.players['bob']!.correct).toBe(1);
+    expect(state.players['bob']!.incorrect).toBe(1);
+    expect(state.players['alice']!.correct).toBe(1);
+    expect(state.players['alice']!.incorrect).toBe(0);
+
+    expect(state.players['bob']!.scoreHistory).toEqual([0, 200, -200]);
+    expect(state.players['alice']!.scoreHistory).toEqual([0, 0, 400]);
   });
 });

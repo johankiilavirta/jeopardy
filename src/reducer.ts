@@ -4,7 +4,7 @@ export function createInitialState(playerNames: string[], totalClues = 30): Game
   const players: Record<string, Player> = {};
   for (const name of playerNames) {
     const id = name.toLowerCase().replace(/\s+/g, '-');
-    players[id] = { id, name, score: 0 };
+    players[id] = { id, name, score: 0, correct: 0, incorrect: 0, scoreHistory: [0] };
   }
   return {
     status: 'CHOOSE_CLUE',
@@ -201,13 +201,27 @@ function handleJudgeAnswer(state: GameState, action: Extract<Action, { type: 'JU
 
   if (action.correct) {
     // Correct: award points, burn clue, winner picks next
+    const newScore = player.score + state.activeClue.value;
+    const updatedPlayers: Record<string, Player> = {};
+    for (const p of Object.values(state.players)) {
+      if (p.id === player.id) {
+        updatedPlayers[p.id] = {
+          ...p,
+          score: newScore,
+          correct: p.correct + 1,
+          scoreHistory: [...p.scoreHistory, newScore],
+        };
+      } else {
+        updatedPlayers[p.id] = {
+          ...p,
+          scoreHistory: [...p.scoreHistory, p.score],
+        };
+      }
+    }
     return {
       ...state,
       status: checkGameOver(state) ? 'GAME_OVER' : 'CHOOSE_CLUE',
-      players: {
-        ...state.players,
-        [player.id]: { ...player, score: player.score + state.activeClue.value },
-      },
+      players: updatedPlayers,
       currentTurnPlayerId: player.id,
       activeClue: null,
       buzzes: [],
@@ -223,15 +237,29 @@ function handleJudgeAnswer(state: GameState, action: Extract<Action, { type: 'JU
   };
 
   const scoreChange = action.penalty !== false ? -state.activeClue.value : 0;
-  const updatedPlayers = {
-    ...state.players,
-    [player.id]: { ...player, score: player.score + scoreChange },
-  };
+  const judgedNewScore = player.score + scoreChange;
 
   // Any unjudged buzzer left? If not, burn the clue — original picker keeps turn.
   const anyLeft = state.buzzes.some(b => !updatedClue.failedPlayerIds.includes(b.playerId));
 
   if (!anyLeft) {
+    // All buzzers exhausted — burn clue, push scoreHistory for everyone
+    const updatedPlayers: Record<string, Player> = {};
+    for (const p of Object.values(state.players)) {
+      if (p.id === player.id) {
+        updatedPlayers[p.id] = {
+          ...p,
+          score: judgedNewScore,
+          incorrect: p.incorrect + 1,
+          scoreHistory: [...p.scoreHistory, judgedNewScore],
+        };
+      } else {
+        updatedPlayers[p.id] = {
+          ...p,
+          scoreHistory: [...p.scoreHistory, p.score],
+        };
+      }
+    }
     return {
       ...state,
       status: checkGameOverWith(state, updatedClue.id) ? 'GAME_OVER' : 'CHOOSE_CLUE',
@@ -244,7 +272,16 @@ function handleJudgeAnswer(state: GameState, action: Extract<Action, { type: 'JU
     };
   }
 
-  // Stay in REVEAL — judgedPlayerId now selects the next buzzer in order
+  // Stay in REVEAL — judgedPlayerId now selects the next buzzer in order.
+  // Increment incorrect for the judged player only — clue isn't burned yet, no history point.
+  const updatedPlayers = {
+    ...state.players,
+    [player.id]: {
+      ...player,
+      score: judgedNewScore,
+      incorrect: player.incorrect + 1,
+    },
+  };
   return {
     ...state,
     players: updatedPlayers,
@@ -278,9 +315,18 @@ function handleDismissClue(state: GameState): GameState {
   if (!state.activeClue) return state;
 
   // Linger is over. Burn the clue, original picker keeps turn.
+  // Push current scores to scoreHistory for the flat segment (no score change).
+  const updatedPlayers: Record<string, Player> = {};
+  for (const p of Object.values(state.players)) {
+    updatedPlayers[p.id] = {
+      ...p,
+      scoreHistory: [...p.scoreHistory, p.score],
+    };
+  }
   return {
     ...state,
     status: checkGameOverWith(state, state.activeClue.id) ? 'GAME_OVER' : 'CHOOSE_CLUE',
+    players: updatedPlayers,
     currentTurnPlayerId: state.clueSelectPlayerId,
     activeClue: null,
     buzzes: [],
