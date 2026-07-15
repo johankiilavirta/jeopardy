@@ -116,6 +116,10 @@ export default function App() {
   const sessionRef = useRef<SavedSession | null>(null);
   /** Snapshot to seed the next started game with (set by RESUME GAME). */
   const pendingResumeRef = useRef<SavedSnapshot | null>(null);
+  /** Game screen waiting behind the lobby fade-out (both host and joiner
+   *  fade once the first STATE_UPDATE is in, then swap). */
+  const pendingGameScreenRef = useRef<AppScreen | null>(null);
+  const [lobbyFadingOut, setLobbyFadingOut] = useState(false);
   const reconnectCtlRef = useRef<{ cancelled: boolean; timer: ReturnType<typeof setTimeout> | null } | null>(null);
   const startReconnectRef = useRef<(session: SavedSession) => void>(() => {});
 
@@ -274,6 +278,8 @@ export default function App() {
     cancelReconnect();
     disconnect();
     pendingResumeRef.current = resume ?? null;
+    pendingGameScreenRef.current = null;
+    setLobbyFadingOut(false);
     sessionRef.current = null;
     if (PERSISTENCE_ENABLED) void clearSession();
     setLobbyError(null);
@@ -361,10 +367,16 @@ export default function App() {
             // Mount the game screen only once the first STATE_UPDATE is in,
             // so NetworkedGame's mount-time animation decisions (category
             // intro, DJ board flash) always see the real game state instead
-            // of racing it.
+            // of racing it. From the lobby, fade it out first so host and
+            // joiner get the same transition.
             if (!gameMounted) {
               gameMounted = true;
-              setScreen(gameScreen);
+              if (screenRef.current.type === 'lobby') {
+                pendingGameScreenRef.current = gameScreen;
+                setLobbyFadingOut(true);
+              } else {
+                setScreen(gameScreen);
+              }
             }
           });
           const board = (msg.board as GameData) ?? null;
@@ -447,6 +459,16 @@ export default function App() {
     });
   }, []);
 
+  /** Lobby finished fading out — mount the game screen waiting behind it. */
+  const handleLobbyFadeOutDone = useCallback(() => {
+    setLobbyFadingOut(false);
+    const next = pendingGameScreenRef.current;
+    pendingGameScreenRef.current = null;
+    // Guard: a LEAVE mid-fade already navigated away; don't drag the player
+    // back into the game.
+    if (next && screenRef.current.type === 'lobby') setScreen(next);
+  }, []);
+
   const handleNewGame = useCallback(() => connectAndDo('create'), [connectAndDo]);
 
   /** RESUME GAME: host a fresh room seeded with the snapshot on this device. */
@@ -481,6 +503,8 @@ export default function App() {
     disconnect();
     sessionRef.current = null;
     pendingResumeRef.current = null;
+    pendingGameScreenRef.current = null;
+    setLobbyFadingOut(false);
     if (PERSISTENCE_ENABLED) void clearSession();
     refreshResumeAvailable();
     setScreen({ type: 'menu' });
@@ -609,6 +633,8 @@ export default function App() {
             visibleCategories={visibleCategories}
             onVisibleCategoriesChange={setVisibleCategories}
             error={lobbyError}
+            fadeOut={lobbyFadingOut}
+            onFadeOutDone={handleLobbyFadeOutDone}
           />
         );
       case 'game':

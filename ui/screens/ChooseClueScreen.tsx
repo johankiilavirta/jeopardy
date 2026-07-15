@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import { Animated, StyleSheet, View } from 'react-native';
 import type { GameState } from '../../src/types';
 import { Board } from '../components/Board';
 import type { CellRect } from '../components/BoardCell';
@@ -45,14 +45,33 @@ export function ChooseClueScreen({
   // onLayout (not useWindowDimensions) keys off the size the board actually
   // gets, which is correct even when window metrics are stale at launch.
   const [boardKey, setBoardKey] = useState<string | null>(null);
+  const boardKeyRef = useRef<string | null>(null);
+
+  // The board's fonts settle over several frames of onLayout measurements,
+  // so the whole screen (board AND score bar) stays hidden until Board
+  // reports ready, then fades in as one fully-formed unit. A size-change
+  // remount (rotation) re-hides for a fresh reveal.
+  const revealOpacity = useRef(new Animated.Value(0)).current;
+  const revealedRef = useRef(false);
+  const handleBoardReady = useCallback(() => {
+    if (revealedRef.current) return;
+    revealedRef.current = true;
+    Animated.timing(revealOpacity, { toValue: 1, duration: 220, useNativeDriver: true }).start();
+  }, [revealOpacity]);
 
   return (
-    <View style={styles.screen}>
+    <Animated.View style={[styles.screen, { opacity: revealOpacity }]}>
       <View
         style={styles.boardWrap}
         onLayout={e => {
           const { width, height } = e.nativeEvent.layout;
-          setBoardKey(`${Math.round(width)}x${Math.round(height)}`);
+          const key = `${Math.round(width)}x${Math.round(height)}`;
+          if (boardKeyRef.current !== null && boardKeyRef.current !== key) {
+            revealedRef.current = false;
+            revealOpacity.setValue(0);
+          }
+          boardKeyRef.current = key;
+          setBoardKey(key);
         }}
       >
         {boardKey !== null && (
@@ -64,6 +83,7 @@ export function ChooseClueScreen({
             onSelectClue={onSelectClue}
             onSkipClue={onSkipClue}
             boardAnimKey={boardAnimKey}
+            onReady={handleBoardReady}
           />
         )}
       </View>
@@ -77,7 +97,7 @@ export function ChooseClueScreen({
           animationsEnabled={animationsEnabled}
         />
       </View>
-    </View>
+    </Animated.View>
   );
 }
 

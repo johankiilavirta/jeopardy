@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Pressable,
@@ -42,6 +42,10 @@ interface LobbyScreenProps {
   visibleCategories?: number | undefined;
   onVisibleCategoriesChange?: ((n: number) => void) | undefined;
   error?: string | null;
+  /** The game is ready to mount — fade the lobby out, then hand off. Runs on
+   *  host and joiner alike so the transition looks the same on both. */
+  fadeOut?: boolean;
+  onFadeOutDone?: () => void;
 }
 
 const MAX_PLAYERS = 2;
@@ -57,22 +61,25 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const [seasonNumber, setSeasonNumber] = useState<number | null>(null);
   const [gameInfoStatus, setGameInfoStatus] = useState<'idle' | 'loading' | 'not-found'>('idle');
 
-  // Animation for fading out the lobby
+  // Fade the lobby out when App signals the game is ready to mount (first
+  // STATE_UPDATE received) — not on the START press, which would delay the
+  // start-game send and only ever play on the host's device.
   const contentOpacity = useRef(new Animated.Value(1)).current;
-  const handleStartPress = useCallback(() => {
-    if (!canStart) return;
+  const fadeStartedRef = useRef(false);
+  useEffect(() => {
+    if (!props.fadeOut || fadeStartedRef.current) return;
+    fadeStartedRef.current = true;
     if (props.animationsEnabled === false) {
-      props.onStart();
+      props.onFadeOutDone?.();
       return;
     }
     Animated.timing(contentOpacity, {
       toValue: 0,
       duration: 250,
       useNativeDriver: true,
-    }).start(() => {
-      props.onStart();
-    });
-  }, [canStart, props, contentOpacity]);
+    }).start(() => props.onFadeOutDone?.());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.fadeOut]);
 
   useEffect(() => {
     const id = props.gameId;
@@ -176,7 +183,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
             <>
               <Pressable
                 style={[styles.startButton, !canStart && styles.startButtonDisabled]}
-                onPress={handleStartPress}
+                onPress={props.onStart}
                 disabled={!canStart}
               >
                 <Text style={[styles.startButtonText, !canStart && styles.startButtonTextDisabled]}>
