@@ -222,30 +222,7 @@ describe('GameServer', () => {
     expect(lastStateFrom(p1Messages).state.status).toBe('CHOOSE_CLUE');
   });
 
-  it('undo back into CLUE_READING re-arms the reading timer', () => {
-    const { timer, fire, pendingMs } = createMockTimer();
-    const host = new MockTransport('host');
-    const server = createServer(host, ['Alice', 'Bob'], { timer });
-
-    const p1 = new MockTransport('player1');
-    MockTransport.link(host, p1);
-    MockTransport.link(host, new MockTransport('player2'));
-
-    p1.send('host', selectClueMsg);
-    fire(); // reading lockout ends
-    expect(server.history.current.status).toBe('BUZZ_OPEN');
-
-    p1.send('host', JSON.stringify({ type: 'UNDO' }));
-    expect(server.history.current.status).toBe('CLUE_READING');
-    expect(pendingMs().length).toBe(1);
-    expect(pendingMs()[0]).toBeGreaterThanOrEqual(5000);
-    expect(pendingMs()[0]).toBeLessThanOrEqual(9000);
-
-    fire(); // re-armed reading timer reopens the window
-    expect(server.history.current.status).toBe('BUZZ_OPEN');
-  });
-
-  it('undo clears personal timers and rebuilds fresh', () => {
+  it('undo skips intermediate states and stops at CHOOSE_CLUE', () => {
     const { timer, fire, pendingMs, count } = createMockTimer();
     const host = new MockTransport('host');
     const server = createServer(host, ['Alice', 'Bob'], { timer });
@@ -260,12 +237,12 @@ describe('GameServer', () => {
     p2.send('host', JSON.stringify({ type: 'BUZZ' }));
     expect(pendingMs()).toEqual([20000, 20000]); // window + bob's typing timer
 
-    // Undo the buzz: bob's personal timer must vanish, the window timer
-    // restarts fresh (no timestamps in state — documented tradeoff).
+    // Undo skips ANSWERING/BUZZ_OPEN/CLUE_READING back to the board
     p1.send('host', JSON.stringify({ type: 'UNDO' }));
+    expect(server.history.current.status).toBe('CHOOSE_CLUE');
     expect(server.history.current.buzzes).toEqual([]);
-    expect(pendingMs()).toEqual([20000]);
-    expect(count()).toBe(1);
+    expect(pendingMs()).toEqual([]);
+    expect(count()).toBe(0);
   });
 
   it('runs the full phase cascade: reading → buzz window → expired → board', () => {
@@ -472,7 +449,7 @@ describe('GameServer', () => {
     ]);
   });
 
-  it('SET_ANSWER is transient: undo skips keystrokes back to the buzz', () => {
+  it('SET_ANSWER is transient: undo skips keystrokes and the whole clue', () => {
     const { timer, fire } = createMockTimer();
     const host = new MockTransport('host');
     const server = createServer(host, ['Alice', 'Bob'], { timer });
@@ -490,9 +467,9 @@ describe('GameServer', () => {
     p2.send('host', JSON.stringify({ type: 'SET_ANSWER', text: 'PLUTO' }));
 
     p1.send('host', JSON.stringify({ type: 'UNDO' }));
-    // One undo reverts the buzz (and all typing with it), not one letter
+    // Undo rewinds the entire clue back to the board
+    expect(server.history.current.status).toBe('CHOOSE_CLUE');
     expect(server.history.current.buzzes).toEqual([]);
-    expect(server.history.current.status).toBe('BUZZ_OPEN');
   });
 
   it('full happy path: both buzz, both answer, judging walks buzz order', () => {

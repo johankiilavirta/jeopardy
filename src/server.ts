@@ -212,7 +212,19 @@ export function createServer(
 
     if (parsed.type === 'UNDO') {
       if (!canUndo(server.history)) return;
+      const prev = server.history;
+      // Step back once to leave the current state, then skip intermediate
+      // states (CLUE_READING, BUZZ_OPEN, ANSWERING, CLUE_EXPIRED) and
+      // stop at the next meaningful boundary: CHOOSE_CLUE or REVEAL.
       server.history = undo(server.history);
+      while (
+        canUndo(server.history) &&
+        server.history.current.status !== 'CHOOSE_CLUE' &&
+        server.history.current.status !== 'REVEAL'
+      ) {
+        server.history = undo(server.history);
+      }
+      if (server.history === prev) return;
       clearPhaseTimer();
       clearAnswerTimers();
       armPhaseTimer();
@@ -223,7 +235,16 @@ export function createServer(
 
     if (parsed.type === 'REDO') {
       if (!canRedo(server.history)) return;
+      // Step forward once, then skip intermediate states and stop at
+      // the next CHOOSE_CLUE or REVEAL.
       server.history = redo(server.history);
+      while (
+        canRedo(server.history) &&
+        server.history.current.status !== 'CHOOSE_CLUE' &&
+        server.history.current.status !== 'REVEAL'
+      ) {
+        server.history = redo(server.history);
+      }
       clearPhaseTimer();
       clearAnswerTimers();
       armPhaseTimer();
