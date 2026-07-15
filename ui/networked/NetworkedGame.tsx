@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { sendAction } from '../../src/client';
 import { computeReadingMs } from '../../src/readingTime';
 import { getBuzz, judgedPlayerId } from '../../src/reducer';
@@ -127,12 +127,41 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   if (gameState && gameState.status !== previousStatusRef.current) {
     if (gameState.status === 'BUZZ_OPEN') {
       buzzWindowDeadlineRef.current = Date.now() + PHASE_TIMERS.BUZZ_OPEN!.ms;
+    } else if (gameState.status === 'FINAL_JEOPARDY_WAGER' || gameState.status === 'FINAL_JEOPARDY_ANSWER') {
+      buzzWindowDeadlineRef.current = Date.now() + 30000;
     }
     previousStatusRef.current = gameState.status;
   }
 
+  const [fjKeyboardReady, setFjKeyboardReady] = useState(true);
+  useEffect(() => {
+    if (gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') {
+      setFjKeyboardReady(false);
+      const timer = setTimeout(() => setFjKeyboardReady(true), 2000);
+      return () => clearTimeout(timer);
+    } else {
+      setFjKeyboardReady(true);
+    }
+  }, [gameState?.status]);
+
+  const fjFadeAnim = useRef(new Animated.Value(0)).current;
+  const [prevStatus, setPrevStatus] = useState<GameStatus | null>(null);
+
+  useEffect(() => {
+    if (gameState?.status === 'FINAL_JEOPARDY_WAGER' && prevStatus !== 'FINAL_JEOPARDY_WAGER') {
+      fjFadeAnim.setValue(1);
+      Animated.timing(fjFadeAnim, {
+        toValue: 0,
+        duration: 1500,
+        useNativeDriver: true,
+      }).start();
+    }
+    setPrevStatus(gameState?.status ?? null);
+  }, [gameState?.status, fjFadeAnim, prevStatus]);
+
   const localBuzz = gameState && playerId ? getBuzz(gameState, playerId) : undefined;
   const typing =
+    fjKeyboardReady &&
     !!localBuzz &&
     !localBuzz.locked &&
     (gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING' || gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER');
@@ -191,9 +220,10 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const lights = useMemo(() => {
     const show = gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING' || gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER';
     if (!show || buzzWindowDeadlineRef.current == null) return null;
+    const isFinal = gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER';
     return {
       deadline: buzzWindowDeadlineRef.current,
-      durationMs: PHASE_TIMERS.BUZZ_OPEN!.ms,
+      durationMs: isFinal ? 30000 : PHASE_TIMERS.BUZZ_OPEN!.ms,
       flash: true,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -228,6 +258,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   }, [gameState?.status, gameState?.activeClue?.id, playerId]);
 
   if (!gameState || !playerId) {
+    console.log('Stuck on connecting! gameState:', !!gameState, 'playerId:', playerId);
     return (
       <View style={styles.connecting}>
         <Text style={styles.connectingText}>Connecting...</Text>
@@ -320,9 +351,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
         {gameState.activeClue && (
           <View style={StyleSheet.absoluteFill}>
-            {(gameState.status === 'FINAL_JEOPARDY_WAGER' || gameState.status === 'FINAL_JEOPARDY_ANSWER' || (gameState.status === 'REVEAL' && gameState.activeClue.id === -1)) && (
-              <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]} />
-            )}
             <ExpandingClueOverlay
               key={gameState.activeClue.id}
               animate={animationsEnabled}
@@ -364,6 +392,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               }
             />
           </ExpandingClueOverlay>
+          {/* Black overlay for fade transition into Final Jeopardy */}
+          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: fjFadeAnim }]} />
           </View>
         )}
 

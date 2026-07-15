@@ -32,7 +32,7 @@ function arg(name: string, fallback: string): string {
   return hit ? hit.slice(name.length + 3) : fallback;
 }
 
-const room = arg('room', '42');
+const room = arg('room', '123');
 const players = arg('players', '1');
 const game = arg('game', '1');
 

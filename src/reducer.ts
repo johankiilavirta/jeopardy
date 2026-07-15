@@ -3,8 +3,16 @@ import type { GameState, Action, Buzz, Player } from './types.js';
 export function createInitialState(playerNames: string[], totalClues = 30, finalClue?: { category: string; text: string; answer: string } | null): GameState {
   const players: Record<string, Player> = {};
   for (const name of playerNames) {
-    const id = name.toLowerCase().replace(/\s+/g, '-');
-    players[id] = { id, name, score: 0, correct: 0, incorrect: 0, scoreHistory: [0] };
+    let id = name.trim().toLowerCase().replace(/\s+/g, '-') || 'player';
+    let suffix = '';
+    let counter = 1;
+    while (players[id + suffix]) {
+      counter++;
+      suffix = `-${counter}`;
+    }
+    const finalId = id + suffix;
+    const finalName = name.trim() ? (counter === 1 ? name : `${name} ${counter}`) : `Player ${Math.floor(Math.random() * 1000)}`;
+    players[finalId] = { id: finalId, name: finalName, score: 0, correct: 0, incorrect: 0, scoreHistory: [0] };
   }
   return {
     status: 'CHOOSE_CLUE',

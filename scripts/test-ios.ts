@@ -18,7 +18,7 @@ const localIp = getLocalIp();
 const env = {
   ...process.env,
   RELAY_ALLOW_SOLO: '0',
-  EXPO_PUBLIC_ROOM: '42',
+  EXPO_PUBLIC_ROOM: '123',
   EXPO_PUBLIC_PLAYERS: '2',
   EXPO_PUBLIC_GAME: '1',
   FAST_FORWARD: '1',
@@ -52,11 +52,17 @@ setTimeout(() => {
     const parsed = JSON.parse(devicesOutput);
     const devices = Object.values(parsed.devices).flat() as any[];
     
-    // Find booted devices
-    const booted = devices.filter(d => d.state === 'Booted');
+    let booted = devices.filter(d => d.state === 'Booted' || d.state === 'booted');
     
     if (booted.length < 2) {
-      console.log(`\n[!] You only have ${booted.length} simulator(s) booted. Please boot another simulator using 'xcrun simctl boot <UUID>' or Simulator.app for the full 2-player experience.\n`);
+      console.log(`\n[!] Only ${booted.length} simulator(s) booted. Booting up to 2 iPhone simulators automatically...\n`);
+      const toBoot = devices.filter(d => (d.state === 'Shutdown' || d.state === 'shutdown') && d.name.includes('iPhone')).slice(0, 2 - booted.length);
+      for (const d of toBoot) {
+        console.log(`   Booting ${d.name}...`);
+        try { execSync(`xcrun simctl boot ${d.udid}`); } catch (e) { /* ignore */ }
+      }
+      const newOutput = execSync('xcrun simctl list devices available --json', { encoding: 'utf8' });
+      booted = (Object.values(JSON.parse(newOutput).devices).flat() as any[]).filter(d => d.state === 'Booted' || d.state === 'booted');
     }
 
     const expUrl = `exp://${localIp}:8081`;

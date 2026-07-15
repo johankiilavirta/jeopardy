@@ -12,9 +12,6 @@ const TOTAL_CLUES_DEMO = 30; // 6×5 fallback board
 /** How long an in-progress room survives with zero players connected. */
 const EMPTY_ROOM_GRACE_MS = 5 * 60 * 1000;
 
-/** How long an in-progress room survives with zero players connected. */
-const EMPTY_ROOM_GRACE_MS = 5 * 60 * 1000;
-
 // --- Game data lookup (runs server-side, loads files on demand) ---
 // Assumes the relay is started from the project root (npm run relay).
 
