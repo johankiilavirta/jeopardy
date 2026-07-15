@@ -103,6 +103,39 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     introShownRef.current.add(2); // Skip round 2 category intro as well
   }
 
+  // --- Per-player stats tracking (derived from score diffs on each burn) ---
+  interface PlayerStats { correct: number; incorrect: number; scoreHistory: number[] }
+  const statsRef = useRef<Record<string, PlayerStats>>({});
+  const prevScoresRef = useRef<Record<string, number> | null>(null);
+  const prevBurnedCountRef = useRef(0);
+
+  if (gameState) {
+    const burnedCount = gameState.burnedClueIds.length;
+    // Initialize stats for any new player
+    for (const p of Object.values(gameState.players)) {
+      if (!statsRef.current[p.id]) {
+        statsRef.current[p.id] = { correct: 0, incorrect: 0, scoreHistory: [p.score] };
+      }
+    }
+    // A clue just resolved: burnedClueIds grew
+    if (prevScoresRef.current && burnedCount > prevBurnedCountRef.current) {
+      for (const p of Object.values(gameState.players)) {
+        const prev = prevScoresRef.current[p.id] ?? 0;
+        const stats = statsRef.current[p.id]!;
+        if (p.score > prev) {
+          stats.correct++;
+        } else if (p.score < prev) {
+          stats.incorrect++;
+        }
+        stats.scoreHistory.push(p.score);
+      }
+    }
+    prevBurnedCountRef.current = burnedCount;
+    prevScoresRef.current = Object.fromEntries(
+      Object.values(gameState.players).map(p => [p.id, p.score]),
+    );
+  }
+
   const dispatch = useCallback((action: Action) => {
     sendAction(transport, serverPeerId, action as unknown as Record<string, unknown>);
   }, [transport, serverPeerId]);
@@ -406,11 +439,21 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         <Text style={styles.gameOverText}>GAME OVER</Text>
         {Object.values(gameState.players)
           .sort((a, b) => b.score - a.score)
-          .map(p => (
-            <Text key={p.id} style={styles.gameOverScore}>
-              {p.name}: ${p.score.toLocaleString()}
-            </Text>
-          ))}
+          .map(p => {
+            const stats = statsRef.current[p.id];
+            return (
+              <View key={p.id} style={styles.gameOverPlayerRow}>
+                <Text style={styles.gameOverScore}>
+                  {p.name}: ${p.score.toLocaleString()}
+                </Text>
+                {stats && (
+                  <Text style={styles.gameOverStats}>
+                    {stats.correct} correct · {stats.incorrect} incorrect
+                  </Text>
+                )}
+              </View>
+            );
+          })}
       </View>
     )}
     </View>
@@ -482,10 +525,19 @@ const styles = StyleSheet.create({
     color: colors.boardValue,
     marginBottom: 20,
   },
+  gameOverPlayerRow: {
+    alignItems: 'center',
+    marginVertical: 8,
+  },
   gameOverScore: {
     fontFamily: typeTokens.ui700,
     fontSize: 20,
     color: '#fff',
-    marginVertical: 4,
+  },
+  gameOverStats: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 2,
   },
 });
