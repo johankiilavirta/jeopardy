@@ -28,7 +28,7 @@ let _gameIndex: GameIndex | null = null;
 
 interface RawClue { value: number; text: string; answer: string }
 interface RawCategory { name: string; clues: RawClue[] }
-interface RawGame { gameNumber: number; airDate: string; round1: RawCategory[]; round2: RawCategory[] }
+interface RawGame { gameNumber: number; airDate: string; round1: RawCategory[]; round2: RawCategory[]; final?: { category: string; text: string; answer: string } }
 const _seasonCache = new Map<string, RawGame[]>();
 
 function getGameIndex(): GameIndex {
@@ -71,6 +71,7 @@ export interface FullGameData {
   season: number;
   round1: CategoryData[];
   round2: CategoryData[];
+  final?: { category: string; text: string; answer: string };
 }
 
 function lookupGame(gameNumber: number): GameInfo | null {
@@ -111,6 +112,7 @@ function lookupFullGame(gameNumber: number): FullGameData | null {
       season: seasonNumber,
       round1: game.round1,
       round2: game.round2,
+      final: game.final,
     };
   } catch {
     return null;
@@ -387,6 +389,7 @@ function startServer(portIndex: number): void {
           createServer(serverTransport, playerNames, {
             totalClues,
             ...(resumeState ? { initialState: resumeState } : {}),
+            finalClue: gameData?.final ?? null,
           });
 
           const serverPeerId = 'server';

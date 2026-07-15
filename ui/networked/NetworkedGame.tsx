@@ -135,7 +135,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const typing =
     !!localBuzz &&
     !localBuzz.locked &&
-    (gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING');
+    (gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING' || gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER');
 
   // Every STATE_UPDATE deserializes a fresh object tree, so identity can't
   // signal change here. Key the board pipeline on the burned list's content
@@ -189,7 +189,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // Stable identity so the memoized ActivationLights can skip re-rendering
   // its 171 lamps on renders that don't change the timer window.
   const lights = useMemo(() => {
-    const show = gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING';
+    const show = gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING' || gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER';
     if (!show || buzzWindowDeadlineRef.current == null) return null;
     return {
       deadline: buzzWindowDeadlineRef.current,
@@ -319,21 +319,29 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         )}
 
         {gameState.activeClue && (
-          <ExpandingClueOverlay
-            key={gameState.activeClue.id}
-            animate={animationsEnabled}
-            bottomInset={PLAYER_BAR_HEIGHT}
-            fromRect={
-              selectedCellRef.current?.clueId === gameState.activeClue.id
-                ? selectedCellRef.current.rect
-                : null
-            }
-          >
+          <View style={StyleSheet.absoluteFill}>
+            {(gameState.status === 'FINAL_JEOPARDY_WAGER' || gameState.status === 'FINAL_JEOPARDY_ANSWER' || (gameState.status === 'REVEAL' && gameState.activeClue.id === -1)) && (
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]} />
+            )}
+            <ExpandingClueOverlay
+              key={gameState.activeClue.id}
+              animate={animationsEnabled}
+              bottomInset={PLAYER_BAR_HEIGHT}
+              fromRect={
+                selectedCellRef.current?.clueId === gameState.activeClue.id
+                  ? selectedCellRef.current.rect
+                  : null
+              }
+            >
             <ClueScreen
               clue={gameState.activeClue}
               canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz}
               lights={lights}
               showKeyboard={typing}
+              keyboardType={gameState.status === 'FINAL_JEOPARDY_WAGER' ? 'number' : 'text'}
+              inputPrefix={gameState.status === 'FINAL_JEOPARDY_WAGER' ? '$' : ''}
+              placeholder={gameState.status === 'FINAL_JEOPARDY_WAGER' ? 'ENTER WAGER' : 'TYPE YOUR ANSWER'}
+              onMaxWager={gameState.status === 'FINAL_JEOPARDY_WAGER' ? () => handleAnswerChange(String(gameState.players[playerId].score)) : undefined}
               onSkip={() => {
                 if (gameState.activeClue) dispatch({ type: 'SKIP_CLUE', playerId, clueId: gameState.activeClue.id });
               }}
@@ -356,6 +364,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               }
             />
           </ExpandingClueOverlay>
+          </View>
         )}
 
         {gameState.status === 'REVEAL' && onStand && (

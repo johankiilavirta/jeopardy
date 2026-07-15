@@ -1,6 +1,6 @@
 import type { GameState, Action, Buzz, Player } from './types.js';
 
-export function createInitialState(playerNames: string[], totalClues = 30): GameState {
+export function createInitialState(playerNames: string[], totalClues = 30, finalClue?: { category: string; text: string; answer: string } | null): GameState {
   const players: Record<string, Player> = {};
   for (const name of playerNames) {
     const id = name.toLowerCase().replace(/\s+/g, '-');
@@ -15,6 +15,7 @@ export function createInitialState(playerNames: string[], totalClues = 30): Game
     buzzes: [],
     burnedClueIds: [],
     totalClues,
+    finalClue: finalClue ?? null,
   };
 }
 
@@ -136,7 +137,7 @@ function handleBuzz(state: GameState, action: Extract<Action, { type: 'BUZZ' }>)
 }
 
 function handleSetAnswer(state: GameState, action: Extract<Action, { type: 'SET_ANSWER' }>): GameState {
-  if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING') return state;
+  if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING' && state.status !== 'FINAL_JEOPARDY_WAGER' && state.status !== 'FINAL_JEOPARDY_ANSWER') return state;
 
   const buzz = getBuzz(state, action.playerId);
   if (!buzz || buzz.locked) return state;
@@ -150,7 +151,7 @@ function handleSetAnswer(state: GameState, action: Extract<Action, { type: 'SET_
 }
 
 function handleLockAnswer(state: GameState, action: Extract<Action, { type: 'LOCK_ANSWER' }>): GameState {
-  if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING') return state;
+  if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING' && state.status !== 'FINAL_JEOPARDY_WAGER' && state.status !== 'FINAL_JEOPARDY_ANSWER') return state;
 
   const buzz = getBuzz(state, action.playerId);
   if (!buzz || buzz.locked) return state;
@@ -166,7 +167,34 @@ function handleLockAnswer(state: GameState, action: Extract<Action, { type: 'LOC
   // In solo mode (only 1 active player in the game), we reveal immediately when they lock.
   const activePlayers = Object.keys(state.players).filter(id => id !== 'opponent');
   const isSolo = activePlayers.length === 1;
-  const reveal = (state.status === 'ANSWERING' || isSolo) && buzzes.every(b => b.locked);
+  const reveal = (state.status === 'ANSWERING' || state.status === 'FINAL_JEOPARDY_WAGER' || state.status === 'FINAL_JEOPARDY_ANSWER' || isSolo) && buzzes.every(b => b.locked);
+
+  if (reveal && state.status === 'FINAL_JEOPARDY_WAGER') {
+    const finalWagers: Record<string, number> = {};
+    for (const b of buzzes) {
+      finalWagers[b.playerId] = parseInt(b.answer || '0', 10);
+    }
+    const nextBuzzes = activePlayers.map(id => ({ playerId: id, answer: '', locked: false }));
+    return {
+      ...state,
+      status: 'FINAL_JEOPARDY_ANSWER',
+      activeClue: {
+        ...state.activeClue!,
+        category: state.finalClue!.category,
+        text: state.finalClue!.text,
+      },
+      finalWagers,
+      buzzes: nextBuzzes,
+    };
+  }
+
+  if (reveal && state.status === 'FINAL_JEOPARDY_ANSWER') {
+    return {
+      ...state,
+      status: 'REVEAL',
+      buzzes,
+    };
+  }
 
   return {
     ...state,
@@ -176,7 +204,7 @@ function handleLockAnswer(state: GameState, action: Extract<Action, { type: 'LOC
 }
 
 function handleUnlockAnswer(state: GameState, action: Extract<Action, { type: 'UNLOCK_ANSWER' }>): GameState {
-  if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING') return state;
+  if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING' && state.status !== 'FINAL_JEOPARDY_WAGER' && state.status !== 'FINAL_JEOPARDY_ANSWER') return state;
 
   const buzz = getBuzz(state, action.playerId);
   if (!buzz || !buzz.locked) return state;
@@ -199,9 +227,11 @@ function handleJudgeAnswer(state: GameState, action: Extract<Action, { type: 'JU
   const player = state.players[action.playerId];
   if (!player) return state;
 
+  const wager = state.finalWagers?.[player.id] ?? state.activeClue.value;
+
   if (action.correct) {
     // Correct: award points, burn clue, winner picks next
-    const newScore = player.score + state.activeClue.value;
+    const newScore = player.score + wager;
     const updatedPlayers: Record<string, Player> = {};
     for (const p of Object.values(state.players)) {
       if (p.id === player.id) {
@@ -218,15 +248,13 @@ function handleJudgeAnswer(state: GameState, action: Extract<Action, { type: 'JU
         };
       }
     }
+    const isFinal = state.activeClue.id === -1;
     return {
       ...state,
-      status: checkGameOver(state) ? 'GAME_OVER' : 'CHOOSE_CLUE',
+      ...(isFinal ? { status: 'GAME_OVER', activeClue: null, buzzes: [], clueSelectPlayerId: null } : transitionFromBoard(state, undefined)),
       players: updatedPlayers,
       currentTurnPlayerId: player.id,
-      activeClue: null,
-      buzzes: [],
-      clueSelectPlayerId: null,
-      burnedClueIds: [...state.burnedClueIds, state.activeClue.id],
+      burnedClueIds: isFinal ? state.burnedClueIds : [...state.burnedClueIds, state.activeClue.id],
     };
   }
 
@@ -236,7 +264,7 @@ function handleJudgeAnswer(state: GameState, action: Extract<Action, { type: 'JU
     failedPlayerIds: [...state.activeClue.failedPlayerIds, action.playerId],
   };
 
-  const scoreChange = action.penalty !== false ? -state.activeClue.value : 0;
+  const scoreChange = action.penalty !== false ? -wager : 0;
   const judgedNewScore = player.score + scoreChange;
 
   // Any unjudged buzzer left? If not, burn the clue — original picker keeps turn.
@@ -260,15 +288,13 @@ function handleJudgeAnswer(state: GameState, action: Extract<Action, { type: 'JU
         };
       }
     }
+    const isFinal = updatedClue.id === -1;
     return {
       ...state,
-      status: checkGameOverWith(state, updatedClue.id) ? 'GAME_OVER' : 'CHOOSE_CLUE',
+      ...(isFinal ? { status: 'GAME_OVER', activeClue: null, buzzes: [], clueSelectPlayerId: null } : transitionFromBoard(state, updatedClue.id)),
       players: updatedPlayers,
       currentTurnPlayerId: state.clueSelectPlayerId,
-      activeClue: null,
-      buzzes: [],
-      clueSelectPlayerId: null,
-      burnedClueIds: [...state.burnedClueIds, updatedClue.id],
+      burnedClueIds: isFinal ? state.burnedClueIds : [...state.burnedClueIds, updatedClue.id],
     };
   }
 
@@ -325,12 +351,9 @@ function handleDismissClue(state: GameState): GameState {
   }
   return {
     ...state,
-    status: checkGameOverWith(state, state.activeClue.id) ? 'GAME_OVER' : 'CHOOSE_CLUE',
+    ...transitionFromBoard(state, state.activeClue.id),
     players: updatedPlayers,
     currentTurnPlayerId: state.clueSelectPlayerId,
-    activeClue: null,
-    buzzes: [],
-    clueSelectPlayerId: null,
     burnedClueIds: [...state.burnedClueIds, state.activeClue.id],
   };
 }
@@ -350,23 +373,34 @@ function handleSkipClue(state: GameState, action: Extract<Action, { type: 'SKIP_
 
   return {
     ...state,
-    status: checkGameOverWith(state, clueId) ? 'GAME_OVER' : 'CHOOSE_CLUE',
-    activeClue: null,
-    buzzes: [],
-    clueSelectPlayerId: null,
-    // When bailing out of an active clue, hand the turn back to its picker;
-    // otherwise leave the current turn untouched.
+    ...transitionFromBoard(state, clueId),
     currentTurnPlayerId: skippingActive ? state.clueSelectPlayerId : state.currentTurnPlayerId,
     burnedClueIds: [...state.burnedClueIds, clueId],
   };
 }
 
-function checkGameOver(state: GameState): boolean {
-  // +1 because we're about to burn a clue
-  return state.burnedClueIds.length + 1 >= state.totalClues;
-}
+function transitionFromBoard(state: GameState, burningClueId?: number): Partial<GameState> {
+  const isOver = burningClueId !== undefined 
+    ? (state.burnedClueIds.includes(burningClueId) ? state.burnedClueIds.length >= state.totalClues : state.burnedClueIds.length + 1 >= state.totalClues)
+    : state.burnedClueIds.length + 1 >= state.totalClues;
 
-function checkGameOverWith(state: GameState, clueId: number): boolean {
-  if (state.burnedClueIds.includes(clueId)) return state.burnedClueIds.length >= state.totalClues;
-  return state.burnedClueIds.length + 1 >= state.totalClues;
+  if (!isOver) {
+    return { status: 'CHOOSE_CLUE', activeClue: null, buzzes: [], clueSelectPlayerId: null };
+  }
+  
+  if (state.finalClue) {
+    const activePlayers = Object.keys(state.players).filter(id => id !== 'opponent');
+    const buzzes = activePlayers.map(id => ({ playerId: id, answer: '', locked: false }));
+    const wagerClue = {
+      id: -1,
+      category: 'FINAL JEOPARDY',
+      text: state.finalClue.category,
+      answer: state.finalClue.answer,
+      value: 0,
+      failedPlayerIds: [],
+    };
+    return { status: 'FINAL_JEOPARDY_WAGER', activeClue: wagerClue, buzzes, clueSelectPlayerId: null };
+  }
+  
+  return { status: 'GAME_OVER', activeClue: null, buzzes: [], clueSelectPlayerId: null };
 }

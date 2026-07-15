@@ -35,6 +35,8 @@ export interface ServerOptions {
    *  When set, `playerNames` is ignored — seats reattach to the state's
    *  players by name matching on connect. */
   initialState?: GameState;
+  /** Final Jeopardy clue if available */
+  finalClue?: { category: string; text: string; answer: string } | null;
 }
 
 /** Actions clients are allowed to send. Timer actions are server-only. */
@@ -52,8 +54,9 @@ export function createServer(
     dismissMs = 5000,
     answerMs = 20000,
     totalClues,
+    finalClue,
   } = options;
-  const initialState = options.initialState ?? createInitialState(playerNames, totalClues);
+  const initialState = options.initialState ?? createInitialState(playerNames, totalClues, finalClue);
   const server: GameServer = {
     history: createHistory(initialState),
     playerPeers: new Map(),
@@ -109,7 +112,7 @@ export function createServer(
    *  fires a LOCK_ANSWER without text — the last synced answer stands. */
   function syncAnswerTimers(): void {
     const state = server.history.current;
-    if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING') {
+    if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING' && state.status !== 'FINAL_JEOPARDY_WAGER' && state.status !== 'FINAL_JEOPARDY_ANSWER') {
       clearAnswerTimers();
       return;
     }
@@ -123,10 +126,10 @@ export function createServer(
     for (const buzz of state.buzzes) {
       if (!buzz.locked && !answerTimerIds.has(buzz.playerId)) {
         const playerId = buzz.playerId;
-        // Lock at the buzz window's deadline, not a fresh answerMs from now.
-        const remainingMs = buzzWindowOpenAt != null
+        const isFinal = state.status === 'FINAL_JEOPARDY_WAGER' || state.status === 'FINAL_JEOPARDY_ANSWER';
+        const remainingMs = isFinal ? 30000 : (buzzWindowOpenAt != null
           ? Math.max(50, Math.round((buzzWindowOpenAt + buzzerMs - Date.now()) / 100) * 100)
-          : answerMs;
+          : answerMs);
         answerTimerIds.set(playerId, timer.set(() => {
           answerTimerIds.delete(playerId);
           applyAction({ type: 'LOCK_ANSWER', playerId });

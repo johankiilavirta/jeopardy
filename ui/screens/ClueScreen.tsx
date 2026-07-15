@@ -12,6 +12,7 @@ import {
 import type { ActiveClue } from '../../src/types';
 import { ActivationLights, LIGHTS_REST_BOTTOM, LIGHTS_WIDTH_PCT } from '../components/ActivationLights';
 import { AnswerKeyboard } from '../components/AnswerKeyboard';
+import { NumberKeyboard } from '../components/NumberKeyboard';
 import { PLAYER_BAR_HEIGHT } from '../components/PlayerHeader';
 import { colors, shadow, type as typeTokens } from '../theme/tokens';
 
@@ -90,6 +91,14 @@ interface ClueScreenProps {
   /** Activation lights in the band under the card: flash on buzzer open,
    *  then drain outside-in until the deadline. Null/undefined hides them. */
   lights?: { deadline: number; durationMs: number; flash: boolean } | null | undefined;
+  /** The type of keyboard to show. Defaults to 'text'. */
+  keyboardType?: 'text' | 'number';
+  /** Called when MAX WAGER is pressed on the number keyboard */
+  onMaxWager?: (() => void) | undefined;
+  /** Prefix for the answer text (e.g. '$') */
+  inputPrefix?: string;
+  /** Placeholder when answer is empty */
+  placeholder?: string;
 }
 
 export function ClueScreen({
@@ -106,6 +115,10 @@ export function ClueScreen({
   reveal,
   onSkip,
   lights,
+  keyboardType = 'text',
+  onMaxWager,
+  inputPrefix = '',
+  placeholder = 'TYPE YOUR ANSWER',
 }: ClueScreenProps) {
   const { width, height } = useWindowDimensions();
   const pan = useRef(new Animated.Value(0)).current;
@@ -545,13 +558,17 @@ export function ClueScreen({
                   numberOfLines={1}
                   allowFontScaling={false}
                 >
-                  {answer || 'TYPE YOUR ANSWER'}
+                  {answer ? `${inputPrefix}${answer}` : placeholder}
                 </Text>
                 <Animated.View style={[styles.caret, { opacity: caretBlink }]} />
               </Animated.View>
               <View style={styles.keyDeck}>
                 <View style={styles.keyDeckInner}>
-                  <AnswerKeyboard onInsert={insertChar} onBackspace={backspaceChar} />
+                  {keyboardType === 'number' ? (
+                    <NumberKeyboard onInsert={insertChar} onBackspace={backspaceChar} onMaxWager={onMaxWager} />
+                  ) : (
+                    <AnswerKeyboard onInsert={insertChar} onBackspace={backspaceChar} />
+                  )}
                 </View>
               </View>
             </Pressable>

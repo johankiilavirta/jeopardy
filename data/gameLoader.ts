@@ -23,6 +23,7 @@ export interface GameData {
   airDate: string;
   round1: CategoryData[];
   round2: CategoryData[];
+  final?: { category: string; text: string; answer: string };
 }
 
 export interface GameIndex {
