@@ -263,6 +263,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     ) ?? null;
 
   return (
+    <View style={styles.root}>
     <SwipeUpMenu
       disabled={!!gameState.activeClue}
       renderMenu={showSettings => (
@@ -397,20 +398,22 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           </Pressable>
         )}
 
-        {gameState.status === 'GAME_OVER' && (
-          <View style={styles.gameOverOverlay}>
-            <Text style={styles.gameOverText}>GAME OVER</Text>
-            {Object.values(gameState.players)
-              .sort((a, b) => b.score - a.score)
-              .map(p => (
-                <Text key={p.id} style={styles.gameOverScore}>
-                  {p.name}: ${p.score.toLocaleString()}
-                </Text>
-              ))}
-          </View>
-        )}
       </View>
     </SwipeUpMenu>
+
+    {gameState.status === 'GAME_OVER' && (
+      <View style={styles.gameOverOverlay}>
+        <Text style={styles.gameOverText}>GAME OVER</Text>
+        {Object.values(gameState.players)
+          .sort((a, b) => b.score - a.score)
+          .map(p => (
+            <Text key={p.id} style={styles.gameOverScore}>
+              {p.name}: ${p.score.toLocaleString()}
+            </Text>
+          ))}
+      </View>
+    )}
+    </View>
   );
 }
 
@@ -467,7 +470,7 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   gameOverOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.85)',
     alignItems: 'center',
     justifyContent: 'center',
