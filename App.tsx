@@ -213,7 +213,22 @@ export default function App() {
             settled = true;
             clearTimeout(welcomeTimeout);
             reconnectCtlRef.current = null;
-            createClient(transport, handleStateUpdate);
+            const gameScreen: AppScreen = {
+              type: 'game',
+              serverPeerId: msg.serverPeerId as string,
+              roomCode: session.roomCode,
+              isResume: !!msg.isResume,
+            };
+            // Stay on the Reconnecting screen until the first STATE_UPDATE
+            // arrives, so the game mounts with real state (see connectAndDo).
+            let gameMounted = false;
+            createClient(transport, (state, pid) => {
+              handleStateUpdate(state, pid);
+              if (!gameMounted) {
+                gameMounted = true;
+                setScreen(gameScreen);
+              }
+            });
             const board = (msg.board as GameData) ?? null;
             if (board) {
               setBoardData(board);
@@ -221,12 +236,6 @@ export default function App() {
             }
             sessionRef.current = session;
             void saveSession(session);
-            setScreen({
-              type: 'game',
-              serverPeerId: msg.serverPeerId as string,
-              roomCode: session.roomCode,
-              isResume: !!msg.isResume,
-            });
             break;
           }
           case 'lobby-update':
@@ -340,7 +349,24 @@ export default function App() {
         case 'game-started': {
           // Register message handler BEFORE React re-renders so no
           // STATE_UPDATE messages are lost to the void.
-          createClient(transport, handleStateUpdate);
+          const gameScreen: AppScreen = {
+            type: 'game',
+            serverPeerId: msg.serverPeerId as string,
+            roomCode,
+            isResume: !!msg.isResume,
+          };
+          let gameMounted = false;
+          createClient(transport, (state, pid) => {
+            handleStateUpdate(state, pid);
+            // Mount the game screen only once the first STATE_UPDATE is in,
+            // so NetworkedGame's mount-time animation decisions (category
+            // intro, DJ board flash) always see the real game state instead
+            // of racing it.
+            if (!gameMounted) {
+              gameMounted = true;
+              setScreen(gameScreen);
+            }
+          });
           const board = (msg.board as GameData) ?? null;
           setBoardData(board);
           if (PERSISTENCE_ENABLED) {
@@ -349,12 +375,6 @@ export default function App() {
             void saveSession(session);
             void saveSnapshotBoard(board);
           }
-          setScreen({
-            type: 'game',
-            serverPeerId: msg.serverPeerId as string,
-            roomCode,
-            isResume: !!msg.isResume,
-          });
           break;
         }
         case 'room-error':

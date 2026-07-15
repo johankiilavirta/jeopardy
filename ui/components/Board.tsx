@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { BoardDefinition } from '../fixtures/board';
 import { colors, grid, type as typeTokens } from '../theme/tokens';
@@ -55,8 +55,13 @@ function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boa
   const waves = Math.max(colCount, ROW_COUNT);
   const catFlashDelay = WAVE_OFFSET + waves * WAVE_MS + 200;
 
+  // The flash only plays when boardAnimKey *changes* after mount (the live
+  // round 1 → 2 transition). Mounting with the key already latched — resuming
+  // or rejoining straight into Double Jeopardy, or a size-change remount after
+  // the transition — must not replay it.
+  const initialAnimKeyRef = useRef(boardAnimKey);
   const cellDelays = useMemo<number[] | null>(() => {
-    if (!boardAnimKey) return null;
+    if (!boardAnimKey || boardAnimKey === initialAnimKeyRef.current) return null;
 
     const cols = colCount;
     const waveCount = Math.max(cols, ROW_COUNT);

@@ -45,7 +45,7 @@ interface NetworkedGameProps {
   /** How many category columns to show (4, 5, or 6). Default 6. */
   visibleCategories?: number | undefined;
   onVisibleCategoriesChange?: (n: number) => void;
-  isResume?: boolean;
+  isResume?: boolean | undefined;
 }
 
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
