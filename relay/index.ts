@@ -306,7 +306,12 @@ function startServer(portIndex: number): void {
             // Rejoin a game in progress — skip lobby, go straight to game
             const playerName = String(msg.playerName ?? 'Guest');
             const serverPeerId = 'server';
-            relaySend(ws, { type: 'game-started', serverPeerId, board: room.gameData ?? null });
+            relaySend(ws, {
+              type: 'game-started',
+              serverPeerId,
+              board: room.gameData ?? null,
+              isResume: true,
+            });
             room.serverTransport?.notifyConnect(peerId, playerName);
             // Notify existing players that someone reconnected
             for (const p of room.players) {
