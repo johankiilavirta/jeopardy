@@ -229,7 +229,9 @@ const styles = StyleSheet.create({
   floatingDiff: {
     position: 'absolute',
     top: -6,
-    right: -28, // closer horizontally
+    left: '100%',
+    marginLeft: 2,
+    width: 80,
     fontSize: 12,
     fontFamily: typeTokens.ui700,
     textShadowColor: 'rgba(0, 0, 0, 0.4)',

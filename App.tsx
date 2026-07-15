@@ -101,7 +101,7 @@ export default function App() {
   const [lobbyPlayers, setLobbyPlayers] = useState<LobbyPlayer[]>([]);
   const [lobbyError, setLobbyError] = useState<string | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
-  const [initialGameState, setInitialGameState] = useState<{ state: GameState; playerId: string | null } | null>(null);
+  const [initialGameState, setInitialGameState] = useState<{ state: GameState; playerId: string | null; canUndo?: boolean; canRedo?: boolean } | null>(null);
   const [boardData, setBoardData] = useState<GameData | null>(null);
   const [peerDisconnected, setPeerDisconnected] = useState(false);
   const transportRef = useRef<WebSocketTransport | null>(null);
@@ -146,8 +146,8 @@ export default function App() {
 
   /** Every STATE_UPDATE lands here: feed the UI, keep the on-device
    *  snapshot current, and clear all persistence once the game is over. */
-  const handleStateUpdate = useCallback((state: GameState, pid: string | null) => {
-    setInitialGameState({ state, playerId: pid });
+  const handleStateUpdate = useCallback((state: GameState, pid: string | null, cu?: boolean, cr?: boolean) => {
+    setInitialGameState({ state, playerId: pid, ...(cu != null ? { canUndo: cu } : {}), ...(cr != null ? { canRedo: cr } : {}) });
     if (!PERSISTENCE_ENABLED) return;
     if (state.status === 'GAME_OVER') {
       sessionRef.current = null;
@@ -226,8 +226,8 @@ export default function App() {
             // Stay on the Reconnecting screen until the first STATE_UPDATE
             // arrives, so the game mounts with real state (see connectAndDo).
             let gameMounted = false;
-            createClient(transport, (state, pid) => {
-              handleStateUpdate(state, pid);
+            createClient(transport, (state, pid, cu, cr) => {
+              handleStateUpdate(state, pid, cu, cr);
               if (!gameMounted) {
                 gameMounted = true;
                 setScreen(gameScreen);
@@ -362,8 +362,8 @@ export default function App() {
             isResume: !!msg.isResume,
           };
           let gameMounted = false;
-          createClient(transport, (state, pid) => {
-            handleStateUpdate(state, pid);
+          createClient(transport, (state, pid, cu, cr) => {
+            handleStateUpdate(state, pid, cu, cr);
             // Mount the game screen only once the first STATE_UPDATE is in,
             // so NetworkedGame's mount-time animation decisions (category
             // intro, DJ board flash) always see the real game state instead
@@ -434,8 +434,8 @@ export default function App() {
           break;
         }
         case 'game-started':
-          createClient(transport, (state, pid) => {
-            setInitialGameState({ state, playerId: pid });
+          createClient(transport, (state, pid, cu, cr) => {
+            handleStateUpdate(state, pid, cu, cr);
           });
           setBoardData((msg.board as GameData) ?? null);
           setScreen({ type: 'game', serverPeerId: msg.serverPeerId as string, roomCode: DEV_ROOM });
