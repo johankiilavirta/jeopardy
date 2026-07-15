@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { sendAction } from '../../src/client';
 import { computeReadingMs } from '../../src/readingTime';
 import { getBuzz, judgedPlayerId } from '../../src/reducer';
@@ -18,6 +18,7 @@ import type { GameData, RoundNumber } from '../../data/gameLoader';
 import { MainMenuScreen } from '../screens/MainMenuScreen';
 import { InGameSettingsScreen } from '../screens/InGameSettingsScreen';
 import { ChooseClueScreen } from '../screens/ChooseClueScreen';
+import { ScoreChart } from '../components/ScoreChart';
 import { ClueScreen } from '../screens/ClueScreen';
 import { colors, type as typeTokens } from '../theme/tokens';
 
@@ -61,6 +62,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
   const gameState = initialState?.state ?? null;
+  const { width: windowWidth } = useWindowDimensions();
   const playerId = initialState?.playerId ?? null;
   // Deadlines (epoch ms) for the current phase window and the local player's
   // personal typing timer — they drive the activation lights' drain.
@@ -434,18 +436,29 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       </View>
     </SwipeUpMenu>
 
-    {gameState.status === 'GAME_OVER' && (
-      <View style={styles.gameOverOverlay}>
-        <Text style={styles.gameOverText}>GAME OVER</Text>
-        {Object.values(gameState.players)
-          .sort((a, b) => b.score - a.score)
-          .map(p => {
+    {gameState.status === 'GAME_OVER' && (() => {
+      const PLAYER_COLORS = ['#5B8DEF', '#E8A035'];
+      const sorted = Object.values(gameState.players).sort((a, b) => b.score - a.score);
+      const chartPlayers = sorted.map((p, i) => ({
+        name: p.name,
+        color: PLAYER_COLORS[i % PLAYER_COLORS.length]!,
+        scores: statsRef.current[p.id]?.scoreHistory ?? [p.score],
+      }));
+      const chartW = Math.min(windowWidth - 48, 400);
+
+      return (
+        <View style={styles.gameOverOverlay}>
+          <Text style={styles.gameOverText}>GAME OVER</Text>
+          {sorted.map((p, i) => {
             const stats = statsRef.current[p.id];
             return (
               <View key={p.id} style={styles.gameOverPlayerRow}>
-                <Text style={styles.gameOverScore}>
-                  {p.name}: ${p.score.toLocaleString()}
-                </Text>
+                <View style={styles.gameOverNameRow}>
+                  <View style={[styles.gameOverColorDot, { backgroundColor: PLAYER_COLORS[i % PLAYER_COLORS.length] }]} />
+                  <Text style={styles.gameOverScore}>
+                    {p.name}: ${p.score.toLocaleString()}
+                  </Text>
+                </View>
                 {stats && (
                   <Text style={styles.gameOverStats}>
                     {stats.correct} correct · {stats.incorrect} incorrect
@@ -454,8 +467,10 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               </View>
             );
           })}
-      </View>
-    )}
+          <ScoreChart players={chartPlayers} width={chartW} height={160} />
+        </View>
+      );
+    })()}
     </View>
   );
 }
@@ -528,6 +543,16 @@ const styles = StyleSheet.create({
   gameOverPlayerRow: {
     alignItems: 'center',
     marginVertical: 8,
+  },
+  gameOverNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  gameOverColorDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 8,
   },
   gameOverScore: {
     fontFamily: typeTokens.ui700,
