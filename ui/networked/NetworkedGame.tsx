@@ -76,7 +76,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const [introRound, setIntroRound] = useState<number | null>(() => {
     // If we are connecting to a game already in progress (e.g., clues burned or active clue is open),
     // skip the category intro animation.
-    const hasProgress = gameState && (gameState.burnedClueIds.length > 0 || gameState.activeClue != null);
+    const initialGame = initialState?.state;
+    const hasProgress = initialGame && (initialGame.burnedClueIds.length > 0 || initialGame.activeClue != null);
     if (animationsEnabled && !hasProgress && !introShownRef.current.has(1)) {
       introShownRef.current.add(1);
       return 1;
