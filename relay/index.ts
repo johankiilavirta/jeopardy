@@ -386,9 +386,25 @@ function startServer(portIndex: number): void {
           room.serverTransport = serverTransport;
 
           const playerNames = room.players.map(p => p.name);
+          const isFastForward = process.env.FAST_FORWARD === '1' || process.env.FAST_FORWARD === 'true';
+          let stateToLoad = resumeState;
+
+          if (isFastForward && !stateToLoad) {
+            const getClueIds = (cats: CategoryData[], offset: number) =>
+              cats.flatMap((c, col) => c.clues.map((cl, row) => offset + col * 5 + row));
+            const allIds = gameData
+              ? [...getClueIds(gameData.round1, 0), ...getClueIds(gameData.round2, 30)]
+              : Array.from({ length: totalClues }, (_, i) => i);
+            
+            const { createInitialState } = require('../src/reducer.js');
+            const init = createInitialState(playerNames, totalClues, gameData?.final ?? null);
+            init.burnedClueIds = allIds.slice(0, -1);
+            stateToLoad = init;
+          }
+
           createServer(serverTransport, playerNames, {
             totalClues,
-            ...(resumeState ? { initialState: resumeState } : {}),
+            ...(stateToLoad ? { initialState: stateToLoad } : {}),
             finalClue: gameData?.final ?? null,
           });
 

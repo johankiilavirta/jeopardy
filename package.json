@@ -13,7 +13,8 @@
     "relay": "tsx relay/index.ts",
     "solo": "tsx scripts/dev-solo.ts",
     "ui": "tsx scripts/ui-lab.ts",
-    "convert-data": "tsx scripts/convert-jeopardy-data.ts"
+    "convert-data": "tsx scripts/convert-jeopardy-data.ts",
+    "ios:fast": "tsx scripts/test-ios.ts"
   },
   "keywords": [],
   "author": "",
