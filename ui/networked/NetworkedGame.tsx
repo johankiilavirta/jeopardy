@@ -11,6 +11,7 @@ import { ExpandingClueOverlay } from '../components/ExpandingClueOverlay';
 import { PLAYER_BAR_HEIGHT } from '../components/PlayerHeader';
 import { JudgementTray } from '../components/JudgementTray';
 import { SwipeUpMenu } from '../components/SwipeUpMenu';
+import { UndoRedoSwipe } from '../components/UndoRedoSwipe';
 import { demoBoard } from '../fixtures/board';
 import { getClueContent } from '../fixtures/clues';
 import { toBoardDefinition, makeClueGetter, getVisibleBoard } from '../../data/gameLoader';
@@ -25,7 +26,7 @@ import { colors, type as typeTokens } from '../theme/tokens';
 interface NetworkedGameProps {
   transport: WebSocketTransport;
   serverPeerId: string;
-  initialState?: { state: GameState; playerId: string | null } | null;
+  initialState?: { state: GameState; playerId: string | null; canUndo?: boolean; canRedo?: boolean } | null;
   boardData?: GameData | null;
   peerDisconnected?: boolean;
   roomCode?: number;
@@ -290,6 +291,13 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         />
       )}
     >
+      <UndoRedoSwipe
+        canUndo={initialState?.canUndo ?? false}
+        canRedo={initialState?.canRedo ?? false}
+        onUndo={() => sendAction(transport, serverPeerId, { type: 'UNDO' })}
+        onRedo={() => sendAction(transport, serverPeerId, { type: 'REDO' })}
+        disabled={!!gameState.activeClue}
+      >
       <View style={styles.root}>
         <ChooseClueScreen
           state={gameState}
@@ -434,6 +442,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         })()}
 
       </View>
+      </UndoRedoSwipe>
     </SwipeUpMenu>
     </View>
   );

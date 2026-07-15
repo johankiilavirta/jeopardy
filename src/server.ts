@@ -1,7 +1,7 @@
 import type { Transport } from './transport.js';
 import type { Action, GameState } from './types.js';
 import { createInitialState } from './reducer.js';
-import { createHistory, dispatch, undo, canUndo, type GameHistory } from './history.js';
+import { createHistory, dispatch, undo, redo, canUndo, canRedo, type GameHistory } from './history.js';
 import { computeReadingMs } from './readingTime.js';
 
 export interface Timer {
@@ -183,6 +183,8 @@ export function createServer(
       type: 'STATE_UPDATE',
       state: server.history.current,
       playerId: server.playerPeers.get(peerId) ?? null,
+      canUndo: canUndo(server.history),
+      canRedo: canRedo(server.history),
     }));
   }
 
@@ -211,8 +213,17 @@ export function createServer(
     if (parsed.type === 'UNDO') {
       if (!canUndo(server.history)) return;
       server.history = undo(server.history);
-      // Rebuild all timers fresh — after an undo they restart from zero
-      // (the state carries no timestamps; documented tradeoff).
+      clearPhaseTimer();
+      clearAnswerTimers();
+      armPhaseTimer();
+      syncAnswerTimers();
+      broadcastState(transport, server);
+      return;
+    }
+
+    if (parsed.type === 'REDO') {
+      if (!canRedo(server.history)) return;
+      server.history = redo(server.history);
       clearPhaseTimer();
       clearAnswerTimers();
       armPhaseTimer();
@@ -242,11 +253,15 @@ export function createServer(
 }
 
 function broadcastState(transport: Transport, server: GameServer): void {
+  const cu = canUndo(server.history);
+  const cr = canRedo(server.history);
   for (const [peerId, playerId] of server.playerPeers) {
     transport.send(peerId, JSON.stringify({
       type: 'STATE_UPDATE',
       state: server.history.current,
       playerId,
+      canUndo: cu,
+      canRedo: cr,
     }));
   }
 }

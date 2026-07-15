@@ -4,10 +4,11 @@ import { reducer } from './reducer.js';
 export interface GameHistory {
   current: GameState;
   past: GameState[];
+  future: GameState[];
 }
 
 export function createHistory(initialState: GameState): GameHistory {
-  return { current: initialState, past: [] };
+  return { current: initialState, past: [], future: [] };
 }
 
 export interface DispatchOptions {
@@ -26,11 +27,12 @@ export function dispatch(
   // If state didn't change (invalid action), don't push to history
   if (next === history.current) return history;
   if (opts.transient) {
-    return { current: next, past: history.past };
+    return { current: next, past: history.past, future: history.future };
   }
   return {
     current: next,
     past: [...history.past, history.current],
+    future: [],
   };
 }
 
@@ -40,9 +42,24 @@ export function undo(history: GameHistory): GameHistory {
   return {
     current: previous,
     past: history.past.slice(0, -1),
+    future: [history.current, ...history.future],
+  };
+}
+
+export function redo(history: GameHistory): GameHistory {
+  if (history.future.length === 0) return history;
+  const next = history.future[0]!;
+  return {
+    current: next,
+    past: [...history.past, history.current],
+    future: history.future.slice(1),
   };
 }
 
 export function canUndo(history: GameHistory): boolean {
   return history.past.length > 0;
+}
+
+export function canRedo(history: GameHistory): boolean {
+  return history.future.length > 0;
 }
