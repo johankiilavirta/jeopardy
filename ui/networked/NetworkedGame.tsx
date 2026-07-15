@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { sendAction } from '../../src/client';
 import { computeReadingMs } from '../../src/readingTime';
 import { getBuzz, judgedPlayerId } from '../../src/reducer';
@@ -62,7 +62,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
   const gameState = initialState?.state ?? null;
-  const { width: windowWidth } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const playerId = initialState?.playerId ?? null;
   // Deadlines (epoch ms) for the current phase window and the local player's
   // personal typing timer — they drive the activation lights' drain.
@@ -111,7 +111,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
   // Dev shortcut: Y key burns all-but-one clue on the current board.
   const yKeyHandlerRef = useRef<(() => void) | null>(null);
-  const devBurnKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
@@ -385,54 +384,57 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           />
         )}
 
-        {/* DEV ONLY: burns all but one clue on the current board (same as
-            the Y key on web) for testing round transitions and DJ resume. */}
-        {!gameState.activeClue && (
-          <Pressable
-            style={styles.devBurnButton}
-            onPress={() => {
-              if (devBurnKeyRef.current === burnedKey) return;
-              devBurnKeyRef.current = burnedKey;
-              yKeyHandlerRef.current?.();
-            }}
-          >
-            <Text style={styles.devBurnText}>DEV: BURN</Text>
-          </Pressable>
-        )}
+        {gameState.status === 'GAME_OVER' && (() => {
+          const PLAYER_COLORS = ['#5B8DEF', '#E8A035'];
+          const sorted = Object.values(gameState.players).sort((a, b) => b.score - a.score);
+          const chartPlayers = sorted.map((p, i) => ({
+            name: p.name,
+            color: PLAYER_COLORS[i % PLAYER_COLORS.length]!,
+            scores: p.scoreHistory,
+          }));
+          const landscape = windowWidth > windowHeight;
+          const contentW = Math.min(windowWidth - 48, landscape ? 600 : 400);
+          const chartW = landscape
+            ? Math.round(contentW * 0.5)
+            : contentW;
+
+          return (
+            <View style={styles.gameOverOverlay}>
+              <Text style={styles.gameOverText}>GAME OVER</Text>
+              <View style={[landscape ? styles.gameOverRow : undefined, { width: landscape ? contentW : undefined }]}>
+                <View style={landscape ? styles.gameOverPlayersCol : undefined}>
+                  {sorted.map((p, i) => {
+                    const total = p.correct + p.incorrect;
+                    const pct = total > 0 ? Math.round((p.correct / total) * 100) : 0;
+                    // Mock stats — replace with real data when available
+                    const buzzSpeedMs = 1200 + Math.round(Math.abs(Math.sin(p.id.length * 7)) * 3000);
+                    const firstBuzzPct = 20 + Math.round(Math.abs(Math.cos(p.id.length * 3)) * 60);
+                    return (
+                      <View key={p.id} style={styles.gameOverPlayerRow}>
+                        <View style={styles.gameOverNameRow}>
+                          <View style={[styles.gameOverColorDot, { backgroundColor: PLAYER_COLORS[i % PLAYER_COLORS.length] }]} />
+                          <Text style={styles.gameOverScore}>
+                            {p.name}: ${p.score.toLocaleString()}
+                          </Text>
+                        </View>
+                        <Text style={styles.gameOverStats}>
+                          {p.correct} correct · {p.incorrect} incorrect · {pct}% correctness
+                        </Text>
+                        <Text style={styles.gameOverStats}>
+                          {firstBuzzPct}% buzzed first · {buzzSpeedMs}ms average reaction
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+                <ScoreChart players={chartPlayers} width={chartW} height={160} />
+              </View>
+            </View>
+          );
+        })()}
 
       </View>
     </SwipeUpMenu>
-
-    {gameState.status === 'GAME_OVER' && (() => {
-      const PLAYER_COLORS = ['#5B8DEF', '#E8A035'];
-      const sorted = Object.values(gameState.players).sort((a, b) => b.score - a.score);
-      const chartPlayers = sorted.map((p, i) => ({
-        name: p.name,
-        color: PLAYER_COLORS[i % PLAYER_COLORS.length]!,
-        scores: p.scoreHistory,
-      }));
-      const chartW = Math.min(windowWidth - 48, 400);
-
-      return (
-        <View style={styles.gameOverOverlay}>
-          <Text style={styles.gameOverText}>GAME OVER</Text>
-          {sorted.map((p, i) => (
-              <View key={p.id} style={styles.gameOverPlayerRow}>
-                <View style={styles.gameOverNameRow}>
-                  <View style={[styles.gameOverColorDot, { backgroundColor: PLAYER_COLORS[i % PLAYER_COLORS.length] }]} />
-                  <Text style={styles.gameOverScore}>
-                    {p.name}: ${p.score.toLocaleString()}
-                  </Text>
-                </View>
-                <Text style={styles.gameOverStats}>
-                  {p.correct} correct · {p.incorrect} incorrect
-                </Text>
-              </View>
-          ))}
-          <ScoreChart players={chartPlayers} width={chartW} height={160} />
-        </View>
-      );
-    })()}
     </View>
   );
 }
@@ -472,23 +474,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: colors.categoryText,
   },
-  devBurnButton: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 40,
-    backgroundColor: 'red',
-    paddingVertical: 14,
-    alignItems: 'center' as const,
-    zIndex: 9999,
-    elevation: 9999,
-  },
-  devBurnText: {
-    fontFamily: typeTokens.ui700,
-    fontSize: 18,
-    fontWeight: 'bold' as const,
-    color: '#fff',
-  },
   gameOverOverlay: {
     ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.85)',
@@ -502,8 +487,16 @@ const styles = StyleSheet.create({
     color: colors.boardValue,
     marginBottom: 20,
   },
-  gameOverPlayerRow: {
+  gameOverRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  gameOverPlayersCol: {
+    flex: 5,
+    justifyContent: 'center',
+  },
+  gameOverPlayerRow: {
     marginVertical: 8,
   },
   gameOverNameRow: {
