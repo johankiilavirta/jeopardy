@@ -386,7 +386,12 @@ function startServer(portIndex: number): void {
 
           // Notify all players, then simulate connections
           for (const p of room.players) {
-            relaySend(p.ws, { type: 'game-started', serverPeerId, board: gameData ?? null });
+            relaySend(p.ws, {
+              type: 'game-started',
+              serverPeerId,
+              board: gameData ?? null,
+              isResume: !!resumeState,
+            });
           }
           for (const p of room.players) {
             serverTransport.notifyConnect(p.peerId, p.name);

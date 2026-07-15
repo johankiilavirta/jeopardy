@@ -75,7 +75,7 @@ type AppScreen =
   | { type: 'menu' }
   | { type: 'join' }
   | { type: 'lobby'; roomCode: number; isHost: boolean }
-  | { type: 'game'; serverPeerId: string; roomCode: number }
+  | { type: 'game'; serverPeerId: string; roomCode: number; isResume?: boolean }
   | { type: 'reconnecting'; roomCode: number }
   | { type: 'settings' }
   | { type: 'demo' };
@@ -221,7 +221,12 @@ export default function App() {
             }
             sessionRef.current = session;
             void saveSession(session);
-            setScreen({ type: 'game', serverPeerId: msg.serverPeerId as string, roomCode: session.roomCode });
+            setScreen({
+              type: 'game',
+              serverPeerId: msg.serverPeerId as string,
+              roomCode: session.roomCode,
+              isResume: !!msg.isResume,
+            });
             break;
           }
           case 'lobby-update':
@@ -348,6 +353,7 @@ export default function App() {
             type: 'game',
             serverPeerId: msg.serverPeerId as string,
             roomCode,
+            isResume: !!msg.isResume,
           });
           break;
         }
@@ -609,6 +615,7 @@ export default function App() {
             onAnimationsChange={setAnimationsEnabled}
             visibleCategories={visibleCategories}
             onVisibleCategoriesChange={setVisibleCategories}
+            isResume={screen.isResume}
           />
         ) : null;
       case 'settings':

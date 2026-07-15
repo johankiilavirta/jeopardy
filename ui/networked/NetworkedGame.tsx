@@ -45,6 +45,7 @@ interface NetworkedGameProps {
   /** How many category columns to show (4, 5, or 6). Default 6. */
   visibleCategories?: number | undefined;
   onVisibleCategoriesChange?: (n: number) => void;
+  isResume?: boolean;
 }
 
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
@@ -55,7 +56,7 @@ const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
 
 
 
-export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange }: NetworkedGameProps) {
+export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume }: NetworkedGameProps) {
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
@@ -77,7 +78,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     // If we are connecting to a game already in progress (e.g., clues burned or active clue is open),
     // skip the category intro animation.
     const initialGame = initialState?.state;
-    const hasProgress = initialGame && (initialGame.burnedClueIds.length > 0 || initialGame.activeClue != null);
+    const hasProgress = isResume || (initialGame && (initialGame.burnedClueIds.length > 0 || initialGame.activeClue != null));
     if (animationsEnabled && !hasProgress && !introShownRef.current.has(1)) {
       introShownRef.current.add(1);
       return 1;
