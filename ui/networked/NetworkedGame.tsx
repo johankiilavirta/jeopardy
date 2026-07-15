@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { sendAction } from '../../src/client';
 import { computeReadingMs } from '../../src/readingTime';
 import { getBuzz, judgedPlayerId } from '../../src/reducer';
@@ -112,6 +112,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
   // Dev shortcut: Y key burns all-but-one clue on the current board.
   const yKeyHandlerRef = useRef<(() => void) | null>(null);
+  const devBurnKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
@@ -392,6 +393,21 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           />
         )}
 
+        {/* DEV ONLY: burns all but one clue on the current board (same as
+            the Y key on web) for testing round transitions and DJ resume. */}
+        {!gameState.activeClue && (
+          <Pressable
+            style={styles.devBurnButton}
+            onPress={() => {
+              if (devBurnKeyRef.current === burnedKey) return;
+              devBurnKeyRef.current = burnedKey;
+              yKeyHandlerRef.current?.();
+            }}
+          >
+            <Text style={styles.devBurnText}>DEV: BURN</Text>
+          </Pressable>
+        )}
+
         {gameState.status === 'GAME_OVER' && (() => {
           const PLAYER_COLORS = ['#5B8DEF', '#E8A035'];
           const sorted = Object.values(gameState.players).sort((a, b) => b.score - a.score);
@@ -482,6 +498,23 @@ const styles = StyleSheet.create({
     fontFamily: typeTokens.ui500,
     fontSize: 20,
     color: colors.categoryText,
+  },
+  devBurnButton: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 40,
+    backgroundColor: 'red',
+    paddingVertical: 14,
+    alignItems: 'center' as const,
+    zIndex: 9999,
+    elevation: 9999,
+  },
+  devBurnText: {
+    fontFamily: typeTokens.ui700,
+    fontSize: 18,
+    fontWeight: 'bold' as const,
+    color: '#fff',
   },
   gameOverOverlay: {
     ...StyleSheet.absoluteFill,
