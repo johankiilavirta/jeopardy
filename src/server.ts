@@ -1,5 +1,5 @@
 import type { Transport } from './transport.js';
-import type { Action } from './types.js';
+import type { Action, GameState } from './types.js';
 import { createInitialState } from './reducer.js';
 import { createHistory, dispatch, undo, canUndo, type GameHistory } from './history.js';
 import { computeReadingMs } from './readingTime.js';
@@ -31,6 +31,10 @@ export interface ServerOptions {
   answerMs?: number;
   /** Total number of clues on the board (default 30) */
   totalClues?: number;
+  /** Resume a saved game: start from this state instead of a fresh board.
+   *  When set, `playerNames` is ignored — seats reattach to the state's
+   *  players by name matching on connect. */
+  initialState?: GameState;
 }
 
 /** Actions clients are allowed to send. Timer actions are server-only. */
@@ -49,7 +53,7 @@ export function createServer(
     answerMs = 20000,
     totalClues,
   } = options;
-  const initialState = createInitialState(playerNames, totalClues);
+  const initialState = options.initialState ?? createInitialState(playerNames, totalClues);
   const server: GameServer = {
     history: createHistory(initialState),
     playerPeers: new Map(),

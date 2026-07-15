@@ -15,6 +15,10 @@ export interface Room {
   players: RoomPlayer[];
   phase: 'lobby' | 'playing';
   serverTransport?: RoomServerTransport;
+  /** Board sent at game start, kept so mid-game rejoiners get it too. */
+  gameData?: object | null;
+  /** Pending dissolve timer while a playing room sits empty (grace period). */
+  emptyTimer?: NodeJS.Timeout | null;
 }
 
 // --- In-process server transport (no loopback WS) ---

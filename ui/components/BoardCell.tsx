@@ -31,7 +31,11 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
   const wrapRef = useRef<View>(null);
   const dead = burned || empty;
 
-  const inFlashMode = flashDelay != null && !dead;
+  // Capture at mount: the flash effect below only runs once, so a delay that
+  // shows up on a later render must not flip a lit cell into dark flash mode
+  // with no animation ever scheduled to bring it back.
+  const mountFlashDelay = useRef(flashDelay).current;
+  const inFlashMode = mountFlashDelay != null && !dead;
   // 0 = dark/off, 1 = lit normal blue
   const flashAnim = useRef(new Animated.Value(0)).current;
   const [animDone, setAnimDone] = useState(false);
@@ -40,7 +44,7 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
     if (!inFlashMode) return;
     const t = setTimeout(() => {
       Animated.timing(flashAnim, { toValue: 1, duration: 120, useNativeDriver: true }).start(() => setAnimDone(true));
-    }, flashDelay!);
+    }, mountFlashDelay!);
     return () => clearTimeout(t);
   }, []); // mount-only — delay captured at birth
 

@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { BoardDefinition } from '../fixtures/board';
 import { colors, grid, type as typeTokens } from '../theme/tokens';
@@ -17,6 +17,12 @@ interface BoardProps {
    * board-intro flash sequence. 0 (default) = no animation.
    */
   boardAnimKey?: number | undefined;
+  /**
+   * Fires once the measurement-driven font sizing has settled (value font
+   * size and category fits computed) — the board is fully formed and safe
+   * to reveal.
+   */
+  onReady?: (() => void) | undefined;
 }
 
 const ROW_COUNT = 5;
@@ -37,7 +43,7 @@ function shuffle(n: number): number[] {
   return a;
 }
 
-function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boardAnimKey = 0 }: BoardProps) {
+function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boardAnimKey = 0, onReady }: BoardProps) {
   const burned = new Set(burnedClueIds);
   const baseValue = board.categories.find(c => c.clues.length > 0)?.clues[0]?.value ?? 200;
   const [boardSize, setBoardSize] = useState<{ w: number; h: number } | null>(null);
@@ -55,8 +61,13 @@ function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boa
   const waves = Math.max(colCount, ROW_COUNT);
   const catFlashDelay = WAVE_OFFSET + waves * WAVE_MS + 200;
 
+  // The flash only plays when boardAnimKey *changes* after mount (the live
+  // round 1 → 2 transition). Mounting with the key already latched — resuming
+  // or rejoining straight into Double Jeopardy, or a size-change remount after
+  // the transition — must not replay it.
+  const initialAnimKeyRef = useRef(boardAnimKey);
   const cellDelays = useMemo<number[] | null>(() => {
-    if (!boardAnimKey) return null;
+    if (!boardAnimKey || boardAnimKey === initialAnimKeyRef.current) return null;
 
     const cols = colCount;
     const waveCount = Math.max(cols, ROW_COUNT);
@@ -153,6 +164,16 @@ function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boa
     return names.map(n => ({ fontSize: minFontSize, text: n }));
   }, [boardSize, board.categories, colCount, catProbes]);
 
+  // Font sizing is measurement-driven (onLayout probes land over several
+  // frames), so a freshly mounted board visibly assembles itself: values at
+  // a guessed size, then a snap, then category titles. Report readiness so
+  // the parent can hold the board (and score bar) hidden until it's fully
+  // formed. Probes still measure at opacity 0 — opacity doesn't skip layout.
+  const ready = valueFontSize != null && categoryFits != null;
+  useEffect(() => {
+    if (ready) onReady?.();
+  }, [ready, onReady]);
+
   return (
     <View
       style={styles.board}
@@ -241,6 +262,7 @@ export const Board = memo(BoardImpl, (a, b) =>
   a.onSelectClue === b.onSelectClue &&
   a.onSkipClue === b.onSkipClue &&
   a.boardAnimKey === b.boardAnimKey &&
+  a.onReady === b.onReady &&
   a.burnedClueIds.length === b.burnedClueIds.length &&
   a.burnedClueIds.every((id, i) => id === b.burnedClueIds[i]),
 );
