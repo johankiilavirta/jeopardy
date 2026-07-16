@@ -484,7 +484,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
         {gameState.status === 'GAME_OVER' && (() => {
           const PLAYER_COLORS = ['#5B8DEF', '#E8A035'];
-          const sorted = Object.values(gameState.players).sort((a, b) => b.score - a.score);
+          const sorted = Object.values(gameState.players).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
           const chartPlayers = sorted.map((p, i) => ({
             name: p.name,
             color: PLAYER_COLORS[i % PLAYER_COLORS.length]!,
@@ -512,7 +512,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                         <View style={styles.gameOverNameRow}>
                           <View style={[styles.gameOverColorDot, { backgroundColor: PLAYER_COLORS[i % PLAYER_COLORS.length] }]} />
                           <Text style={styles.gameOverScore}>
-                            {p.name}: ${p.score.toLocaleString()}
+                            {p.name}: ${(p.score ?? 0).toLocaleString()}
                           </Text>
                         </View>
                         <Text style={styles.gameOverStats}>
