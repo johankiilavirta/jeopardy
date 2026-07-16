@@ -135,13 +135,13 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
   const fjTransitionAnim = useRef(new Animated.Value(0)).current;
   const [fjKeyboardReady, setFjKeyboardReady] = useState(false);
-  const [prevStatus, setPrevStatus] = useState<GameStatus | null>(null);
+  const hasAnimatedFjRef = useRef(false);
 
   useEffect(() => {
     const isFinal = gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER';
-    const wasFinal = prevStatus === 'FINAL_JEOPARDY_WAGER' || prevStatus === 'FINAL_JEOPARDY_ANSWER';
 
-    if (isFinal && !wasFinal) {
+    if (isFinal && !hasAnimatedFjRef.current) {
+      hasAnimatedFjRef.current = true;
       fjTransitionAnim.setValue(0);
       setFjKeyboardReady(false);
       
@@ -154,12 +154,11 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       const timer = setTimeout(() => setFjKeyboardReady(true), 600);
       return () => clearTimeout(timer);
     } else if (!isFinal) {
-      fjTransitionAnim.setValue(0);
+      hasAnimatedFjRef.current = false;
+      fjTransitionAnim.setValue(1);
       setFjKeyboardReady(true);
     }
-
-    setPrevStatus(gameState?.status ?? null);
-  }, [gameState?.status, prevStatus, fjTransitionAnim]);
+  }, [gameState?.status, fjTransitionAnim]);
 
   const localBuzz = gameState && playerId ? getBuzz(gameState, playerId) : undefined;
   const typing =
@@ -332,7 +331,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       )}
     >
       <View style={styles.root}>
-        <Animated.View style={[styles.root, (gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') && { opacity: fjTransitionAnim.interpolate({ inputRange: [0, 0.3], outputRange: [1, 0] }) }]}>
+        <Animated.View style={[styles.root, (gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') && { opacity: 0 }]}>
           <ChooseClueScreen
             state={gameState}
             localPlayerId={playerId}
@@ -355,7 +354,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         )}
 
         {gameState.activeClue && (
-          <Animated.View style={[StyleSheet.absoluteFill, (gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') && { opacity: fjTransitionAnim.interpolate({ inputRange: [0.3, 1], outputRange: [0, 1] }) }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, (gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') && { opacity: fjTransitionAnim }]}>
             <ExpandingClueOverlay
               key={gameState.activeClue.id}
               animate={animationsEnabled && gameState.activeClue.id !== -1}
