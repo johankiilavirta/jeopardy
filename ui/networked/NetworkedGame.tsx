@@ -564,7 +564,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                         </Text>
                         {gameState.finalWagers?.[p.id] != null && (
                           <Text style={styles.gameOverStats}>
-                            wagered ${gameState.finalWagers[p.id]!.toLocaleString()} in Final Jeopardy
+                            ${gameState.finalWagers[p.id]!.toLocaleString()} final wager
                           </Text>
                         )}
                       </View>

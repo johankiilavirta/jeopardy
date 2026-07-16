@@ -514,16 +514,25 @@ export function ClueScreen({
           ]}
           onPress={handleTap}
         >
-          {!isFinalJeopardyWager && (
-            <Animated.View style={[styles.header, { opacity: headerFade }]}>
-              <Text style={styles.category} numberOfLines={1} allowFontScaling={false}>
-                {clue.category.toUpperCase()}
-              </Text>
-              <Text style={styles.value} numberOfLines={1} allowFontScaling={false}>
-                {clue.value ? `$${clue.value}` : ''}
-              </Text>
-            </Animated.View>
-          )}
+          {/* The wager screen keeps the corner indicator ("FINAL JEOPARDY",
+              the sentinel clue's category) at full opacity — the keyboard
+              is up for most of the wager, and the header would otherwise
+              fade with it. The FJ card zeroes its horizontal padding, so
+              the header carries its own. */}
+          <Animated.View
+            style={[
+              styles.header,
+              isFinalJeopardyWager && styles.headerFinalWager,
+              { opacity: isFinalJeopardyWager ? 1 : headerFade },
+            ]}
+          >
+            <Text style={styles.category} numberOfLines={1} allowFontScaling={false}>
+              {clue.category.toUpperCase()}
+            </Text>
+            <Text style={styles.value} numberOfLines={1} allowFontScaling={false}>
+              {clue.value ? `$${clue.value}` : ''}
+            </Text>
+          </Animated.View>
 
           {!isFinalJeopardyWager && (
           <View style={styles.body}>
@@ -694,6 +703,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 16,
+  },
+  headerFinalWager: {
+    paddingHorizontal: 36,
   },
   category: {
     flexShrink: 1,
