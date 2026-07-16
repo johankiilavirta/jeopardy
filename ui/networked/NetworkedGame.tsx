@@ -3,7 +3,7 @@ import { Animated, Platform, StyleSheet, Text, useWindowDimensions, View } from 
 import { sendAction } from '../../src/client';
 import { computeReadingMs } from '../../src/readingTime';
 import { getBuzz, judgedPlayerId } from '../../src/reducer';
-import type { WebSocketTransport } from '../../src/webSocketTransport';
+import type { Transport } from '../../src/transport';
 import type { Action, GameState, GameStatus } from '../../src/types';
 import type { CellRect } from '../components/BoardCell';
 import { CategoryIntro } from '../components/CategoryIntro';
@@ -24,7 +24,7 @@ import { ClueScreen } from '../screens/ClueScreen';
 import { colors, type as typeTokens } from '../theme/tokens';
 
 interface NetworkedGameProps {
-  transport: WebSocketTransport;
+  transport: Transport;
   serverPeerId: string;
   initialState?: { state: GameState; playerId: string | null; canUndo?: boolean; canRedo?: boolean } | null;
   boardData?: GameData | null;

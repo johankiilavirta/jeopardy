@@ -13,7 +13,9 @@ import {
 import { createClient } from './src/client';
 import type { GameState } from './src/types';
 import type { GameData } from './data/gameLoader';
-import { WebSocketTransport } from './src/webSocketTransport';
+import { OnlineSessionProvider } from './app/onlineSessionProvider';
+import { connectionModeForRoomCode } from './app/roomCodes';
+import type { SessionProvider } from './app/sessionProvider';
 import { DemoHarness } from './ui/demo/DemoHarness';
 import { NetworkedGame } from './ui/networked/NetworkedGame';
 import { MainMenuScreen } from './ui/screens/MainMenuScreen';
@@ -104,7 +106,7 @@ export default function App() {
   const [initialGameState, setInitialGameState] = useState<{ state: GameState; playerId: string | null; canUndo?: boolean; canRedo?: boolean } | null>(null);
   const [boardData, setBoardData] = useState<GameData | null>(null);
   const [peerDisconnected, setPeerDisconnected] = useState(false);
-  const transportRef = useRef<WebSocketTransport | null>(null);
+  const transportRef = useRef<SessionProvider | null>(null);
   const myPeerIdRef = useRef<string | null>(null);
   const devAutoStartedRef = useRef(false);
 
@@ -191,7 +193,7 @@ export default function App() {
 
     const attempt = () => {
       if (ctl.cancelled) return;
-      const transport = new WebSocketTransport(`ws://${session.relayHost}:${session.relayPort}`);
+      const transport = new OnlineSessionProvider(`ws://${session.relayHost}:${session.relayPort}`);
       transportRef.current = transport;
       let settled = false;
 
@@ -210,7 +212,7 @@ export default function App() {
       transport.onPeerDisconnected(() => setPeerDisconnected(true));
       transport.onPeerConnected(() => setPeerDisconnected(false));
 
-      transport.onRawMessage((msg) => {
+      transport.onControlMessage((msg) => {
         if (ctl.cancelled) return;
         switch (msg.type) {
           case 'game-started': {
@@ -263,7 +265,7 @@ export default function App() {
       transport.ready.then((peerId) => {
         if (ctl.cancelled) return;
         myPeerIdRef.current = peerId;
-        transport.sendRaw({ type: 'join-room', roomCode: session.roomCode, playerName: session.playerName });
+        transport.joinRoom(session.roomCode, session.playerName);
       });
     };
 
@@ -295,7 +297,7 @@ export default function App() {
     }
 
     const url = `ws://${relayHost}:${relayPort}`;
-    const transport = new WebSocketTransport(url);
+    const transport = new OnlineSessionProvider(url);
     transportRef.current = transport;
 
     transport.onError((err) => {
@@ -332,7 +334,7 @@ export default function App() {
       }
     }, CONNECTION_TIMEOUT_MS);
 
-    transport.onRawMessage((msg) => {
+    transport.onControlMessage((msg) => {
       switch (msg.type) {
         case 'room-created':
           roomCode = msg.roomCode as number;
@@ -382,7 +384,7 @@ export default function App() {
           const board = (msg.board as GameData) ?? null;
           setBoardData(board);
           if (PERSISTENCE_ENABLED) {
-            const session = { roomCode, playerName, relayHost, relayPort };
+            const session = { mode: 'online' as const, roomCode, playerName, relayHost, relayPort };
             sessionRef.current = { ...session, savedAt: Date.now() };
             void saveSession(session);
             void saveSnapshotBoard(board);
@@ -403,9 +405,9 @@ export default function App() {
       clearTimeout(timeout);
       myPeerIdRef.current = peerId;
       if (action === 'create') {
-        transport.sendRaw({ type: 'create-room', playerName });
+        transport.createRoom(playerName);
       } else {
-        transport.sendRaw({ type: 'join-room', roomCode: action.join, playerName });
+        transport.joinRoom(action.join, playerName);
       }
     });
   }, [relayHost, relayPort, playerName, disconnect, cancelReconnect, handleStateUpdate, handleSocketLost]);
@@ -415,10 +417,10 @@ export default function App() {
     if (DEV_ROOM == null || devAutoStartedRef.current) return;
     devAutoStartedRef.current = true;
     const url = `ws://${relayHost}:${relayPort}`;
-    const transport = new WebSocketTransport(url);
+    const transport = new OnlineSessionProvider(url);
     transportRef.current = transport;
 
-    transport.onRawMessage((msg) => {
+    transport.onControlMessage((msg) => {
       switch (msg.type) {
         case 'room-created':
           setScreen({ type: 'lobby', roomCode: DEV_ROOM, isHost: true });
@@ -429,7 +431,7 @@ export default function App() {
           const myPeerId = myPeerIdRef.current;
           const me = players.find(p => p.peerId === myPeerId);
           if (players.length >= DEV_PLAYERS && me?.isHost) {
-            transport.sendRaw({ type: 'start-game', ...(DEV_GAME ? { gameId: DEV_GAME } : {}) });
+            transport.startGame(DEV_GAME ? { gameId: DEV_GAME } : undefined);
           }
           break;
         }
@@ -444,7 +446,7 @@ export default function App() {
           if (msg.message === 'Room not found') {
             // Recreate the room at the same fixed dev code so a second tab
             // (EXPO_PUBLIC_PLAYERS=2) can deterministically join it.
-            transport.sendRaw({ type: 'create-room', playerName, roomCode: DEV_ROOM });
+            transport.createRoom(playerName, DEV_ROOM);
           } else {
             setLobbyError(msg.message as string);
           }
@@ -454,7 +456,7 @@ export default function App() {
 
     transport.ready.then((peerId) => {
       myPeerIdRef.current = peerId;
-      transport.sendRaw({ type: 'join-room', roomCode: DEV_ROOM, playerName });
+      transport.joinRoom(DEV_ROOM, playerName);
       setScreen({ type: 'lobby', roomCode: DEV_ROOM, isHost: false });
     });
   }, []);
@@ -493,7 +495,18 @@ export default function App() {
     setScreen({ type: 'join' });
   }, []);
 
-  const handleJoinSubmit = useCallback((code: number) => connectAndDo({ join: code }), [connectAndDo]);
+  const handleJoinSubmit = useCallback((code: number) => {
+    const mode = connectionModeForRoomCode(code);
+    if (mode === 'online') {
+      connectAndDo({ join: code });
+      return;
+    }
+    if (mode === 'nearby') {
+      setJoinError('Nearby play is not available yet');
+      return;
+    }
+    setJoinError('Enter a room code from 100 to 999');
+  }, [connectAndDo]);
   const handleSettings = useCallback(() => setScreen({ type: 'settings' }), []);
 
   /** Deliberately walk away from the current room (also cancels a pending
@@ -513,14 +526,13 @@ export default function App() {
   const handleStartGame = useCallback(() => {
     const resume = pendingResumeRef.current;
     if (resume) {
-      transportRef.current?.sendRaw({
-        type: 'start-game',
+      transportRef.current?.startGame({
         resume: { state: resume.state, board: resume.board },
       });
       return;
     }
     const id = gameId ? Number(gameId) : null;
-    transportRef.current?.sendRaw({ type: 'start-game', ...(id ? { gameId: id } : {}) });
+    transportRef.current?.startGame(id ? { gameId: id } : undefined);
   }, [gameId]);
 
   const handleGameLeave = handleLeave;
