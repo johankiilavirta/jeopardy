@@ -73,24 +73,37 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       const currentStatus = currentVisibleStateRef.current?.status;
 
       if (incomingStatus === 'FINAL_JEOPARDY_WAGER' && currentStatus !== 'FINAL_JEOPARDY_WAGER' && currentStatus !== 'FINAL_JEOPARDY_ANSWER') {
-        setTimeout(() => {
+        Animated.timing(fadeToBlackAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }).start(({ finished }) => {
+          if (!finished) return;
+          currentVisibleStateRef.current = initialState.state;
+          setGameState(initialState.state);
+          
           Animated.timing(fadeToBlackAnim, {
-            toValue: 1,
-            duration: 1000,
+            toValue: 0,
+            duration: 1500,
             useNativeDriver: true,
-          }).start(({ finished }) => {
-            if (!finished) return;
-            currentVisibleStateRef.current = initialState.state;
-            setGameState(initialState.state);
-            
-            Animated.timing(fadeToBlackAnim, {
-              toValue: 0,
-              duration: 1500,
-              useNativeDriver: true,
-            }).start();
-          });
-        }, 1500);
+          }).start();
+        });
+
+        // Update scores immediately so +/- plays, but keep the old screen visible during the fade
+        if (currentVisibleStateRef.current) {
+          const tempState = {
+            ...initialState.state,
+            status: currentVisibleStateRef.current.status,
+            activeClue: currentVisibleStateRef.current.activeClue,
+          };
+          currentVisibleStateRef.current = tempState;
+          setGameState(tempState);
+        } else {
+          currentVisibleStateRef.current = initialState.state;
+          setGameState(initialState.state);
+        }
       } else {
+        fadeToBlackAnim.setValue(0);
         currentVisibleStateRef.current = initialState.state;
         setGameState(initialState.state);
       }
