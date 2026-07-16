@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 import type { GameState } from '../../src/types';
 import { Board } from '../components/Board';
@@ -38,6 +38,24 @@ export function ChooseClueScreen({
   // null currentTurnPlayerId means anyone may pick the first clue.
   const locked =
     state.currentTurnPlayerId !== null && state.currentTurnPlayerId !== localPlayerId;
+
+  // Final Jeopardy (the sentinel clue id) is nobody's turn — everyone
+  // wagers and answers at once — so the turn indicator goes dark and the
+  // score bugs trade their navy for the final round's charcoal.
+  const isFinalJeopardy = state.activeClue?.id === -1;
+
+  // The FJ backdrop above always leaves the bar's strip open; the bar itself
+  // slides away only while everyone types their answer (scores would spoil
+  // the wagers) and slides back up for the wager and the judging reveal.
+  const barHidden = state.status === 'FINAL_JEOPARDY_ANSWER';
+  const barSlide = useRef(new Animated.Value(barHidden ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.timing(barSlide, {
+      toValue: barHidden ? 1 : 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [barHidden, barSlide]);
 
   // Remount the board whenever its measured size changes (rotation, initial
   // landscape launch): adjustsFontSizeToFit caches its fitted size and won't
@@ -87,16 +105,38 @@ export function ChooseClueScreen({
           />
         )}
       </View>
-      <View style={styles.playerBarWrap}>
+      <Animated.View
+        style={[
+          styles.playerBarWrap,
+          {
+            transform: [
+              {
+                translateY: barSlide.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, 8 + PLAYER_BLOCK_HEIGHT],
+                }),
+              },
+            ],
+            // The slide alone can leave the blocks' top edge peeking on
+            // devices with a bottom inset (nothing clips the bar), so it
+            // fades out in lockstep — hidden means invisible.
+            opacity: barSlide.interpolate({
+              inputRange: [0, 1],
+              outputRange: [1, 0],
+            }),
+          },
+        ]}
+      >
         <PlayerHeader
           players={Object.values(state.players)}
-          currentTurnPlayerId={state.currentTurnPlayerId}
+          currentTurnPlayerId={isFinalJeopardy ? null : state.currentTurnPlayerId}
           localPlayerId={localPlayerId}
           disconnectedPlayerId={disconnectedPlayerId}
           judgingPlayerId={judgingPlayerId}
           animationsEnabled={animationsEnabled}
+          finalJeopardy={isFinalJeopardy}
         />
-      </View>
+      </Animated.View>
     </Animated.View>
   );
 }

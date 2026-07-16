@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { sendAction } from '../../src/client';
 import { computeReadingMs } from '../../src/readingTime';
 import { getBuzz, judgedPlayerId } from '../../src/reducer';
@@ -8,7 +8,7 @@ import type { Action, GameState, GameStatus } from '../../src/types';
 import type { CellRect } from '../components/BoardCell';
 import { CategoryIntro } from '../components/CategoryIntro';
 import { ExpandingClueOverlay } from '../components/ExpandingClueOverlay';
-import { PLAYER_BAR_HEIGHT } from '../components/PlayerHeader';
+import { PLAYER_BAR_HEIGHT, PlayerHeader } from '../components/PlayerHeader';
 import { JudgementTray } from '../components/JudgementTray';
 import { SwipeUpMenu } from '../components/SwipeUpMenu';
 import { UndoRedoSwipe } from '../components/UndoRedoSwipe';
@@ -62,7 +62,82 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
-  const gameState = initialState?.state ?? null;
+  const [gameState, setGameState] = useState<GameState | null>(initialState?.state ?? null);
+  const fadeToBlackAnim = useRef(new Animated.Value(0)).current;
+  const currentVisibleStateRef = useRef<GameState | null>(initialState?.state ?? null);
+  // The newest server state, always — the fade below holds the *visible*
+  // state back for a second, and its completion must swap to whatever is
+  // latest by then (an undo may have superseded the faded-to state).
+  const latestStateRef = useRef<GameState | null>(initialState?.state ?? null);
+  const fjFadeActiveRef = useRef(false);
+
+  useEffect(() => {
+    if (!initialState?.state) return;
+    const incoming = initialState.state;
+    latestStateRef.current = incoming;
+    const current = currentVisibleStateRef.current;
+
+    if (incoming.status === 'FINAL_JEOPARDY_WAGER') {
+      // While a fade is already running, don't restart it — just keep the
+      // frozen screen's scores current; the running fade swaps to
+      // latestStateRef when it lands.
+      if (fjFadeActiveRef.current && current) {
+        const tempState = { ...current, players: incoming.players };
+        currentVisibleStateRef.current = tempState;
+        setGameState(tempState);
+        return;
+      }
+
+      // Cinematic fade only on the genuine forward entry into Final
+      // Jeopardy. Undo/redo landing on a wager state from inside the final
+      // round (current clue is already the sentinel) swaps directly below.
+      const enteringFinal =
+        current != null &&
+        current.status !== 'FINAL_JEOPARDY_WAGER' &&
+        current.status !== 'FINAL_JEOPARDY_ANSWER' &&
+        current.activeClue?.id !== -1;
+
+      if (enteringFinal) {
+        fjFadeActiveRef.current = true;
+        Animated.timing(fadeToBlackAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }).start(({ finished }) => {
+          fjFadeActiveRef.current = false;
+          if (!finished) return;
+          const latest = latestStateRef.current ?? incoming;
+          currentVisibleStateRef.current = latest;
+          setGameState(latest);
+
+          Animated.timing(fadeToBlackAnim, {
+            toValue: 0,
+            duration: 1500,
+            useNativeDriver: true,
+          }).start();
+        });
+
+        // Keep the old screen visible during the fade, but with the new
+        // scores so the +/- animation plays over it.
+        const tempState = { ...current, players: incoming.players };
+        currentVisibleStateRef.current = tempState;
+        setGameState(tempState);
+        return;
+      }
+    }
+
+    // Direct swap. A mid-flight fade toward Final Jeopardy is superseded by
+    // this newer state (e.g. the user undid the verdict that started it) —
+    // kill it so its completion can't overwrite the screen with stale state.
+    if (fjFadeActiveRef.current) {
+      fjFadeActiveRef.current = false;
+      fadeToBlackAnim.stopAnimation();
+    }
+    fadeToBlackAnim.setValue(0);
+    currentVisibleStateRef.current = incoming;
+    setGameState(incoming);
+  }, [initialState?.state, fadeToBlackAnim]);
+
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const playerId = initialState?.playerId ?? null;
   // Deadlines (epoch ms) for the current phase window and the local player's
@@ -127,15 +202,18 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   if (gameState && gameState.status !== previousStatusRef.current) {
     if (gameState.status === 'BUZZ_OPEN') {
       buzzWindowDeadlineRef.current = Date.now() + PHASE_TIMERS.BUZZ_OPEN!.ms;
+    } else if (gameState.status === 'FINAL_JEOPARDY_WAGER' || gameState.status === 'FINAL_JEOPARDY_ANSWER') {
+      buzzWindowDeadlineRef.current = Date.now() + 30000;
     }
     previousStatusRef.current = gameState.status;
   }
 
   const localBuzz = gameState && playerId ? getBuzz(gameState, playerId) : undefined;
   const typing =
-    !!localBuzz &&
-    !localBuzz.locked &&
-    (gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING');
+    (gameState?.status === 'BUZZ_OPEN' && localBuzz && !localBuzz.locked) ||
+    (gameState?.status === 'ANSWERING' && localBuzz && !localBuzz.locked) ||
+    (gameState?.status === 'FINAL_JEOPARDY_WAGER' && localBuzz && !localBuzz.locked) ||
+    (gameState?.status === 'FINAL_JEOPARDY_ANSWER' && localBuzz && !localBuzz.locked);
 
   // Every STATE_UPDATE deserializes a fresh object tree, so identity can't
   // signal change here. Key the board pipeline on the burned list's content
@@ -189,11 +267,12 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // Stable identity so the memoized ActivationLights can skip re-rendering
   // its 171 lamps on renders that don't change the timer window.
   const lights = useMemo(() => {
-    const show = gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING';
+    const show = gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING' || gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER';
     if (!show || buzzWindowDeadlineRef.current == null) return null;
+    const isFinal = gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER';
     return {
       deadline: buzzWindowDeadlineRef.current,
-      durationMs: PHASE_TIMERS.BUZZ_OPEN!.ms,
+      durationMs: isFinal ? 30000 : PHASE_TIMERS.BUZZ_OPEN!.ms,
       flash: true,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -213,12 +292,23 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const shownAnswer =
     typing && localEcho?.clueId === activeClueId ? localEcho.text : localBuzz?.answer ?? '';
 
+  // The wager and answer phases share the final clue's sentinel id (-1), so
+  // a clue-id-keyed echo would carry the typed wager digits straight into
+  // the answer keyboard. Drop the echo at the phase boundary — the server's
+  // fresh (empty) answer takes over.
+  useEffect(() => {
+    if (gameState?.status === 'FINAL_JEOPARDY_ANSWER') setLocalEcho(null);
+  }, [gameState?.status]);
+
   // Solo mode: auto-dismiss the reveal after 2.5 s. The player can still
   // swipe or use arrow keys to self-judge (and record a score) before then.
+  // Final Jeopardy is exempt: it can't be skipped — every answer needs a
+  // verdict to reach GAME OVER.
   useEffect(() => {
     if (!gameState || !playerId) return;
     if (Object.keys(gameState.players).length !== 1) return;
     if (gameState.status !== 'REVEAL' || !gameState.activeClue) return;
+    if (gameState.activeClue.id === -1) return;
     const clueId = gameState.activeClue.id;
     const timer = setTimeout(() => {
       dispatch({ type: 'SKIP_CLUE', playerId, clueId });
@@ -228,6 +318,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   }, [gameState?.status, gameState?.activeClue?.id, playerId]);
 
   if (!gameState || !playerId) {
+    console.log('Stuck on connecting! gameState:', !!gameState, 'playerId:', playerId);
     return (
       <View style={styles.connecting}>
         <Text style={styles.connectingText}>Connecting...</Text>
@@ -236,6 +327,26 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   }
 
   const onStand = judgedPlayerId(gameState);
+
+  // Final Jeopardy spans three statuses — WAGER, ANSWER, and the shared
+  // REVEAL used for judging — but the clue keeps its sentinel id (-1)
+  // through all of them, so the black backdrop keys off the clue, not the
+  // status. The backdrop always stops short of the player bar; whether the
+  // bar actually shows there is ChooseClueScreen's slide (visible for the
+  // wager and judging, slid away during the answer), which reads seamlessly
+  // because the bar's rail matches the backdrop color.
+  const isFinalClue = gameState.activeClue?.id === -1;
+
+  // Everyone's answer goes on the stand at once in Final Jeopardy; normal
+  // play judges one buzzer at a time in buzz order.
+  const stands =
+    gameState.status === 'REVEAL'
+      ? isFinalClue
+        ? gameState.buzzes.map(b => ({ playerId: b.playerId, answer: b.answer }))
+        : onStand
+          ? [{ playerId: onStand, answer: getBuzz(gameState, onStand)?.answer ?? '' }]
+          : []
+      : [];
 
   const disconnectedPlayerId = peerDisconnected
     ? Object.keys(gameState.players).find(id => id !== playerId) ?? null
@@ -298,17 +409,23 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       )}
     >
       <View style={styles.root}>
-        <ChooseClueScreen
-          state={gameState}
-          localPlayerId={playerId}
-          board={visibleBoard}
-          disconnectedPlayerId={disconnectedPlayerId}
-          boardAnimKey={animationsEnabled ? boardAnimKeyRef.current : 0}
-          animationsEnabled={animationsEnabled}
-          judgingPlayerId={gameState.status === 'REVEAL' ? onStand : null}
-          onSelectClue={handleSelectClue}
-          onSkipClue={handleSkipClue}
+        <Animated.View
+          style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg, opacity: fadeToBlackAnim, zIndex: 9999 }]}
+          pointerEvents="none"
         />
+        <View style={styles.root}>
+          <ChooseClueScreen
+            state={gameState}
+            localPlayerId={playerId}
+            board={visibleBoard}
+            disconnectedPlayerId={disconnectedPlayerId}
+            boardAnimKey={animationsEnabled ? boardAnimKeyRef.current : 0}
+            animationsEnabled={animationsEnabled}
+            judgingPlayerId={gameState.status === 'REVEAL' && !isFinalClue ? onStand : null}
+            onSelectClue={handleSelectClue}
+            onSkipClue={handleSkipClue}
+          />
+        </View>
 
         {peerDisconnected && !gameState.activeClue && (
           <View style={[styles.statusLineWrap, styles.rejoinWrap]}>
@@ -319,21 +436,36 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         )}
 
         {gameState.activeClue && (
-          <ExpandingClueOverlay
-            key={gameState.activeClue.id}
-            animate={animationsEnabled}
-            bottomInset={PLAYER_BAR_HEIGHT}
-            fromRect={
-              selectedCellRef.current?.clueId === gameState.activeClue.id
-                ? selectedCellRef.current.rect
-                : null
-            }
-          >
+          <View style={StyleSheet.absoluteFill}>
+            {isFinalClue && (
+              <View
+                pointerEvents="none"
+                style={[
+                  StyleSheet.absoluteFill,
+                  { backgroundColor: colors.bg, bottom: PLAYER_BAR_HEIGHT },
+                ]}
+              />
+            )}
+            <ExpandingClueOverlay
+              key={gameState.activeClue.id}
+              animate={animationsEnabled && gameState.activeClue.id !== -1}
+              bottomInset={PLAYER_BAR_HEIGHT}
+              fromRect={
+                selectedCellRef.current?.clueId === gameState.activeClue.id
+                  ? selectedCellRef.current.rect
+                  : null
+              }
+            >
             <ClueScreen
               clue={gameState.activeClue}
+              isFinalJeopardyWager={gameState.status === 'FINAL_JEOPARDY_WAGER'}
               canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz}
               lights={lights}
               showKeyboard={typing}
+              keyboardType={gameState.status === 'FINAL_JEOPARDY_WAGER' ? 'number' : 'text'}
+              inputPrefix={gameState.status === 'FINAL_JEOPARDY_WAGER' ? '$' : ''}
+              placeholder={gameState.status === 'FINAL_JEOPARDY_WAGER' ? 'ENTER WAGER' : 'TYPE YOUR ANSWER'}
+              onMaxWager={gameState.status === 'FINAL_JEOPARDY_WAGER' ? () => handleAnswerChange(String(gameState.players[playerId]?.score ?? 0)) : undefined}
               onSkip={() => {
                 if (gameState.activeClue) dispatch({ type: 'SKIP_CLUE', playerId, clueId: gameState.activeClue.id });
               }}
@@ -356,26 +488,26 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               }
             />
           </ExpandingClueOverlay>
+          </View>
         )}
 
-        {gameState.status === 'REVEAL' && onStand && (
+        {stands.length > 0 && (
           <JudgementTray
-            key={onStand}
             players={Object.values(gameState.players)}
             localPlayerId={playerId}
-            judgedPlayerId={onStand}
-            answer={getBuzz(gameState, onStand)?.answer ?? ''}
+            finalJeopardy={isFinalClue}
+            stands={stands}
             hasMoreToJudge={
-              gameState.activeClue
+              !isFinalClue && gameState.activeClue
                 ? gameState.buzzes.some(
                     b => b.playerId !== onStand && !gameState.activeClue!.failedPlayerIds.includes(b.playerId)
                   )
                 : false
             }
-            onJudge={(correct, penalty) =>
+            onJudge={(judgedId, correct, penalty) =>
               dispatch({
                 type: 'JUDGE_ANSWER',
-                playerId: onStand,
+                playerId: judgedId,
                 correct,
                 ...(penalty !== undefined ? { penalty } : {}),
               })
@@ -393,7 +525,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
         {gameState.status === 'GAME_OVER' && (() => {
           const PLAYER_COLORS = ['#5B8DEF', '#E8A035'];
-          const sorted = Object.values(gameState.players).sort((a, b) => b.score - a.score);
+          const sorted = Object.values(gameState.players).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
           const chartPlayers = sorted.map((p, i) => ({
             name: p.name,
             color: PLAYER_COLORS[i % PLAYER_COLORS.length]!,
@@ -421,7 +553,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                         <View style={styles.gameOverNameRow}>
                           <View style={[styles.gameOverColorDot, { backgroundColor: PLAYER_COLORS[i % PLAYER_COLORS.length] }]} />
                           <Text style={styles.gameOverScore}>
-                            {p.name}: ${p.score.toLocaleString()}
+                            {p.name}: ${(p.score ?? 0).toLocaleString()}
                           </Text>
                         </View>
                         <Text style={styles.gameOverStats}>
@@ -430,6 +562,11 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                         <Text style={styles.gameOverStats}>
                           {firstBuzzPct}% buzzed first · {buzzSpeedMs}ms average reaction
                         </Text>
+                        {gameState.finalWagers?.[p.id] != null && (
+                          <Text style={styles.gameOverStats}>
+                            ${gameState.finalWagers[p.id]!.toLocaleString()} final wager
+                          </Text>
+                        )}
                       </View>
                     );
                   })}
@@ -484,7 +621,7 @@ const styles = StyleSheet.create({
   },
   gameOverOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.85)',
+    backgroundColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10000,

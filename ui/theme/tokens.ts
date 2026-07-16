@@ -18,6 +18,12 @@ export const colors = {
   /** A recessed layer sitting visually "behind" the cell blue — between
    *  cell and the near-black background. */
   cellRecessed: '#0F1440',
+  /** Final Jeopardy surface — `cell` drained of its navy: a charcoal of
+   *  the same depth, with just a whisper of blue left in so it still
+   *  reads as family. */
+  cellFinal: '#1B1B22',
+  /** Final Jeopardy recessed layer — `cellRecessed`'s charcoal twin. */
+  cellFinalRecessed: '#141419',
   /** Classic gold for dollar values */
   gold: '#E5B20D',
   /** Warmer tan-gold of the broadcast board numbers (rgb 218,157,92) */

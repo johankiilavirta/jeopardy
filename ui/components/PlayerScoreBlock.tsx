@@ -11,6 +11,10 @@ interface PlayerScoreBlockProps {
   disconnected?: boolean;
   /** Whether to animate score changes. */
   animationsEnabled?: boolean;
+  /** Whether to hide the score and display '?' instead. */
+  hideScore?: boolean;
+  /** Final Jeopardy: swap the cell navy for the round's charcoal. */
+  finalJeopardy?: boolean;
 }
 
 function formatScore(score: number): string {
@@ -18,7 +22,7 @@ function formatScore(score: number): string {
   return score < 0 ? `-$${abs}` : `$${abs}`;
 }
 
-export function PlayerScoreBlock({ name, score, activeTurn, disconnected, animationsEnabled = true }: PlayerScoreBlockProps) {
+export function PlayerScoreBlock({ name, score, activeTurn, disconnected, animationsEnabled = true, hideScore = false, finalJeopardy = false }: PlayerScoreBlockProps) {
   const [displayedScore, setDisplayedScore] = useState(score);
   const [animDiff, setAnimDiff] = useState<number | null>(null);
   
@@ -124,7 +128,7 @@ export function PlayerScoreBlock({ name, score, activeTurn, disconnected, animat
   });
 
   return (
-    <View style={[styles.block, activeTurn && styles.blockActive, disconnected && styles.blockDisconnected]}>
+    <View style={[styles.block, finalJeopardy && styles.blockFinal, activeTurn && styles.blockActive, disconnected && styles.blockDisconnected]}>
       {/* Background colored flash overlay */}
       {animDiff !== null && (
         <Animated.View
@@ -153,7 +157,7 @@ export function PlayerScoreBlock({ name, score, activeTurn, disconnected, animat
           numberOfLines={1}
           allowFontScaling={false}
         >
-          {formatScore(displayedScore)}
+          {hideScore ? '?' : formatScore(displayedScore)}
         </Animated.Text>
         
         {animDiff !== null && (
@@ -203,6 +207,9 @@ const styles = StyleSheet.create({
   },
   blockActive: {
     borderBottomColor: colors.activeOutline,
+  },
+  blockFinal: {
+    backgroundColor: colors.cellFinal,
   },
   blockDisconnected: {
     opacity: 0.35,

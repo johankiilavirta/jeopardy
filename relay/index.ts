@@ -12,9 +12,6 @@ const TOTAL_CLUES_DEMO = 30; // 6×5 fallback board
 /** How long an in-progress room survives with zero players connected. */
 const EMPTY_ROOM_GRACE_MS = 5 * 60 * 1000;
 
-/** How long an in-progress room survives with zero players connected. */
-const EMPTY_ROOM_GRACE_MS = 5 * 60 * 1000;
-
 // --- Game data lookup (runs server-side, loads files on demand) ---
 // Assumes the relay is started from the project root (npm run relay).
 
@@ -28,7 +25,7 @@ let _gameIndex: GameIndex | null = null;
 
 interface RawClue { value: number; text: string; answer: string }
 interface RawCategory { name: string; clues: RawClue[] }
-interface RawGame { gameNumber: number; airDate: string; round1: RawCategory[]; round2: RawCategory[] }
+interface RawGame { gameNumber: number; airDate: string; round1: RawCategory[]; round2: RawCategory[]; final?: { category: string; text: string; answer: string } }
 const _seasonCache = new Map<string, RawGame[]>();
 
 function getGameIndex(): GameIndex {
@@ -71,6 +68,7 @@ export interface FullGameData {
   season: number;
   round1: CategoryData[];
   round2: CategoryData[];
+  final?: { category: string; text: string; answer: string };
 }
 
 function lookupGame(gameNumber: number): GameInfo | null {
@@ -111,6 +109,7 @@ function lookupFullGame(gameNumber: number): FullGameData | null {
       season: seasonNumber,
       round1: game.round1,
       round2: game.round2,
+      final: game.final,
     };
   } catch {
     return null;
@@ -384,9 +383,26 @@ function startServer(portIndex: number): void {
           room.serverTransport = serverTransport;
 
           const playerNames = room.players.map(p => p.name);
+          const isFastForward = process.env.FAST_FORWARD === '1' || process.env.FAST_FORWARD === 'true';
+          let stateToLoad = resumeState;
+
+          if (isFastForward && !stateToLoad) {
+            const getClueIds = (cats: CategoryData[], offset: number) =>
+              cats.flatMap((c, col) => c.clues.map((cl, row) => offset + col * 5 + row));
+            const allIds = gameData
+              ? [...getClueIds(gameData.round1, 0), ...getClueIds(gameData.round2, 30)]
+              : Array.from({ length: totalClues }, (_, i) => i);
+            
+            const { createInitialState } = require('../src/reducer.js');
+            const init = createInitialState(playerNames, totalClues, gameData?.final ?? null);
+            init.burnedClueIds = allIds.slice(0, -1);
+            stateToLoad = init;
+          }
+
           createServer(serverTransport, playerNames, {
             totalClues,
-            ...(resumeState ? { initialState: resumeState } : {}),
+            ...(stateToLoad ? { initialState: stateToLoad } : {}),
+            finalClue: gameData?.final ?? null,
           });
 
           const serverPeerId = 'server';

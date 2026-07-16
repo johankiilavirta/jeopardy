@@ -25,20 +25,24 @@ const KEY_RADIUS = 8;
 interface AnswerKeyboardProps {
   onInsert: (char: string) => void;
   onBackspace: () => void;
+  /** Final Jeopardy: the keys swap cell navy for the round's charcoal. */
+  final?: boolean;
 }
 
 function Key({
   label,
   flex = 1,
+  final = false,
   onPress,
 }: {
   label: string;
   flex?: number;
+  final?: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable
-      style={({ pressed }) => [styles.key, { flex }, pressed && styles.keyPressed]}
+      style={({ pressed }) => [styles.key, final && styles.keyFinal, { flex }, pressed && styles.keyPressed]}
       onPress={onPress}
     >
       <Text style={styles.keyText} allowFontScaling={false}>
@@ -50,22 +54,22 @@ function Key({
 
 /** Memoized: the keys are static, so with stable callbacks the whole deck
  *  skips re-rendering on every keystroke. */
-export const AnswerKeyboard = memo(function AnswerKeyboard({ onInsert, onBackspace }: AnswerKeyboardProps) {
+export const AnswerKeyboard = memo(function AnswerKeyboard({ onInsert, onBackspace, final = false }: AnswerKeyboardProps) {
   return (
     <View style={styles.keyboard}>
       {LETTER_ROWS.map((row, i) => (
         <View key={i} style={styles.row}>
           {row.map(ch => (
-            <Key key={ch} label={ch} onPress={() => onInsert(ch)} />
+            <Key key={ch} label={ch} final={final} onPress={() => onInsert(ch)} />
           ))}
           {i === LETTER_ROWS.length - 1 && (
-            <Key label={BACKSPACE} flex={2} onPress={onBackspace} />
+            <Key label={BACKSPACE} flex={2} final={final} onPress={onBackspace} />
           )}
         </View>
       ))}
       <View style={styles.row}>
         <View style={styles.spacer} />
-        <Key label="SPACE" flex={4} onPress={() => onInsert(' ')} />
+        <Key label="SPACE" flex={4} final={final} onPress={() => onInsert(' ')} />
         <View style={styles.spacer} />
       </View>
     </View>
@@ -94,6 +98,9 @@ const styles = StyleSheet.create({
     borderRadius: KEY_RADIUS,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  keyFinal: {
+    backgroundColor: colors.cellFinal,
   },
   keyPressed: {
     backgroundColor: colors.activeOutline,

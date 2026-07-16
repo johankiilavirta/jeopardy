@@ -31,9 +31,13 @@ interface PlayerHeaderProps {
   judgingPlayerId?: string | null | undefined;
   /** Whether animations should play. */
   animationsEnabled?: boolean;
+  /** Whether to hide scores and display '?' instead. */
+  hideScores?: boolean;
+  /** Final Jeopardy: the bugs swap cell navy for the round's charcoal. */
+  finalJeopardy?: boolean;
 }
 
-export function PlayerHeader({ players, currentTurnPlayerId, localPlayerId, disconnectedPlayerId, judgingPlayerId, animationsEnabled = true }: PlayerHeaderProps) {
+export function PlayerHeader({ players, currentTurnPlayerId, localPlayerId, disconnectedPlayerId, judgingPlayerId, animationsEnabled = true, hideScores = false, finalJeopardy = false }: PlayerHeaderProps) {
   // While an answer is being judged, only the judged player is highlighted.
   const highlightId = judgingPlayerId ?? currentTurnPlayerId;
 
@@ -47,6 +51,8 @@ export function PlayerHeader({ players, currentTurnPlayerId, localPlayerId, disc
           activeTurn={player.id === highlightId}
           disconnected={player.id === disconnectedPlayerId}
           animationsEnabled={animationsEnabled}
+          hideScore={hideScores}
+          finalJeopardy={finalJeopardy}
         />
       ))}
     </View>

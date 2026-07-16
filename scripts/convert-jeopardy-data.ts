@@ -21,7 +21,7 @@ import { execSync } from 'node:child_process';
 // ── Types ──────────────────────────────────────────────────────────
 
 interface RawClue {
-  round: '1' | '2';
+  round: '1' | '2' | '3';
   clueValue: number;
   category: string;
   text: string;      // "answer" column = clue text shown to players
@@ -39,6 +39,7 @@ interface GameData {
   airDate: string;
   round1: CategoryData[];
   round2: CategoryData[];
+  final?: { category: string; text: string; answer: string };
 }
 
 interface SeasonIndex {
@@ -114,14 +115,14 @@ function parseClue(fields: string[]): RawClue | null {
   if (!round || !category || !answer || !question || !airDate) return null;
 
   const r = round.trim();
-  if (r !== '1' && r !== '2') return null; // skip Final Jeopardy (round 3)
+  if (r !== '1' && r !== '2' && r !== '3') return null;
 
   const value = parseInt(clueValue ?? '', 10);
-  if (!Number.isFinite(value) || value <= 0) return null;
+  if (r !== '3' && (!Number.isFinite(value) || value <= 0)) return null;
 
   return {
-    round: r as '1' | '2',
-    clueValue: value,
+    round: r as '1' | '2' | '3',
+    clueValue: r === '3' ? 0 : value,
     category: category.trim(),
     text: answer.trim(),
     answer: question.trim(),
@@ -220,10 +221,19 @@ function main() {
 
     const round1 = buildCategories(clues, '1', R1_VALUE_TIERS);
     const round2 = buildCategories(clues, '2', R2_VALUE_TIERS);
+    const finalClue = clues.find(c => c.round === '3');
 
     if (round1.length < MIN_R1_CATEGORIES) continue;
 
-    games.push({ gameNumber: 0, airDate, round1, round2 });
+    const game: GameData = { gameNumber: 0, airDate, round1, round2 };
+    if (finalClue) {
+      game.final = {
+        category: finalClue.category,
+        text: finalClue.text,
+        answer: finalClue.answer,
+      };
+    }
+    games.push(game);
   }
 
   // Assign sequential game numbers by air date.
