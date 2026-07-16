@@ -65,22 +65,51 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const [gameState, setGameState] = useState<GameState | null>(initialState?.state ?? null);
   const fadeToBlackAnim = useRef(new Animated.Value(0)).current;
   const currentVisibleStateRef = useRef<GameState | null>(initialState?.state ?? null);
+  // The newest server state, always — the fade below holds the *visible*
+  // state back for a second, and its completion must swap to whatever is
+  // latest by then (an undo may have superseded the faded-to state).
+  const latestStateRef = useRef<GameState | null>(initialState?.state ?? null);
+  const fjFadeActiveRef = useRef(false);
 
   useEffect(() => {
-    if (initialState?.state) {
-      const incomingStatus = initialState.state.status;
-      const currentStatus = currentVisibleStateRef.current?.status;
+    if (!initialState?.state) return;
+    const incoming = initialState.state;
+    latestStateRef.current = incoming;
+    const current = currentVisibleStateRef.current;
 
-      if (incomingStatus === 'FINAL_JEOPARDY_WAGER' && currentStatus !== 'FINAL_JEOPARDY_WAGER' && currentStatus !== 'FINAL_JEOPARDY_ANSWER') {
+    if (incoming.status === 'FINAL_JEOPARDY_WAGER') {
+      // While a fade is already running, don't restart it — just keep the
+      // frozen screen's scores current; the running fade swaps to
+      // latestStateRef when it lands.
+      if (fjFadeActiveRef.current && current) {
+        const tempState = { ...current, players: incoming.players };
+        currentVisibleStateRef.current = tempState;
+        setGameState(tempState);
+        return;
+      }
+
+      // Cinematic fade only on the genuine forward entry into Final
+      // Jeopardy. Undo/redo landing on a wager state from inside the final
+      // round (current clue is already the sentinel) swaps directly below.
+      const enteringFinal =
+        current != null &&
+        current.status !== 'FINAL_JEOPARDY_WAGER' &&
+        current.status !== 'FINAL_JEOPARDY_ANSWER' &&
+        current.activeClue?.id !== -1;
+
+      if (enteringFinal) {
+        fjFadeActiveRef.current = true;
         Animated.timing(fadeToBlackAnim, {
           toValue: 1,
           duration: 1000,
           useNativeDriver: true,
         }).start(({ finished }) => {
+          fjFadeActiveRef.current = false;
           if (!finished) return;
-          currentVisibleStateRef.current = initialState.state;
-          setGameState(initialState.state);
-          
+          const latest = latestStateRef.current ?? incoming;
+          currentVisibleStateRef.current = latest;
+          setGameState(latest);
+
           Animated.timing(fadeToBlackAnim, {
             toValue: 0,
             duration: 1500,
@@ -88,25 +117,25 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           }).start();
         });
 
-        // Update scores immediately so +/- plays, but keep the old screen visible during the fade
-        if (currentVisibleStateRef.current) {
-          const tempState = {
-            ...initialState.state,
-            status: currentVisibleStateRef.current.status,
-            activeClue: currentVisibleStateRef.current.activeClue,
-          };
-          currentVisibleStateRef.current = tempState;
-          setGameState(tempState);
-        } else {
-          currentVisibleStateRef.current = initialState.state;
-          setGameState(initialState.state);
-        }
-      } else {
-        fadeToBlackAnim.setValue(0);
-        currentVisibleStateRef.current = initialState.state;
-        setGameState(initialState.state);
+        // Keep the old screen visible during the fade, but with the new
+        // scores so the +/- animation plays over it.
+        const tempState = { ...current, players: incoming.players };
+        currentVisibleStateRef.current = tempState;
+        setGameState(tempState);
+        return;
       }
     }
+
+    // Direct swap. A mid-flight fade toward Final Jeopardy is superseded by
+    // this newer state (e.g. the user undid the verdict that started it) —
+    // kill it so its completion can't overwrite the screen with stale state.
+    if (fjFadeActiveRef.current) {
+      fjFadeActiveRef.current = false;
+      fadeToBlackAnim.stopAnimation();
+    }
+    fadeToBlackAnim.setValue(0);
+    currentVisibleStateRef.current = incoming;
+    setGameState(incoming);
   }, [initialState?.state, fadeToBlackAnim]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();

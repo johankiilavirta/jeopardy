@@ -576,3 +576,108 @@ describe('GameServer', () => {
     expect(count()).toBe(0);
   });
 });
+
+describe('GameServer Final Jeopardy undo/redo', () => {
+  const finalClue = {
+    category: 'WORLD CAPITALS',
+    text: 'Australia moved its capital to this purpose-built city in 1927',
+    answer: 'What is Canberra',
+  };
+
+  /** One-clue board: skipping it drops into Final Jeopardy, then both
+   *  players wager (alice 500, bob 300) and answer, landing in REVEAL. */
+  function setupFinalReveal() {
+    const mock = createMockTimer();
+    const host = new MockTransport('host');
+    const server = createServer(host, ['Alice', 'Bob'], {
+      timer: mock.timer,
+      totalClues: 1,
+      finalClue,
+    });
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    p1.send('host', JSON.stringify({ type: 'SKIP_CLUE', clueId: 1 }));
+    // Wagers
+    p1.send('host', JSON.stringify({ type: 'SET_ANSWER', text: '500' }));
+    p1.send('host', JSON.stringify({ type: 'LOCK_ANSWER' }));
+    p2.send('host', JSON.stringify({ type: 'SET_ANSWER', text: '300' }));
+    p2.send('host', JSON.stringify({ type: 'LOCK_ANSWER' }));
+    // Answers
+    p1.send('host', JSON.stringify({ type: 'SET_ANSWER', text: 'CANBERRA' }));
+    p1.send('host', JSON.stringify({ type: 'LOCK_ANSWER' }));
+    p2.send('host', JSON.stringify({ type: 'SET_ANSWER', text: 'SYDNEY' }));
+    p2.send('host', JSON.stringify({ type: 'LOCK_ANSWER' }));
+    expect(server.history.current.status).toBe('REVEAL');
+    return { server, p1, p2 };
+  }
+
+  it('undoing a verdict restores the judged buzz so the player can be re-judged', () => {
+    const { server, p1 } = setupFinalReveal();
+
+    p1.send('host', JSON.stringify({ type: 'JUDGE_ANSWER', playerId: 'alice', correct: false }));
+    expect(server.history.current.players['alice']!.score).toBe(-500);
+    expect(server.history.current.buzzes.map(b => b.playerId)).toEqual(['bob']);
+
+    p1.send('host', JSON.stringify({ type: 'UNDO' }));
+    const state = server.history.current;
+    expect(state.status).toBe('REVEAL');
+    expect(state.buzzes).toHaveLength(2);
+    expect(state.players['alice']!.score).toBe(0);
+    expect(state.players['alice']!.incorrect).toBe(0);
+  });
+
+  it('undoing from GAME_OVER rewinds one verdict, not the whole final round', () => {
+    const { server, p1 } = setupFinalReveal();
+
+    p1.send('host', JSON.stringify({ type: 'JUDGE_ANSWER', playerId: 'alice', correct: true }));
+    p1.send('host', JSON.stringify({ type: 'JUDGE_ANSWER', playerId: 'bob', correct: false }));
+    expect(server.history.current.status).toBe('GAME_OVER');
+
+    p1.send('host', JSON.stringify({ type: 'UNDO' }));
+    const state = server.history.current;
+    expect(state.status).toBe('REVEAL');
+    // Bob's verdict is undone (his buzz is back), alice's stands.
+    expect(state.buzzes.map(b => b.playerId)).toEqual(['bob']);
+    expect(state.players['alice']!.score).toBe(500);
+    expect(state.players['bob']!.score).toBe(0);
+  });
+
+  it('undo steps through the final round one lock at a time, not straight to the board', () => {
+    const { server, p1 } = setupFinalReveal();
+    const undo = () => p1.send('host', JSON.stringify({ type: 'UNDO' }));
+
+    undo(); // bob's answer lock
+    expect(server.history.current.status).toBe('FINAL_JEOPARDY_ANSWER');
+    expect(server.history.current.buzzes.find(b => b.playerId === 'bob')).toMatchObject({
+      answer: 'SYDNEY',
+      locked: false,
+    });
+
+    undo(); // alice's answer lock
+    expect(server.history.current.status).toBe('FINAL_JEOPARDY_ANSWER');
+    expect(server.history.current.buzzes.every(b => !b.locked)).toBe(true);
+
+    undo(); // bob's wager lock
+    expect(server.history.current.status).toBe('FINAL_JEOPARDY_WAGER');
+
+    undo(); // alice's wager lock
+    expect(server.history.current.status).toBe('FINAL_JEOPARDY_WAGER');
+    expect(server.history.current.buzzes.every(b => !b.locked)).toBe(true);
+
+    undo(); // entering Final Jeopardy itself
+    expect(server.history.current.status).toBe('CHOOSE_CLUE');
+  });
+
+  it('redo from the board stops at the wager, not deep inside the final round', () => {
+    const { server, p1 } = setupFinalReveal();
+    for (let i = 0; i < 5; i++) p1.send('host', JSON.stringify({ type: 'UNDO' }));
+    expect(server.history.current.status).toBe('CHOOSE_CLUE');
+
+    p1.send('host', JSON.stringify({ type: 'REDO' }));
+    expect(server.history.current.status).toBe('FINAL_JEOPARDY_WAGER');
+    expect(server.history.current.buzzes.every(b => !b.locked)).toBe(true);
+  });
+});

@@ -1,5 +1,5 @@
 import type { Transport } from './transport.js';
-import type { Action, GameState } from './types.js';
+import type { Action, GameState, GameStatus } from './types.js';
 import { createInitialState } from './reducer.js';
 import { createHistory, dispatch, undo, redo, canUndo, canRedo, type GameHistory } from './history.js';
 import { computeReadingMs } from './readingTime.js';
@@ -41,6 +41,18 @@ export interface ServerOptions {
 
 /** Actions clients are allowed to send. Timer actions are server-only. */
 const CLIENT_ACTIONS = new Set(['SELECT_CLUE', 'BUZZ', 'SET_ANSWER', 'LOCK_ANSWER', 'UNLOCK_ANSWER', 'JUDGE_ANSWER', 'SKIP_CLUE']);
+
+/** Undo/redo land only on these statuses; the transient in-clue phases
+ *  (CLUE_READING, BUZZ_OPEN, ANSWERING, CLUE_EXPIRED) are skipped over.
+ *  The Final Jeopardy phases are boundaries too: each step un-does one
+ *  locked wager/answer instead of blowing through the whole final round
+ *  back to the regular board. */
+const UNDO_BOUNDARY_STATUSES: ReadonlySet<GameStatus> = new Set([
+  'CHOOSE_CLUE',
+  'REVEAL',
+  'FINAL_JEOPARDY_WAGER',
+  'FINAL_JEOPARDY_ANSWER',
+]);
 
 export function createServer(
   transport: Transport,
@@ -217,13 +229,11 @@ export function createServer(
       if (!canUndo(server.history)) return;
       const prev = server.history;
       // Step back once to leave the current state, then skip intermediate
-      // states (CLUE_READING, BUZZ_OPEN, ANSWERING, CLUE_EXPIRED) and
-      // stop at the next meaningful boundary: CHOOSE_CLUE or REVEAL.
+      // states and stop at the next meaningful boundary.
       server.history = undo(server.history);
       while (
         canUndo(server.history) &&
-        server.history.current.status !== 'CHOOSE_CLUE' &&
-        server.history.current.status !== 'REVEAL'
+        !UNDO_BOUNDARY_STATUSES.has(server.history.current.status)
       ) {
         server.history = undo(server.history);
       }
@@ -239,12 +249,11 @@ export function createServer(
     if (parsed.type === 'REDO') {
       if (!canRedo(server.history)) return;
       // Step forward once, then skip intermediate states and stop at
-      // the next CHOOSE_CLUE or REVEAL.
+      // the next meaningful boundary.
       server.history = redo(server.history);
       while (
         canRedo(server.history) &&
-        server.history.current.status !== 'CHOOSE_CLUE' &&
-        server.history.current.status !== 'REVEAL'
+        !UNDO_BOUNDARY_STATUSES.has(server.history.current.status)
       ) {
         server.history = redo(server.history);
       }
