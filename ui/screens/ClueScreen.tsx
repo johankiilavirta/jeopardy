@@ -508,7 +508,6 @@ export function ClueScreen({
             <Animated.View
               style={{
                 transform: [{ translateY: isFinalJeopardy ? 0 : clueRise }, { scale: clueScale }],
-                opacity: Animated.subtract(1, revealOpacity),
                 alignItems: 'center',
                 position: 'relative',
               }}
