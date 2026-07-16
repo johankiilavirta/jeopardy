@@ -565,7 +565,7 @@ export function ClueScreen({
               <View style={styles.keyDeck}>
                 <View style={styles.keyDeckInner}>
                   {keyboardType === 'number' ? (
-                    <NumberKeyboard onInsert={insertChar} onBackspace={backspaceChar} onMaxWager={onMaxWager} />
+                    <NumberKeyboard onInsert={insertChar} onBackspace={backspaceChar} {...(onMaxWager ? { onMaxWager } : {})} />
                   ) : (
                     <AnswerKeyboard onInsert={insertChar} onBackspace={backspaceChar} />
                   )}

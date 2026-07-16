@@ -137,7 +137,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
   const fjFadeAnim = useRef(new Animated.Value(0)).current;
   const [prevStatus, setPrevStatus] = useState<GameStatus | null>(null);
-
+  useEffect(() => {
     const isFinal = gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER';
     const wasFinal = prevStatus === 'FINAL_JEOPARDY_WAGER' || prevStatus === 'FINAL_JEOPARDY_ANSWER';
 
@@ -376,7 +376,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               keyboardType={gameState.status === 'FINAL_JEOPARDY_WAGER' ? 'number' : 'text'}
               inputPrefix={gameState.status === 'FINAL_JEOPARDY_WAGER' ? '$' : ''}
               placeholder={gameState.status === 'FINAL_JEOPARDY_WAGER' ? 'ENTER WAGER' : 'TYPE YOUR ANSWER'}
-              onMaxWager={gameState.status === 'FINAL_JEOPARDY_WAGER' ? () => handleAnswerChange(String(gameState.players[playerId].score)) : undefined}
+              onMaxWager={gameState.status === 'FINAL_JEOPARDY_WAGER' ? () => handleAnswerChange(String(gameState.players[playerId]?.score ?? 0)) : undefined}
               onSkip={() => {
                 if (gameState.activeClue) dispatch({ type: 'SKIP_CLUE', playerId, clueId: gameState.activeClue.id });
               }}
@@ -407,7 +407,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                 currentTurnPlayerId={gameState.currentTurnPlayerId}
                 localPlayerId={playerId}
                 disconnectedPlayerId={disconnectedPlayerId}
-                judgingPlayerId={gameState.status === 'REVEAL' ? onStand : null}
+                judgingPlayerId={null}
                 animationsEnabled={animationsEnabled}
               />
             </Animated.View>
