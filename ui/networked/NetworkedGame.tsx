@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { sendAction } from '../../src/client';
 import { computeReadingMs } from '../../src/readingTime';
@@ -62,7 +62,39 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
-  const gameState = initialState?.state ?? null;
+  const [gameState, setGameState] = useState<GameState | null>(initialState?.state ?? null);
+  const fadeToBlackAnim = useRef(new Animated.Value(0)).current;
+  const currentVisibleStateRef = useRef<GameState | null>(initialState?.state ?? null);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    if (initialState?.state) {
+      const incomingStatus = initialState.state.status;
+      const currentStatus = currentVisibleStateRef.current?.status;
+
+      if (incomingStatus === 'FINAL_JEOPARDY_WAGER' && currentStatus !== 'FINAL_JEOPARDY_WAGER' && currentStatus !== 'FINAL_JEOPARDY_ANSWER') {
+        Animated.timing(fadeToBlackAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }).start(({ finished }) => {
+          if (!finished) return;
+          currentVisibleStateRef.current = initialState.state;
+          setGameState(initialState.state);
+          
+          Animated.timing(fadeToBlackAnim, {
+            toValue: 0,
+            duration: 1500,
+            useNativeDriver: true,
+          }).start();
+        });
+      } else {
+        currentVisibleStateRef.current = initialState.state;
+        setGameState(initialState.state);
+      }
+    }
+  }, [initialState?.state, fadeToBlackAnim]);
+
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const playerId = initialState?.playerId ?? null;
   // Deadlines (epoch ms) for the current phase window and the local player's
@@ -169,7 +201,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     }
   }, [gameState?.status, fjTransitionAnim, fjScoreBugY]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (gameState?.status === 'REVEAL' && gameState?.activeClue?.id === -1) {
       fjScoreBugY.setValue(1000);
       Animated.spring(fjScoreBugY, {
@@ -351,7 +383,16 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         />
       )}
     >
-      <View style={styles.root}>
+      <View 
+        style={styles.root}
+        onLayout={e => {
+          setDimensions({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height });
+        }}
+      >
+        <Animated.View 
+          style={[StyleSheet.absoluteFill, { backgroundColor: 'black', opacity: fadeToBlackAnim, zIndex: 9999 }]} 
+          pointerEvents="none" 
+        />
         <Animated.View style={[styles.root, (gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') && { opacity: 0 }]}>
           <ChooseClueScreen
             state={gameState}
