@@ -405,7 +405,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
             }}>
               <PlayerHeader
                 players={Object.values(gameState.players)}
-                currentTurnPlayerId={gameState.currentTurnPlayerId}
+                currentTurnPlayerId={null}
                 localPlayerId={playerId}
                 disconnectedPlayerId={disconnectedPlayerId}
                 judgingPlayerId={null}
