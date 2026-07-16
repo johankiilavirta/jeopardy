@@ -180,7 +180,11 @@ function handleLockAnswer(state: GameState, action: Extract<Action, { type: 'LOC
   if (reveal && state.status === 'FINAL_JEOPARDY_WAGER') {
     const finalWagers: Record<string, number> = {};
     for (const b of buzzes) {
-      finalWagers[b.playerId] = parseInt(b.answer || '0', 10);
+      // A wager can't exceed what the player has (nor go below zero) —
+      // anything typed over the line rounds down to their score.
+      const wager = parseInt(b.answer || '0', 10);
+      const maxWager = Math.max(0, state.players[b.playerId]?.score ?? 0);
+      finalWagers[b.playerId] = Math.min(Number.isFinite(wager) ? Math.max(0, wager) : 0, maxWager);
     }
     const nextBuzzes = activePlayers.map(id => ({ playerId: id, answer: '', locked: false }));
     return {

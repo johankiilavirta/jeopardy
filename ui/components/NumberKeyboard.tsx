@@ -14,20 +14,24 @@ interface NumberKeyboardProps {
   onInsert: (char: string) => void;
   onBackspace: () => void;
   onMaxWager?: () => void;
+  /** Final Jeopardy: the keys swap cell navy for the round's charcoal. */
+  final?: boolean;
 }
 
 function Key({
   label,
   flex = 1,
+  final = false,
   onPress,
 }: {
   label: string;
   flex?: number;
+  final?: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable
-      style={({ pressed }) => [styles.key, { flex }, pressed && styles.keyPressed]}
+      style={({ pressed }) => [styles.key, final && styles.keyFinal, { flex }, pressed && styles.keyPressed]}
       onPress={onPress}
     >
       <Text style={styles.keyText} allowFontScaling={false}>
@@ -37,24 +41,24 @@ function Key({
   );
 }
 
-export const NumberKeyboard = memo(function NumberKeyboard({ onInsert, onBackspace, onMaxWager }: NumberKeyboardProps) {
+export const NumberKeyboard = memo(function NumberKeyboard({ onInsert, onBackspace, onMaxWager, final = false }: NumberKeyboardProps) {
   return (
     <View style={styles.keyboard}>
       {NUMBER_ROWS.map((row, i) => (
         <View key={i} style={styles.row}>
           {row.map(ch => (
-            <Key key={ch} label={ch} onPress={() => onInsert(ch)} />
+            <Key key={ch} label={ch} final={final} onPress={() => onInsert(ch)} />
           ))}
         </View>
       ))}
       <View style={styles.row}>
         {onMaxWager ? (
-          <Key label="MAX" onPress={onMaxWager} />
+          <Key label="MAX" final={final} onPress={onMaxWager} />
         ) : (
           <View style={styles.spacer} />
         )}
-        <Key label="0" onPress={() => onInsert('0')} />
-        <Key label={BACKSPACE} onPress={onBackspace} />
+        <Key label="0" final={final} onPress={() => onInsert('0')} />
+        <Key label={BACKSPACE} final={final} onPress={onBackspace} />
       </View>
     </View>
   );
@@ -79,6 +83,9 @@ const styles = StyleSheet.create({
     borderRadius: KEY_RADIUS,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  keyFinal: {
+    backgroundColor: colors.cellFinal,
   },
   keyPressed: {
     backgroundColor: colors.activeOutline,

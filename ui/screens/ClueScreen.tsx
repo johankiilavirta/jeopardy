@@ -454,6 +454,15 @@ export function ClueScreen({
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  // Tap-to-buzz / tap-to-summon works anywhere on screen, not just on the
+  // card: the full-screen layer below catches taps outside the card, and
+  // the card's own Pressable handles the rest with the same logic.
+  const handleTap = canBuzz
+    ? onBuzz
+    : dismissed
+      ? () => setDismissed(false)
+      : onUnlockAnswer;
+
   const correctOpacity = pan.interpolate({
     inputRange: [0, SWIPE_THRESHOLD],
     outputRange: [0, 1],
@@ -483,6 +492,11 @@ export function ClueScreen({
         </Text>
       </Animated.View>
 
+      {/* Full-screen tap catcher for everywhere the card doesn't cover
+          (margins, the band below the card): buzzing and summoning the
+          keyboard shouldn't require hitting the card itself. */}
+      {handleTap && <Pressable style={StyleSheet.absoluteFill} onPress={handleTap} />}
+
       <Animated.View
         style={[
           styles.cardWrap,
@@ -498,15 +512,7 @@ export function ClueScreen({
             styles.card,
             isFinalJeopardy && { backgroundColor: 'transparent', paddingHorizontal: 0 },
           ]}
-          onPress={
-            canBuzz
-              ? onBuzz
-              : dismissed
-                ? () => setDismissed(false)
-                : onUnlockAnswer
-                  ? onUnlockAnswer
-                  : undefined
-          }
+          onPress={handleTap}
         >
           {!isFinalJeopardyWager && (
             <Animated.View style={[styles.header, { opacity: headerFade }]}>
@@ -590,7 +596,11 @@ export function ClueScreen({
           ]}
         >
           <View
-            style={[styles.sheet, { minHeight: minSheetHeight }]}
+            style={[
+              styles.sheet,
+              isFinalJeopardy && styles.sheetFinal,
+              { minHeight: minSheetHeight },
+            ]}
             onLayout={e => setMeasuredPanelHeight(e.nativeEvent.layout.height)}
           >
             <Pressable onPress={() => {}} style={styles.sheetInner}>
@@ -607,9 +617,9 @@ export function ClueScreen({
               <View style={styles.keyDeck}>
                 <View style={styles.keyDeckInner}>
                   {keyboardType === 'number' ? (
-                    <NumberKeyboard onInsert={insertChar} onBackspace={backspaceChar} {...(onMaxWager ? { onMaxWager } : {})} />
+                    <NumberKeyboard onInsert={insertChar} onBackspace={backspaceChar} final={isFinalJeopardy} {...(onMaxWager ? { onMaxWager } : {})} />
                   ) : (
-                    <AnswerKeyboard onInsert={insertChar} onBackspace={backspaceChar} />
+                    <AnswerKeyboard onInsert={insertChar} onBackspace={backspaceChar} final={isFinalJeopardy} />
                   )}
                 </View>
               </View>
@@ -770,6 +780,11 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: SHEET_RADIUS,
     borderTopRightRadius: SHEET_RADIUS,
     overflow: 'hidden',
+  },
+  // Final Jeopardy: the sheet trades its recessed navy for the round's
+  // recessed charcoal, matching the score bugs and judging tabs.
+  sheetFinal: {
+    backgroundColor: colors.cellFinalRecessed,
   },
   sheetInner: {
     flex: 1,

@@ -562,6 +562,11 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                         <Text style={styles.gameOverStats}>
                           {firstBuzzPct}% buzzed first · {buzzSpeedMs}ms average reaction
                         </Text>
+                        {gameState.finalWagers?.[p.id] != null && (
+                          <Text style={styles.gameOverStats}>
+                            wagered ${gameState.finalWagers[p.id]!.toLocaleString()} in Final Jeopardy
+                          </Text>
+                        )}
                       </View>
                     );
                   })}

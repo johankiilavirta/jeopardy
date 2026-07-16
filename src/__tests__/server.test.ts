@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { MockTransport } from '../mockTransport.js';
+import { createInitialState } from '../reducer.js';
 import { createServer, type Timer } from '../server.js';
 import type { GameState } from '../types.js';
 
@@ -585,14 +586,18 @@ describe('GameServer Final Jeopardy undo/redo', () => {
   };
 
   /** One-clue board: skipping it drops into Final Jeopardy, then both
-   *  players wager (alice 500, bob 300) and answer, landing in REVEAL. */
+   *  players wager (alice 500, bob 300) and answer, landing in REVEAL.
+   *  Scores are seeded (alice 1500, bob 700) so the wagers are legal —
+   *  wagers clamp down to what the player actually has. */
   function setupFinalReveal() {
     const mock = createMockTimer();
     const host = new MockTransport('host');
-    const server = createServer(host, ['Alice', 'Bob'], {
+    const initial = createInitialState(['Alice', 'Bob'], 1, finalClue);
+    initial.players['alice']!.score = 1500;
+    initial.players['bob']!.score = 700;
+    const server = createServer(host, [], {
       timer: mock.timer,
-      totalClues: 1,
-      finalClue,
+      initialState: initial,
     });
     const p1 = new MockTransport('player1');
     const p2 = new MockTransport('player2');
@@ -618,14 +623,14 @@ describe('GameServer Final Jeopardy undo/redo', () => {
     const { server, p1 } = setupFinalReveal();
 
     p1.send('host', JSON.stringify({ type: 'JUDGE_ANSWER', playerId: 'alice', correct: false }));
-    expect(server.history.current.players['alice']!.score).toBe(-500);
+    expect(server.history.current.players['alice']!.score).toBe(1000); // 1500 - 500
     expect(server.history.current.buzzes.map(b => b.playerId)).toEqual(['bob']);
 
     p1.send('host', JSON.stringify({ type: 'UNDO' }));
     const state = server.history.current;
     expect(state.status).toBe('REVEAL');
     expect(state.buzzes).toHaveLength(2);
-    expect(state.players['alice']!.score).toBe(0);
+    expect(state.players['alice']!.score).toBe(1500);
     expect(state.players['alice']!.incorrect).toBe(0);
   });
 
@@ -641,8 +646,8 @@ describe('GameServer Final Jeopardy undo/redo', () => {
     expect(state.status).toBe('REVEAL');
     // Bob's verdict is undone (his buzz is back), alice's stands.
     expect(state.buzzes.map(b => b.playerId)).toEqual(['bob']);
-    expect(state.players['alice']!.score).toBe(500);
-    expect(state.players['bob']!.score).toBe(0);
+    expect(state.players['alice']!.score).toBe(2000); // 1500 + 500
+    expect(state.players['bob']!.score).toBe(700);
   });
 
   it('undo steps through the final round one lock at a time, not straight to the board', () => {

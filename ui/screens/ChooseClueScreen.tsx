@@ -117,6 +117,13 @@ export function ChooseClueScreen({
                 }),
               },
             ],
+            // The slide alone can leave the blocks' top edge peeking on
+            // devices with a bottom inset (nothing clips the bar), so it
+            // fades out in lockstep — hidden means invisible.
+            opacity: barSlide.interpolate({
+              inputRange: [0, 1],
+              outputRange: [1, 0],
+            }),
           },
         ]}
       >
