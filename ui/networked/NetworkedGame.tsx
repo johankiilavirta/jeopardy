@@ -133,14 +133,12 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     previousStatusRef.current = gameState.status;
   }
 
-  const [fjKeyboardReady, setFjKeyboardReady] = useState(true);
+  const [fjKeyboardReadyFor, setFjKeyboardReadyFor] = useState<GameStatus | null>(null);
   useEffect(() => {
     if (gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') {
-      setFjKeyboardReady(false);
-      const timer = setTimeout(() => setFjKeyboardReady(true), 2000);
+      const status = gameState.status;
+      const timer = setTimeout(() => setFjKeyboardReadyFor(status), 2000);
       return () => clearTimeout(timer);
-    } else {
-      setFjKeyboardReady(true);
     }
   }, [gameState?.status]);
 
@@ -161,10 +159,11 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
   const localBuzz = gameState && playerId ? getBuzz(gameState, playerId) : undefined;
   const typing =
-    fjKeyboardReady &&
     !!localBuzz &&
     !localBuzz.locked &&
-    (gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING' || gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER');
+    (gameState?.status === 'BUZZ_OPEN' || 
+     gameState?.status === 'ANSWERING' || 
+     ((gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') && fjKeyboardReadyFor === gameState.status));
 
   // Every STATE_UPDATE deserializes a fresh object tree, so identity can't
   // signal change here. Key the board pipeline on the burned list's content

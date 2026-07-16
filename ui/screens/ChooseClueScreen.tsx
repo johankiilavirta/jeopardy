@@ -59,6 +59,17 @@ export function ChooseClueScreen({
     Animated.timing(revealOpacity, { toValue: 1, duration: 220, useNativeDriver: true }).start();
   }, [revealOpacity]);
 
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const isFinalJeopardy = state.status === 'FINAL_JEOPARDY_WAGER' || state.status === 'FINAL_JEOPARDY_ANSWER';
+
+  useEffect(() => {
+    Animated.timing(slideAnim, {
+      toValue: isFinalJeopardy ? 200 : 0,
+      duration: isFinalJeopardy ? 800 : 500,
+      useNativeDriver: true,
+    }).start();
+  }, [isFinalJeopardy, slideAnim]);
+
   return (
     <Animated.View style={[styles.screen, { opacity: revealOpacity }]}>
       <View
@@ -87,7 +98,7 @@ export function ChooseClueScreen({
           />
         )}
       </View>
-      <View style={styles.playerBarWrap}>
+      <Animated.View style={[styles.playerBarWrap, { transform: [{ translateY: slideAnim }] }]}>
         <PlayerHeader
           players={Object.values(state.players)}
           currentTurnPlayerId={state.currentTurnPlayerId}
@@ -96,7 +107,7 @@ export function ChooseClueScreen({
           judgingPlayerId={judgingPlayerId}
           animationsEnabled={animationsEnabled}
         />
-      </View>
+      </Animated.View>
     </Animated.View>
   );
 }
