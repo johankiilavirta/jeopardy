@@ -159,10 +159,10 @@ export function ClueScreen({
   // brings it back. Only a swipe-down with at least one character locks
   // for real. `dismissed` resets whenever `showKeyboard` drops (lock,
   // phase change, timer expiry).
-  const [dismissed, setDismissed] = useState(() => isFinalJeopardyWager);
+  const [dismissed, setDismissed] = useState(() => isFinalJeopardy);
   useEffect(() => {
-    if (!showKeyboard) setDismissed(false);
-  }, [showKeyboard]);
+    if (!showKeyboard) setDismissed(isFinalJeopardy);
+  }, [showKeyboard, isFinalJeopardy]);
 
   // Keyboard slide animation. The keyboard is summoned by the game phase —
   // it rises when this player buzzes and drops when their answer locks
