@@ -66,6 +66,7 @@ interface RevealInfo {
 
 interface ClueScreenProps {
   clue: ActiveClue;
+  isFinalJeopardyWager?: boolean;
   /** Tap-to-buzz is live (buzz window open and this player hasn't buzzed). */
   canBuzz?: boolean | undefined;
   /** This player buzzed and is still typing — the keyboard is up. */
@@ -103,6 +104,7 @@ interface ClueScreenProps {
 
 export function ClueScreen({
   clue,
+  isFinalJeopardyWager = false,
   canBuzz,
   showKeyboard,
   canJudge,
@@ -493,20 +495,20 @@ export function ClueScreen({
                   : undefined
           }
         >
-          {!isFinalJeopardy && (
+          {!isFinalJeopardyWager && (
             <Animated.View style={[styles.header, { opacity: headerFade }]}>
               <Text style={styles.category} numberOfLines={1} allowFontScaling={false}>
                 {clue.category.toUpperCase()}
               </Text>
               <Text style={styles.value} numberOfLines={1} allowFontScaling={false}>
-                ${clue.value}
+                {clue.value ? `$${clue.value}` : ''}
               </Text>
             </Animated.View>
           )}
 
           <View style={[
             styles.body, 
-            isFinalJeopardy && { 
+            isFinalJeopardyWager && { 
               position: 'absolute', 
               top: (height * 0.02) + PLAYER_BLOCK_HEIGHT, 
               bottom: panelHeight > 0 ? panelHeight : Math.round(height * SHEET_MIN_HEIGHT_PCT), 
@@ -517,13 +519,13 @@ export function ClueScreen({
           ]}>
             <Animated.View
               style={{
-                transform: [{ translateY: isFinalJeopardy ? 0 : clueRise }, { scale: isFinalJeopardy ? 1 : clueScale }],
+                transform: [{ translateY: isFinalJeopardyWager ? 0 : clueRise }, { scale: isFinalJeopardyWager ? 1 : clueScale }],
                 alignItems: 'center',
                 position: 'relative',
               }}
             >
               <Text
-                style={[styles.clueText, isFinalJeopardy && { fontSize: 40, lineHeight: 50 }]}
+                style={[styles.clueText, isFinalJeopardyWager && { fontSize: 40, lineHeight: 50 }]}
                 allowFontScaling={false}
               >
                 {clue.text.toUpperCase()}

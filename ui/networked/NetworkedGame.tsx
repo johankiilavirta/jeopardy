@@ -368,6 +368,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
             >
             <ClueScreen
               clue={gameState.activeClue}
+              isFinalJeopardyWager={gameState.status === 'FINAL_JEOPARDY_WAGER'}
               canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz}
               lights={lights}
               showKeyboard={typing}
@@ -410,6 +411,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                 disconnectedPlayerId={disconnectedPlayerId}
                 judgingPlayerId={null}
                 animationsEnabled={animationsEnabled}
+                hideScores={gameState.status === 'FINAL_JEOPARDY_WAGER' || gameState.status === 'FINAL_JEOPARDY_ANSWER'}
               />
             </Animated.View>
           )}
