@@ -13,7 +13,7 @@ import type { ActiveClue } from '../../src/types';
 import { ActivationLights, LIGHTS_REST_BOTTOM, LIGHTS_WIDTH_PCT } from '../components/ActivationLights';
 import { AnswerKeyboard } from '../components/AnswerKeyboard';
 import { NumberKeyboard } from '../components/NumberKeyboard';
-import { PLAYER_BAR_HEIGHT, PLAYER_BLOCK_HEIGHT } from '../components/PlayerHeader';
+import { PLAYER_BAR_HEIGHT } from '../components/PlayerHeader';
 import { colors, shadow, type as typeTokens } from '../theme/tokens';
 
 /** Horizontal drag (px) past which a release commits the judgement. */
@@ -163,6 +163,14 @@ export function ClueScreen({
   useEffect(() => {
     if (!showKeyboard) setDismissed(isFinalJeopardy);
   }, [showKeyboard, isFinalJeopardy]);
+  // The wager and answer phases share one mounted card (same sentinel clue
+  // id), and for the last player to lock a wager `showKeyboard` never
+  // drops across the transition — the wager keyboard would ride straight
+  // into the answer screen, holding the category header at opacity 0.
+  // Every final-jeopardy phase starts with the keyboard put away instead.
+  useEffect(() => {
+    if (isFinalJeopardy) setDismissed(true);
+  }, [isFinalJeopardy, isFinalJeopardyWager]);
 
   // Keyboard slide animation. The keyboard is summoned by the game phase —
   // it rises when this player buzzes and drops when their answer locks
@@ -172,7 +180,13 @@ export function ClueScreen({
   // so rapid open/close just retargets one animation.
   const keyboardVisible = !!showKeyboard && !dismissed && !!onAnswerChange;
   const [kbMounted, setKbMounted] = useState(false);
-  const [panelHeight, setPanelHeight] = useState(300);
+  // The sheet's height: its measured layout once it has mounted, and the
+  // styled minimum before then. The keys stretch to fill the minimum, so
+  // the estimate is exact in practice — which matters for the final-wager
+  // category, anchored to the sheet's top edge before any keyboard exists.
+  const minSheetHeight = Math.round(height * SHEET_MIN_HEIGHT_PCT);
+  const [measuredPanelHeight, setMeasuredPanelHeight] = useState<number | null>(null);
+  const panelHeight = measuredPanelHeight ?? minSheetHeight;
   const kb = useRef(new Animated.Value(0)).current;
   // Live downward drag on the panel (swipe-to-lock follows the finger).
   const kbDrag = useRef(new Animated.Value(0)).current;
@@ -505,28 +519,16 @@ export function ClueScreen({
             </Animated.View>
           )}
 
-          <View style={[
-            styles.body, 
-            isFinalJeopardyWager && { 
-              position: 'absolute', 
-              top: PLAYER_BLOCK_HEIGHT, 
-              bottom: Math.max(0, (panelHeight > 0 ? panelHeight : Math.round(height * SHEET_MIN_HEIGHT_PCT)) - (10 + PLAYER_BAR_HEIGHT)),
-              left: 0, 
-              right: 0, 
-              paddingBottom: 0 
-            }
-          ]}>
+          {!isFinalJeopardyWager && (
+          <View style={styles.body}>
             <Animated.View
               style={{
-                transform: [{ translateY: isFinalJeopardyWager ? 0 : clueRise }, { scale: isFinalJeopardyWager ? 1 : clueScale }],
+                transform: [{ translateY: clueRise }, { scale: clueScale }],
                 alignItems: 'center',
                 position: 'relative',
               }}
             >
-              <Text
-                style={[styles.clueText, isFinalJeopardyWager && { fontSize: 40, lineHeight: 50 }]}
-                allowFontScaling={false}
-              >
+              <Text style={styles.clueText} allowFontScaling={false}>
                 {clue.text.toUpperCase()}
               </Text>
 
@@ -552,9 +554,25 @@ export function ClueScreen({
               )}
             </Animated.View>
           </View>
+          )}
         </Pressable>
 
       </Animated.View>
+
+      {/* The final wager's category: dead-center between the top of the
+          screen and the keyboard's raised top edge. It anchors to the
+          sheet's height — a plain number, not the slide driver — so it
+          holds perfectly still while the keyboard comes and goes. */}
+      {isFinalJeopardyWager && (
+        <View
+          pointerEvents="none"
+          style={[styles.wagerCategoryLayer, { bottom: panelHeight }]}
+        >
+          <Text style={[styles.clueText, styles.wagerCategoryText]} allowFontScaling={false}>
+            {clue.text.toUpperCase()}
+          </Text>
+        </View>
+      )}
 
       {/* The answer sheet: a floating console docked to the true screen
           bottom — centered, at least half the screen tall — sliding up
@@ -572,8 +590,8 @@ export function ClueScreen({
           ]}
         >
           <View
-            style={[styles.sheet, { minHeight: Math.round(height * SHEET_MIN_HEIGHT_PCT) }]}
-            onLayout={e => setPanelHeight(e.nativeEvent.layout.height)}
+            style={[styles.sheet, { minHeight: minSheetHeight }]}
+            onLayout={e => setMeasuredPanelHeight(e.nativeEvent.layout.height)}
           >
             <Pressable onPress={() => {}} style={styles.sheetInner}>
               <Animated.View style={[styles.answerZone, { opacity: Animated.multiply(answerOpacity, dragFade) }]}>
@@ -705,6 +723,18 @@ const styles = StyleSheet.create({
     textShadowColor: shadow.valueText.textShadowColor,
     textShadowOffset: shadow.valueText.textShadowOffset,
     textShadowRadius: shadow.valueText.textShadowRadius,
+  },
+  wagerCategoryLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wagerCategoryText: {
+    fontSize: 40,
+    lineHeight: 50,
   },
   revealWrap: {
     marginTop: 28,

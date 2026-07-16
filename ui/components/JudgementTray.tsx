@@ -16,6 +16,8 @@ interface JudgementTrayProps {
   answer: string;
   onJudge: (correct: boolean, penalty?: boolean) => void;
   hasMoreToJudge: boolean;
+  /** Final Jeopardy: the tab swaps its recessed navy for charcoal. */
+  finalJeopardy?: boolean;
 }
 
 /**
@@ -36,6 +38,7 @@ export function JudgementTray({
   answer,
   onJudge,
   hasMoreToJudge,
+  finalJeopardy = false,
 }: JudgementTrayProps) {
   const rise = useRef(new Animated.Value(0)).current;
 
@@ -98,6 +101,7 @@ export function JudgementTray({
             <Animated.View
               style={[
                 styles.tab,
+                finalJeopardy && styles.tabFinal,
                 {
                   transform: [
                     {
@@ -220,6 +224,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 10,
     paddingLeft: 18,
     paddingRight: 6,
+  },
+  tabFinal: {
+    backgroundColor: colors.cellFinalRecessed,
   },
   answerText: {
     flex: 1,

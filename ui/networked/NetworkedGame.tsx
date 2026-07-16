@@ -65,7 +65,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const [gameState, setGameState] = useState<GameState | null>(initialState?.state ?? null);
   const fadeToBlackAnim = useRef(new Animated.Value(0)).current;
   const currentVisibleStateRef = useRef<GameState | null>(initialState?.state ?? null);
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
     if (initialState?.state) {
@@ -180,27 +179,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     previousStatusRef.current = gameState.status;
   }
 
-  const fjTransitionAnim = useRef(new Animated.Value(0)).current;
-  const hasAnimatedFjRef = useRef(false);
-
-  useEffect(() => {
-    const isFinal = gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER';
-
-    if (isFinal && !hasAnimatedFjRef.current) {
-      hasAnimatedFjRef.current = true;
-      fjTransitionAnim.setValue(0);
-      
-      Animated.timing(fjTransitionAnim, {
-        toValue: 1,
-        duration: 2000,
-        useNativeDriver: true,
-      }).start();
-    } else if (!isFinal) {
-      hasAnimatedFjRef.current = false;
-      fjTransitionAnim.setValue(1);
-    }
-  }, [gameState?.status, fjTransitionAnim]);
-
   const localBuzz = gameState && playerId ? getBuzz(gameState, playerId) : undefined;
   const typing =
     (gameState?.status === 'BUZZ_OPEN' && localBuzz && !localBuzz.locked) ||
@@ -285,6 +263,14 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const shownAnswer =
     typing && localEcho?.clueId === activeClueId ? localEcho.text : localBuzz?.answer ?? '';
 
+  // The wager and answer phases share the final clue's sentinel id (-1), so
+  // a clue-id-keyed echo would carry the typed wager digits straight into
+  // the answer keyboard. Drop the echo at the phase boundary — the server's
+  // fresh (empty) answer takes over.
+  useEffect(() => {
+    if (gameState?.status === 'FINAL_JEOPARDY_ANSWER') setLocalEcho(null);
+  }, [gameState?.status]);
+
   // Solo mode: auto-dismiss the reveal after 2.5 s. The player can still
   // swipe or use arrow keys to self-judge (and record a score) before then.
   useEffect(() => {
@@ -309,6 +295,15 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   }
 
   const onStand = judgedPlayerId(gameState);
+
+  // Final Jeopardy spans three statuses — WAGER, ANSWER, and the shared
+  // REVEAL used for judging — but the clue keeps its sentinel id (-1)
+  // through all of them, so the black backdrop keys off the clue, not the
+  // status. During the wager the backdrop stops short of the player bar so
+  // the score bugs sit exactly where they do on a normal clue; from the
+  // answer phase onward it covers the whole screen.
+  const isFinalClue = gameState.activeClue?.id === -1;
+  const isFinalWager = gameState.status === 'FINAL_JEOPARDY_WAGER';
 
   const disconnectedPlayerId = peerDisconnected
     ? Object.keys(gameState.players).find(id => id !== playerId) ?? null
@@ -370,17 +365,12 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         />
       )}
     >
-      <View 
-        style={styles.root}
-        onLayout={e => {
-          setDimensions({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height });
-        }}
-      >
-        <Animated.View 
-          style={[StyleSheet.absoluteFill, { backgroundColor: 'black', opacity: fadeToBlackAnim, zIndex: 9999 }]} 
-          pointerEvents="none" 
+      <View style={styles.root}>
+        <Animated.View
+          style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg, opacity: fadeToBlackAnim, zIndex: 9999 }]}
+          pointerEvents="none"
         />
-        <Animated.View style={[styles.root, (gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') && { opacity: 0 }]}>
+        <View style={styles.root}>
           <ChooseClueScreen
             state={gameState}
             localPlayerId={playerId}
@@ -392,7 +382,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
             onSelectClue={handleSelectClue}
             onSkipClue={handleSkipClue}
           />
-        </Animated.View>
+        </View>
 
         {peerDisconnected && !gameState.activeClue && (
           <View style={[styles.statusLineWrap, styles.rejoinWrap]}>
@@ -403,7 +393,17 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         )}
 
         {gameState.activeClue && (
-          <Animated.View style={[StyleSheet.absoluteFill, (gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') && { backgroundColor: 'black' }]}>
+          <View style={StyleSheet.absoluteFill}>
+            {isFinalClue && (
+              <View
+                pointerEvents="none"
+                style={[
+                  StyleSheet.absoluteFill,
+                  { backgroundColor: colors.bg },
+                  isFinalWager && { bottom: PLAYER_BAR_HEIGHT },
+                ]}
+              />
+            )}
             <ExpandingClueOverlay
               key={gameState.activeClue.id}
               animate={animationsEnabled && gameState.activeClue.id !== -1}
@@ -446,7 +446,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               }
             />
           </ExpandingClueOverlay>
-          </Animated.View>
+          </View>
         )}
 
         {gameState.status === 'REVEAL' && onStand && (
@@ -454,6 +454,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
             key={onStand}
             players={Object.values(gameState.players)}
             localPlayerId={playerId}
+            finalJeopardy={isFinalClue}
             judgedPlayerId={onStand}
             answer={getBuzz(gameState, onStand)?.answer ?? ''}
             hasMoreToJudge={
@@ -575,7 +576,7 @@ const styles = StyleSheet.create({
   },
   gameOverOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.85)',
+    backgroundColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10000,

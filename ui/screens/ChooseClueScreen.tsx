@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 import type { GameState } from '../../src/types';
 import { Board } from '../components/Board';
@@ -39,6 +39,11 @@ export function ChooseClueScreen({
   const locked =
     state.currentTurnPlayerId !== null && state.currentTurnPlayerId !== localPlayerId;
 
+  // Final Jeopardy (the sentinel clue id) is nobody's turn — everyone
+  // wagers and answers at once — so the turn indicator goes dark and the
+  // score bugs trade their navy for the final round's charcoal.
+  const isFinalJeopardy = state.activeClue?.id === -1;
+
   // Remount the board whenever its measured size changes (rotation, initial
   // landscape launch): adjustsFontSizeToFit caches its fitted size and won't
   // recompute when the cell grows, leaving stale tiny/mid-reflow text. Using
@@ -58,17 +63,6 @@ export function ChooseClueScreen({
     revealedRef.current = true;
     Animated.timing(revealOpacity, { toValue: 1, duration: 220, useNativeDriver: true }).start();
   }, [revealOpacity]);
-
-  const slideAnim = useRef(new Animated.Value(0)).current;
-  const isFinalJeopardy = state.status === 'FINAL_JEOPARDY_WAGER' || state.status === 'FINAL_JEOPARDY_ANSWER';
-
-  useEffect(() => {
-    Animated.timing(slideAnim, {
-      toValue: isFinalJeopardy ? 200 : 0,
-      duration: isFinalJeopardy ? 800 : 500,
-      useNativeDriver: true,
-    }).start();
-  }, [isFinalJeopardy, slideAnim]);
 
   return (
     <Animated.View style={[styles.screen, { opacity: revealOpacity }]}>
@@ -98,16 +92,17 @@ export function ChooseClueScreen({
           />
         )}
       </View>
-      <Animated.View style={[styles.playerBarWrap, { transform: [{ translateY: slideAnim }] }]}>
+      <View style={styles.playerBarWrap}>
         <PlayerHeader
           players={Object.values(state.players)}
-          currentTurnPlayerId={state.currentTurnPlayerId}
+          currentTurnPlayerId={isFinalJeopardy ? null : state.currentTurnPlayerId}
           localPlayerId={localPlayerId}
           disconnectedPlayerId={disconnectedPlayerId}
           judgingPlayerId={judgingPlayerId}
           animationsEnabled={animationsEnabled}
+          finalJeopardy={isFinalJeopardy}
         />
-      </Animated.View>
+      </View>
     </Animated.View>
   );
 }
