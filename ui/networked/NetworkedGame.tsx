@@ -8,7 +8,7 @@ import type { Action, GameState, GameStatus } from '../../src/types';
 import type { CellRect } from '../components/BoardCell';
 import { CategoryIntro } from '../components/CategoryIntro';
 import { ExpandingClueOverlay } from '../components/ExpandingClueOverlay';
-import { PLAYER_BAR_HEIGHT } from '../components/PlayerHeader';
+import { PLAYER_BAR_HEIGHT, PlayerHeader } from '../components/PlayerHeader';
 import { JudgementTray } from '../components/JudgementTray';
 import { SwipeUpMenu } from '../components/SwipeUpMenu';
 import { UndoRedoSwipe } from '../components/UndoRedoSwipe';
@@ -133,19 +133,14 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     previousStatusRef.current = gameState.status;
   }
 
-  const [fjKeyboardReadyFor, setFjKeyboardReadyFor] = useState<GameStatus | null>(null);
-  useEffect(() => {
-    if (gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') {
-      const status = gameState.status;
-      const timer = setTimeout(() => setFjKeyboardReadyFor(status), 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [gameState?.status]);
+  const topScoreSlideAnim = useRef(new Animated.Value(-200)).current;
 
   const fjFadeAnim = useRef(new Animated.Value(0)).current;
   const [prevStatus, setPrevStatus] = useState<GameStatus | null>(null);
 
-  useEffect(() => {
+    const isFinal = gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER';
+    const wasFinal = prevStatus === 'FINAL_JEOPARDY_WAGER' || prevStatus === 'FINAL_JEOPARDY_ANSWER';
+
     if (gameState?.status === 'FINAL_JEOPARDY_WAGER' && prevStatus !== 'FINAL_JEOPARDY_WAGER') {
       fjFadeAnim.setValue(1);
       Animated.timing(fjFadeAnim, {
@@ -154,8 +149,20 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         useNativeDriver: true,
       }).start();
     }
+    
+    if (isFinal && !wasFinal) {
+      topScoreSlideAnim.setValue(-200);
+      Animated.timing(topScoreSlideAnim, {
+        toValue: 0,
+        duration: 1500,
+        useNativeDriver: true,
+      }).start();
+    } else if (!isFinal) {
+      topScoreSlideAnim.setValue(-200);
+    }
+
     setPrevStatus(gameState?.status ?? null);
-  }, [gameState?.status, fjFadeAnim, prevStatus]);
+  }, [gameState?.status, fjFadeAnim, prevStatus, topScoreSlideAnim]);
 
   const localBuzz = gameState && playerId ? getBuzz(gameState, playerId) : undefined;
   const typing =
@@ -163,7 +170,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     !localBuzz.locked &&
     (gameState?.status === 'BUZZ_OPEN' || 
      gameState?.status === 'ANSWERING' || 
-     ((gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') && fjKeyboardReadyFor === gameState.status));
+     gameState?.status === 'FINAL_JEOPARDY_WAGER' || 
+     gameState?.status === 'FINAL_JEOPARDY_ANSWER');
 
   // Every STATE_UPDATE deserializes a fresh object tree, so identity can't
   // signal change here. Key the board pipeline on the burned list's content
@@ -391,8 +399,21 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               }
             />
           </ExpandingClueOverlay>
+          {/* Score bug sliding down from top during Final Jeopardy */}
+          {(gameState.status === 'FINAL_JEOPARDY_WAGER' || gameState.status === 'FINAL_JEOPARDY_ANSWER') && (
+            <Animated.View style={{ position: 'absolute', top: '2%', left: '2%', right: '2%', zIndex: 10, transform: [{ translateY: topScoreSlideAnim }] }}>
+              <PlayerHeader
+                players={Object.values(gameState.players)}
+                currentTurnPlayerId={gameState.currentTurnPlayerId}
+                localPlayerId={playerId}
+                disconnectedPlayerId={disconnectedPlayerId}
+                judgingPlayerId={gameState.status === 'REVEAL' ? onStand : null}
+                animationsEnabled={animationsEnabled}
+              />
+            </Animated.View>
+          )}
           {/* Black overlay for fade transition into Final Jeopardy */}
-          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: fjFadeAnim }]} />
+          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: fjFadeAnim, zIndex: 20 }]} />
           </View>
         )}
 
