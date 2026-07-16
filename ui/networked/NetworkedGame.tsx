@@ -192,7 +192,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           friction: 8,
           useNativeDriver: true,
         }).start();
-      }, 600);
+      }, 2000);
       return () => clearTimeout(timer);
     } else if (!isFinal) {
       hasAnimatedFjRef.current = false;
@@ -459,7 +459,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               }
             />
           </ExpandingClueOverlay>
-          {gameState.activeClue && (gameState.status !== 'FINAL_JEOPARDY_ANSWER' || !gameState.activeClue || gameState.activeClue.id !== -1) && (
+          {gameState.activeClue && gameState.activeClue.id === -1 && (gameState.status !== 'FINAL_JEOPARDY_ANSWER') && (
             <Animated.View style={{ 
                position: 'absolute', top: '2%', left: '2%', right: '2%', zIndex: 10,
                transform: [
@@ -477,7 +477,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                 disconnectedPlayerId={disconnectedPlayerId}
                 judgingPlayerId={null}
                 animationsEnabled={animationsEnabled}
-                hideScores={gameState.status === 'FINAL_JEOPARDY_WAGER' || gameState.status === 'FINAL_JEOPARDY_ANSWER'}
+                hideScores={gameState.status === 'FINAL_JEOPARDY_WAGER'}
               />
             </Animated.View>
           )}
