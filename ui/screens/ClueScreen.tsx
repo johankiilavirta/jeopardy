@@ -120,6 +120,7 @@ export function ClueScreen({
   inputPrefix = '',
   placeholder = 'TYPE YOUR ANSWER',
 }: ClueScreenProps) {
+  const isFinalJeopardy = clue.id === -1;
   const { width, height } = useWindowDimensions();
   const pan = useRef(new Animated.Value(0)).current;
 
@@ -467,14 +468,21 @@ export function ClueScreen({
       </Animated.View>
 
       <Animated.View
-        style={[styles.cardWrap, { transform: [{ translateX: pan }] }]}
+        style={[
+          styles.cardWrap,
+          isFinalJeopardy && { marginHorizontal: 0, marginTop: 0, marginBottom: 0 },
+          { transform: [{ translateX: pan }] }
+        ]}
         {...(panResponder ? panResponder.panHandlers : {})}
       >
         {/* Tapping anywhere on the card is the buzzer (only live while the
             window is open and this player hasn't buzzed yet). If the
             keyboard was dismissed without locking, tapping brings it back. */}
         <Pressable
-          style={styles.card}
+          style={[
+            styles.card,
+            isFinalJeopardy && { backgroundColor: 'transparent', paddingHorizontal: 0 },
+          ]}
           onPress={
             canBuzz
               ? onBuzz
@@ -485,16 +493,18 @@ export function ClueScreen({
                   : undefined
           }
         >
-          <Animated.View style={[styles.header, { opacity: headerFade }]}>
-            <Text style={styles.category} numberOfLines={1} allowFontScaling={false}>
-              {clue.category.toUpperCase()}
-            </Text>
-            <Text style={styles.value} numberOfLines={1} allowFontScaling={false}>
-              ${clue.value}
-            </Text>
-          </Animated.View>
+          {!isFinalJeopardy && (
+            <Animated.View style={[styles.header, { opacity: headerFade }]}>
+              <Text style={styles.category} numberOfLines={1} allowFontScaling={false}>
+                {clue.category.toUpperCase()}
+              </Text>
+              <Text style={styles.value} numberOfLines={1} allowFontScaling={false}>
+                ${clue.value}
+              </Text>
+            </Animated.View>
+          )}
 
-          <View style={styles.body}>
+          <View style={[styles.body, isFinalJeopardy && { paddingBottom: '10%' }]}>
             <Animated.View
               style={{
                 transform: [{ translateY: clueRise }, { scale: clueScale }],
@@ -502,7 +512,10 @@ export function ClueScreen({
                 position: 'relative',
               }}
             >
-              <Text style={styles.clueText} allowFontScaling={false}>
+              <Text
+                style={[styles.clueText, isFinalJeopardy && { fontSize: 40, lineHeight: 50 }]}
+                allowFontScaling={false}
+              >
                 {clue.text.toUpperCase()}
               </Text>
 

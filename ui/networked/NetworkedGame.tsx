@@ -133,36 +133,33 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     previousStatusRef.current = gameState.status;
   }
 
-  const topScoreSlideAnim = useRef(new Animated.Value(-200)).current;
-
-  const fjFadeAnim = useRef(new Animated.Value(0)).current;
+  const fjTransitionAnim = useRef(new Animated.Value(0)).current;
+  const [fjKeyboardReady, setFjKeyboardReady] = useState(false);
   const [prevStatus, setPrevStatus] = useState<GameStatus | null>(null);
+
   useEffect(() => {
     const isFinal = gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER';
     const wasFinal = prevStatus === 'FINAL_JEOPARDY_WAGER' || prevStatus === 'FINAL_JEOPARDY_ANSWER';
 
-    if (gameState?.status === 'FINAL_JEOPARDY_WAGER' && prevStatus !== 'FINAL_JEOPARDY_WAGER') {
-      fjFadeAnim.setValue(1);
-      Animated.timing(fjFadeAnim, {
-        toValue: 0,
-        duration: 1500,
-        useNativeDriver: true,
-      }).start();
-    }
-    
     if (isFinal && !wasFinal) {
-      topScoreSlideAnim.setValue(-200);
-      Animated.timing(topScoreSlideAnim, {
-        toValue: 0,
-        duration: 1500,
+      fjTransitionAnim.setValue(0);
+      setFjKeyboardReady(false);
+      
+      Animated.timing(fjTransitionAnim, {
+        toValue: 1,
+        duration: 2000,
         useNativeDriver: true,
       }).start();
+
+      const timer = setTimeout(() => setFjKeyboardReady(true), 600);
+      return () => clearTimeout(timer);
     } else if (!isFinal) {
-      topScoreSlideAnim.setValue(-200);
+      fjTransitionAnim.setValue(0);
+      setFjKeyboardReady(true);
     }
 
     setPrevStatus(gameState?.status ?? null);
-  }, [gameState?.status, fjFadeAnim, prevStatus, topScoreSlideAnim]);
+  }, [gameState?.status, prevStatus, fjTransitionAnim]);
 
   const localBuzz = gameState && playerId ? getBuzz(gameState, playerId) : undefined;
   const typing =
@@ -170,8 +167,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     !localBuzz.locked &&
     (gameState?.status === 'BUZZ_OPEN' || 
      gameState?.status === 'ANSWERING' || 
-     gameState?.status === 'FINAL_JEOPARDY_WAGER' || 
-     gameState?.status === 'FINAL_JEOPARDY_ANSWER');
+     ((gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') && fjKeyboardReady));
 
   // Every STATE_UPDATE deserializes a fresh object tree, so identity can't
   // signal change here. Key the board pipeline on the burned list's content
@@ -336,17 +332,19 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       )}
     >
       <View style={styles.root}>
-        <ChooseClueScreen
-          state={gameState}
-          localPlayerId={playerId}
-          board={visibleBoard}
-          disconnectedPlayerId={disconnectedPlayerId}
-          boardAnimKey={animationsEnabled ? boardAnimKeyRef.current : 0}
-          animationsEnabled={animationsEnabled}
-          judgingPlayerId={gameState.status === 'REVEAL' ? onStand : null}
-          onSelectClue={handleSelectClue}
-          onSkipClue={handleSkipClue}
-        />
+        <Animated.View style={[styles.root, (gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') && { opacity: fjTransitionAnim.interpolate({ inputRange: [0, 0.3], outputRange: [1, 0] }) }]}>
+          <ChooseClueScreen
+            state={gameState}
+            localPlayerId={playerId}
+            board={visibleBoard}
+            disconnectedPlayerId={disconnectedPlayerId}
+            boardAnimKey={animationsEnabled ? boardAnimKeyRef.current : 0}
+            animationsEnabled={animationsEnabled}
+            judgingPlayerId={gameState.status === 'REVEAL' ? onStand : null}
+            onSelectClue={handleSelectClue}
+            onSkipClue={handleSkipClue}
+          />
+        </Animated.View>
 
         {peerDisconnected && !gameState.activeClue && (
           <View style={[styles.statusLineWrap, styles.rejoinWrap]}>
@@ -357,10 +355,10 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         )}
 
         {gameState.activeClue && (
-          <View style={StyleSheet.absoluteFill}>
+          <Animated.View style={[StyleSheet.absoluteFill, (gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') && { opacity: fjTransitionAnim.interpolate({ inputRange: [0.3, 1], outputRange: [0, 1] }) }]}>
             <ExpandingClueOverlay
               key={gameState.activeClue.id}
-              animate={animationsEnabled}
+              animate={animationsEnabled && gameState.activeClue.id !== -1}
               bottomInset={PLAYER_BAR_HEIGHT}
               fromRect={
                 selectedCellRef.current?.clueId === gameState.activeClue.id
@@ -401,7 +399,10 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           </ExpandingClueOverlay>
           {/* Score bug sliding down from top during Final Jeopardy */}
           {(gameState.status === 'FINAL_JEOPARDY_WAGER' || gameState.status === 'FINAL_JEOPARDY_ANSWER') && (
-            <Animated.View style={{ position: 'absolute', top: '2%', left: '2%', right: '2%', zIndex: 10, transform: [{ translateY: topScoreSlideAnim }] }}>
+            <Animated.View style={{ 
+               position: 'absolute', top: '2%', left: '2%', right: '2%', zIndex: 10,
+               transform: [{ translateY: fjTransitionAnim.interpolate({ inputRange: [0.3, 1], outputRange: [-200, 0] }) }]
+            }}>
               <PlayerHeader
                 players={Object.values(gameState.players)}
                 currentTurnPlayerId={gameState.currentTurnPlayerId}
@@ -412,9 +413,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               />
             </Animated.View>
           )}
-          {/* Black overlay for fade transition into Final Jeopardy */}
-          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: '#000', opacity: fjFadeAnim, zIndex: 20 }]} />
-          </View>
+          </Animated.View>
         )}
 
         {gameState.status === 'REVEAL' && onStand && (
