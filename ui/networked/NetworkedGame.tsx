@@ -273,10 +273,13 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
   // Solo mode: auto-dismiss the reveal after 2.5 s. The player can still
   // swipe or use arrow keys to self-judge (and record a score) before then.
+  // Final Jeopardy is exempt: it can't be skipped — every answer needs a
+  // verdict to reach GAME OVER.
   useEffect(() => {
     if (!gameState || !playerId) return;
     if (Object.keys(gameState.players).length !== 1) return;
     if (gameState.status !== 'REVEAL' || !gameState.activeClue) return;
+    if (gameState.activeClue.id === -1) return;
     const clueId = gameState.activeClue.id;
     const timer = setTimeout(() => {
       dispatch({ type: 'SKIP_CLUE', playerId, clueId });
@@ -299,11 +302,22 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // Final Jeopardy spans three statuses — WAGER, ANSWER, and the shared
   // REVEAL used for judging — but the clue keeps its sentinel id (-1)
   // through all of them, so the black backdrop keys off the clue, not the
-  // status. During the wager the backdrop stops short of the player bar so
-  // the score bugs sit exactly where they do on a normal clue; from the
-  // answer phase onward it covers the whole screen.
+  // status. The backdrop always stops short of the player bar; whether the
+  // bar actually shows there is ChooseClueScreen's slide (visible for the
+  // wager and judging, slid away during the answer), which reads seamlessly
+  // because the bar's rail matches the backdrop color.
   const isFinalClue = gameState.activeClue?.id === -1;
-  const isFinalWager = gameState.status === 'FINAL_JEOPARDY_WAGER';
+
+  // Everyone's answer goes on the stand at once in Final Jeopardy; normal
+  // play judges one buzzer at a time in buzz order.
+  const stands =
+    gameState.status === 'REVEAL'
+      ? isFinalClue
+        ? gameState.buzzes.map(b => ({ playerId: b.playerId, answer: b.answer }))
+        : onStand
+          ? [{ playerId: onStand, answer: getBuzz(gameState, onStand)?.answer ?? '' }]
+          : []
+      : [];
 
   const disconnectedPlayerId = peerDisconnected
     ? Object.keys(gameState.players).find(id => id !== playerId) ?? null
@@ -378,7 +392,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
             disconnectedPlayerId={disconnectedPlayerId}
             boardAnimKey={animationsEnabled ? boardAnimKeyRef.current : 0}
             animationsEnabled={animationsEnabled}
-            judgingPlayerId={gameState.status === 'REVEAL' ? onStand : null}
+            judgingPlayerId={gameState.status === 'REVEAL' && !isFinalClue ? onStand : null}
             onSelectClue={handleSelectClue}
             onSkipClue={handleSkipClue}
           />
@@ -399,8 +413,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                 pointerEvents="none"
                 style={[
                   StyleSheet.absoluteFill,
-                  { backgroundColor: colors.bg },
-                  isFinalWager && { bottom: PLAYER_BAR_HEIGHT },
+                  { backgroundColor: colors.bg, bottom: PLAYER_BAR_HEIGHT },
                 ]}
               />
             )}
@@ -449,25 +462,23 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           </View>
         )}
 
-        {gameState.status === 'REVEAL' && onStand && (
+        {stands.length > 0 && (
           <JudgementTray
-            key={onStand}
             players={Object.values(gameState.players)}
             localPlayerId={playerId}
             finalJeopardy={isFinalClue}
-            judgedPlayerId={onStand}
-            answer={getBuzz(gameState, onStand)?.answer ?? ''}
+            stands={stands}
             hasMoreToJudge={
-              gameState.activeClue
+              !isFinalClue && gameState.activeClue
                 ? gameState.buzzes.some(
                     b => b.playerId !== onStand && !gameState.activeClue!.failedPlayerIds.includes(b.playerId)
                   )
                 : false
             }
-            onJudge={(correct, penalty) =>
+            onJudge={(judgedId, correct, penalty) =>
               dispatch({
                 type: 'JUDGE_ANSWER',
-                playerId: onStand,
+                playerId: judgedId,
                 correct,
                 ...(penalty !== undefined ? { penalty } : {}),
               })

@@ -179,11 +179,9 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
       )}
       {state.status === 'REVEAL' && onStand && (
         <JudgementTray
-          key={onStand}
           players={Object.values(state.players)}
           localPlayerId={LOCAL_PLAYER_ID}
-          judgedPlayerId={onStand}
-          answer={getBuzz(state, onStand)?.answer ?? ''}
+          stands={[{ playerId: onStand, answer: getBuzz(state, onStand)?.answer ?? '' }]}
           hasMoreToJudge={
             state.activeClue
               ? state.buzzes.some(
@@ -191,10 +189,10 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
                 )
               : false
           }
-          onJudge={(correct, penalty) =>
+          onJudge={(judgedId, correct, penalty) =>
             dispatch({
               type: 'JUDGE_ANSWER',
-              playerId: onStand,
+              playerId: judgedId,
               correct,
               ...(penalty !== undefined ? { penalty } : {}),
             })
