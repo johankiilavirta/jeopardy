@@ -134,6 +134,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   }
 
   const fjTransitionAnim = useRef(new Animated.Value(0)).current;
+  const fjScoreBugY = useRef(new Animated.Value(-200)).current;
   const [fjKeyboardReady, setFjKeyboardReady] = useState(false);
   const hasAnimatedFjRef = useRef(false);
 
@@ -151,14 +152,34 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         useNativeDriver: true,
       }).start();
 
-      const timer = setTimeout(() => setFjKeyboardReady(true), 600);
+      const timer = setTimeout(() => {
+        setFjKeyboardReady(true);
+        Animated.spring(fjScoreBugY, {
+          toValue: 0,
+          tension: 50,
+          friction: 8,
+          useNativeDriver: true,
+        }).start();
+      }, 600);
       return () => clearTimeout(timer);
     } else if (!isFinal) {
       hasAnimatedFjRef.current = false;
       fjTransitionAnim.setValue(1);
       setFjKeyboardReady(true);
     }
-  }, [gameState?.status, fjTransitionAnim]);
+  }, [gameState?.status, fjTransitionAnim, fjScoreBugY]);
+
+  useEffect(() => {
+    if (gameState?.status === 'REVEAL' && gameState?.activeClue?.id === -1) {
+      fjScoreBugY.setValue(1000);
+      Animated.spring(fjScoreBugY, {
+        toValue: 0,
+        tension: 50,
+        friction: 8,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [gameState?.status, gameState?.activeClue?.id, fjScoreBugY]);
 
   const localBuzz = gameState && playerId ? getBuzz(gameState, playerId) : undefined;
   const typing =
@@ -397,11 +418,16 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               }
             />
           </ExpandingClueOverlay>
-          {/* Score bug sliding down from top during Final Jeopardy */}
-          {(gameState.status === 'FINAL_JEOPARDY_WAGER' || gameState.status === 'FINAL_JEOPARDY_ANSWER') && (
+          {gameState.activeClue && (gameState.status !== 'FINAL_JEOPARDY_ANSWER' || !gameState.activeClue || gameState.activeClue.id !== -1) && (
             <Animated.View style={{ 
                position: 'absolute', top: '2%', left: '2%', right: '2%', zIndex: 10,
-               transform: [{ translateY: fjTransitionAnim.interpolate({ inputRange: [0.3, 1], outputRange: [-200, 0] }) }]
+               transform: [
+                 { 
+                   translateY: (gameState.status === 'FINAL_JEOPARDY_WAGER' || (gameState.status === 'REVEAL' && gameState.activeClue?.id === -1)) 
+                     ? fjScoreBugY 
+                     : 0 
+                 }
+               ]
             }}>
               <PlayerHeader
                 players={Object.values(gameState.players)}

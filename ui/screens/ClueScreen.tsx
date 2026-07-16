@@ -472,7 +472,6 @@ export function ClueScreen({
       <Animated.View
         style={[
           styles.cardWrap,
-          isFinalJeopardy && { marginHorizontal: 0, marginTop: 0, marginBottom: 0 },
           { transform: [{ translateX: pan }] }
         ]}
         {...(panResponder ? panResponder.panHandlers : {})}
@@ -510,8 +509,8 @@ export function ClueScreen({
             styles.body, 
             isFinalJeopardyWager && { 
               position: 'absolute', 
-              top: (height * 0.02) + PLAYER_BLOCK_HEIGHT, 
-              bottom: panelHeight > 0 ? panelHeight : Math.round(height * SHEET_MIN_HEIGHT_PCT), 
+              top: PLAYER_BLOCK_HEIGHT, 
+              bottom: Math.max(0, (panelHeight > 0 ? panelHeight : Math.round(height * SHEET_MIN_HEIGHT_PCT)) - (10 + PLAYER_BAR_HEIGHT)), 
               left: 0, 
               right: 0, 
               paddingBottom: 0 
