@@ -403,7 +403,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         )}
 
         {gameState.activeClue && (
-          <Animated.View style={[StyleSheet.absoluteFill, (gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') && { opacity: fjTransitionAnim }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, (gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') && { backgroundColor: 'black' }]}>
             <ExpandingClueOverlay
               key={gameState.activeClue.id}
               animate={animationsEnabled && gameState.activeClue.id !== -1}

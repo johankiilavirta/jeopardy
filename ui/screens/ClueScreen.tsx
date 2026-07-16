@@ -510,7 +510,7 @@ export function ClueScreen({
             isFinalJeopardyWager && { 
               position: 'absolute', 
               top: PLAYER_BLOCK_HEIGHT, 
-              bottom: Math.max(0, (panelHeight > 0 ? panelHeight : Math.round(height * SHEET_MIN_HEIGHT_PCT)) - (10 + PLAYER_BAR_HEIGHT)), 
+              bottom: Math.max(0, Math.round(height * SHEET_MIN_HEIGHT_PCT) - (10 + PLAYER_BAR_HEIGHT)), 
               left: 0, 
               right: 0, 
               paddingBottom: 0 
