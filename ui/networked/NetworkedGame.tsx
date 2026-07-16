@@ -73,21 +73,23 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       const currentStatus = currentVisibleStateRef.current?.status;
 
       if (incomingStatus === 'FINAL_JEOPARDY_WAGER' && currentStatus !== 'FINAL_JEOPARDY_WAGER' && currentStatus !== 'FINAL_JEOPARDY_ANSWER') {
-        Animated.timing(fadeToBlackAnim, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        }).start(({ finished }) => {
-          if (!finished) return;
-          currentVisibleStateRef.current = initialState.state;
-          setGameState(initialState.state);
-          
+        setTimeout(() => {
           Animated.timing(fadeToBlackAnim, {
-            toValue: 0,
-            duration: 1500,
+            toValue: 1,
+            duration: 1000,
             useNativeDriver: true,
-          }).start();
-        });
+          }).start(({ finished }) => {
+            if (!finished) return;
+            currentVisibleStateRef.current = initialState.state;
+            setGameState(initialState.state);
+            
+            Animated.timing(fadeToBlackAnim, {
+              toValue: 0,
+              duration: 1500,
+              useNativeDriver: true,
+            }).start();
+          });
+        }, 1500);
       } else {
         currentVisibleStateRef.current = initialState.state;
         setGameState(initialState.state);
@@ -166,8 +168,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   }
 
   const fjTransitionAnim = useRef(new Animated.Value(0)).current;
-  const fjScoreBugY = useRef(new Animated.Value(-200)).current;
-  const [fjKeyboardReady, setFjKeyboardReady] = useState(false);
   const hasAnimatedFjRef = useRef(false);
 
   useEffect(() => {
@@ -176,50 +176,24 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     if (isFinal && !hasAnimatedFjRef.current) {
       hasAnimatedFjRef.current = true;
       fjTransitionAnim.setValue(0);
-      setFjKeyboardReady(false);
       
       Animated.timing(fjTransitionAnim, {
         toValue: 1,
         duration: 2000,
         useNativeDriver: true,
       }).start();
-
-      const timer = setTimeout(() => {
-        setFjKeyboardReady(true);
-        Animated.spring(fjScoreBugY, {
-          toValue: 0,
-          tension: 50,
-          friction: 8,
-          useNativeDriver: true,
-        }).start();
-      }, 2000);
-      return () => clearTimeout(timer);
     } else if (!isFinal) {
       hasAnimatedFjRef.current = false;
       fjTransitionAnim.setValue(1);
-      setFjKeyboardReady(true);
     }
-  }, [gameState?.status, fjTransitionAnim, fjScoreBugY]);
-
-  useLayoutEffect(() => {
-    if (gameState?.status === 'REVEAL' && gameState?.activeClue?.id === -1) {
-      fjScoreBugY.setValue(1000);
-      Animated.spring(fjScoreBugY, {
-        toValue: 0,
-        tension: 50,
-        friction: 8,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [gameState?.status, gameState?.activeClue?.id, fjScoreBugY]);
+  }, [gameState?.status, fjTransitionAnim]);
 
   const localBuzz = gameState && playerId ? getBuzz(gameState, playerId) : undefined;
   const typing =
-    !!localBuzz &&
-    !localBuzz.locked &&
-    (gameState?.status === 'BUZZ_OPEN' || 
-     gameState?.status === 'ANSWERING' || 
-     ((gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER') && fjKeyboardReady));
+    (gameState?.status === 'BUZZ_OPEN' && localBuzz && !localBuzz.locked) ||
+    (gameState?.status === 'ANSWERING' && localBuzz && !localBuzz.locked) ||
+    (gameState?.status === 'FINAL_JEOPARDY_WAGER' && localBuzz && !localBuzz.locked) ||
+    (gameState?.status === 'FINAL_JEOPARDY_ANSWER' && localBuzz && !localBuzz.locked);
 
   // Every STATE_UPDATE deserializes a fresh object tree, so identity can't
   // signal change here. Key the board pipeline on the burned list's content
@@ -459,28 +433,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               }
             />
           </ExpandingClueOverlay>
-          {gameState.activeClue && gameState.activeClue.id === -1 && (gameState.status !== 'FINAL_JEOPARDY_ANSWER') && (
-            <Animated.View style={{ 
-               position: 'absolute', top: '2%', left: '2%', right: '2%', zIndex: 10,
-               transform: [
-                 { 
-                   translateY: (gameState.status === 'FINAL_JEOPARDY_WAGER' || (gameState.status === 'REVEAL' && gameState.activeClue?.id === -1)) 
-                     ? fjScoreBugY 
-                     : 0 
-                 }
-               ]
-            }}>
-              <PlayerHeader
-                players={Object.values(gameState.players)}
-                currentTurnPlayerId={null}
-                localPlayerId={playerId}
-                disconnectedPlayerId={disconnectedPlayerId}
-                judgingPlayerId={null}
-                animationsEnabled={animationsEnabled}
-                hideScores={gameState.status === 'FINAL_JEOPARDY_WAGER'}
-              />
-            </Animated.View>
-          )}
           </Animated.View>
         )}
 

@@ -159,7 +159,7 @@ export function ClueScreen({
   // brings it back. Only a swipe-down with at least one character locks
   // for real. `dismissed` resets whenever `showKeyboard` drops (lock,
   // phase change, timer expiry).
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(() => isFinalJeopardyWager);
   useEffect(() => {
     if (!showKeyboard) setDismissed(false);
   }, [showKeyboard]);
