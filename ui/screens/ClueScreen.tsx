@@ -13,7 +13,7 @@ import type { ActiveClue } from '../../src/types';
 import { ActivationLights, LIGHTS_REST_BOTTOM, LIGHTS_WIDTH_PCT } from '../components/ActivationLights';
 import { AnswerKeyboard } from '../components/AnswerKeyboard';
 import { NumberKeyboard } from '../components/NumberKeyboard';
-import { PLAYER_BAR_HEIGHT } from '../components/PlayerHeader';
+import { PLAYER_BAR_HEIGHT, PLAYER_BLOCK_HEIGHT } from '../components/PlayerHeader';
 import { colors, shadow, type as typeTokens } from '../theme/tokens';
 
 /** Horizontal drag (px) past which a release commits the judgement. */
@@ -508,8 +508,8 @@ export function ClueScreen({
             styles.body, 
             isFinalJeopardy && { 
               position: 'absolute', 
-              top: 60, 
-              bottom: '33%', 
+              top: (height * 0.02) + PLAYER_BLOCK_HEIGHT, 
+              bottom: panelHeight > 0 ? panelHeight : Math.round(height * SHEET_MIN_HEIGHT_PCT), 
               left: 0, 
               right: 0, 
               paddingBottom: 0 
