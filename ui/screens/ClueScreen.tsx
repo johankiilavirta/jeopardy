@@ -504,10 +504,20 @@ export function ClueScreen({
             </Animated.View>
           )}
 
-          <View style={[styles.body, isFinalJeopardy && { paddingBottom: '33%' }]}>
+          <View style={[
+            styles.body, 
+            isFinalJeopardy && { 
+              position: 'absolute', 
+              top: 60, 
+              bottom: '33%', 
+              left: 0, 
+              right: 0, 
+              paddingBottom: 0 
+            }
+          ]}>
             <Animated.View
               style={{
-                transform: [{ translateY: isFinalJeopardy ? 0 : clueRise }, { scale: clueScale }],
+                transform: [{ translateY: isFinalJeopardy ? 0 : clueRise }, { scale: isFinalJeopardy ? 1 : clueScale }],
                 alignItems: 'center',
                 position: 'relative',
               }}
