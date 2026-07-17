@@ -425,8 +425,6 @@ export function ClueScreen({
   const stateRef = useRef({
     canBuzz,
     onBuzz,
-    judgeActive,
-    commitJudge,
     onLockAnswer,
     answer,
     showKeyboard,
@@ -435,7 +433,7 @@ export function ClueScreen({
     onSkip,
     setDismissed,
   });
-  stateRef.current = { canBuzz, onBuzz, judgeActive, commitJudge, onLockAnswer, answer, showKeyboard, onAnswerChange, dismissed, onSkip, setDismissed };
+  stateRef.current = { canBuzz, onBuzz, onLockAnswer, answer, showKeyboard, onAnswerChange, dismissed, onSkip, setDismissed };
 
   // Stable key callbacks (same latest-ref pattern as the keydown handler),
   // so the memoized AnswerKeyboard's 30 keys never re-render while typing.
@@ -458,8 +456,6 @@ export function ClueScreen({
         s.onBuzz();
         return;
       }
-      if (s.judgeActive && e.key === 'ArrowRight') { s.commitJudge(true); return; }
-      if (s.judgeActive && e.key === 'ArrowLeft') { s.commitJudge(false); return; }
       if (s.onLockAnswer && s.answer && e.key === 'Enter') { s.onLockAnswer(s.answer); return; }
       if (s.showKeyboard && s.onAnswerChange) {
         if (e.key === 'ArrowDown' && !s.dismissed) {
