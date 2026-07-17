@@ -1,10 +1,14 @@
 import NearbyNetwork, { type NearbyPeer } from 'nearby-network';
+import { getRandomGameNumber, loadGame, loadGameIndex, type GameData } from '../data/gameLoader';
+import { buildServerOptions, validateResumeState } from '../src/gameSetup';
 import { InProcessTransport } from '../src/inProcessTransport';
 import { createServer, type GameServer } from '../src/server';
 import type { Transport } from '../src/transport';
+import type { GameState } from '../src/types';
 import type { SessionControlMessage, SessionProvider } from './sessionProvider';
 
-const PROTOCOL_VERSION = 1;
+// v2: game-started carries real board data (board + isResume).
+const PROTOCOL_VERSION = 2;
 const SERVER_PEER_ID = 'server';
 type Role = 'host' | 'guest';
 
@@ -15,9 +19,23 @@ type NearbyControl = {
   playerName?: string;
   players?: Array<{ peerId: string; name: string; isHost: boolean }>;
   serverPeerId?: string;
-  board?: null;
+  board?: GameData | null;
+  isResume?: boolean;
   message?: string;
 };
+
+/** A specific game by number, else a random real game, else null (demo
+ *  board fallback when no season data is bundled). */
+function pickGame(gameId?: number): GameData | null {
+  if (gameId) return loadGame(gameId);
+  const index = loadGameIndex();
+  if (index.totalGames === 0) return null;
+  for (let i = 0; i < 5; i++) {
+    const game = loadGame(getRandomGameNumber(index.totalGames));
+    if (game) return game;
+  }
+  return null;
+}
 
 function isControl(message: string): NearbyControl | null {
   try {
@@ -76,6 +94,8 @@ export class NearbySessionProvider implements SessionProvider {
   private localServer: InProcessTransport | null = null;
   private serverTransport: NearbyServerTransport | null = null;
   private gameServer: GameServer | null = null;
+  private phase: 'lobby' | 'playing' = 'lobby';
+  private gameData: GameData | null = null;
   private controlCbs: ((message: SessionControlMessage) => void)[] = [];
   private errorCbs: ((message: string) => void)[] = [];
   private connectCbs: ((peerId: string, playerName?: string) => void)[] = [];
@@ -116,9 +136,19 @@ export class NearbySessionProvider implements SessionProvider {
     NearbyNetwork.browse();
   }
 
-  startGame(): void {
+  startGame(options?: { gameId?: number; resume?: object }): void {
     if (this.role !== 'host' || !NearbyNetwork) return;
     if (!this.remotePeerId || !this.remotePlayerName) return this.emitError('Need 2 players to start');
+
+    // Resuming a saved game? The snapshot carries the full GameState plus
+    // the board it was playing (mirrors the relay's start-game handling).
+    const resume = options?.resume as { state?: GameState; board?: GameData | null } | undefined;
+    const resumeState = resume ? validateResumeState(resume.state) : null;
+    if (resume && !resumeState) return this.emitError('Saved game data is invalid');
+
+    const gameData = resumeState ? (resume?.board ?? null) : pickGame(options?.gameId);
+    this.gameData = gameData;
+    this.phase = 'playing';
 
     this.localServer = new InProcessTransport(SERVER_PEER_ID);
     this.localEndpoint = new InProcessTransport('local-host', this.playerName);
@@ -133,10 +163,15 @@ export class NearbySessionProvider implements SessionProvider {
       },
       () => native.stop(),
     );
-    this.gameServer = createServer(this.serverTransport, [this.playerName, this.remotePlayerName]);
+    this.gameServer = createServer(
+      this.serverTransport,
+      [this.playerName, this.remotePlayerName],
+      buildServerOptions(gameData, resumeState),
+    );
 
-    this.emitControl({ type: 'game-started', serverPeerId: SERVER_PEER_ID, board: null });
-    this.sendControl(this.remotePeerId, { type: 'game-started', serverPeerId: SERVER_PEER_ID, board: null });
+    const started = { type: 'game-started', serverPeerId: SERVER_PEER_ID, board: gameData, isResume: !!resumeState };
+    this.emitControl(started);
+    this.sendControl(this.remotePeerId, started);
     // The local control callback synchronously installs createClient first.
     InProcessTransport.link(this.localServer, this.localEndpoint);
   }
@@ -209,7 +244,12 @@ export class NearbySessionProvider implements SessionProvider {
       return;
     }
     if (this.role === 'guest' && control.type === 'game-started') {
-      this.emitControl({ type: 'game-started', serverPeerId: SERVER_PEER_ID, board: null });
+      this.emitControl({
+        type: 'game-started',
+        serverPeerId: SERVER_PEER_ID,
+        board: control.board ?? null,
+        isResume: !!control.isResume,
+      });
       this.sendControl(peerId, { type: 'game-ready' });
       return;
     }

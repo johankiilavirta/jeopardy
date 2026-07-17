@@ -17,6 +17,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execSync } from 'node:child_process';
+import { generateSeasonRegistry } from './generate-season-registry';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -275,6 +276,9 @@ function main() {
 
   fs.writeFileSync(path.join(OUT_DIR, 'index.json'), JSON.stringify(index, null, 2));
   console.log(`\nWrote index.json with ${index.seasons.length} seasons`);
+
+  // Keep the app's static require() registry in sync with the data.
+  generateSeasonRegistry();
 }
 
 main();
