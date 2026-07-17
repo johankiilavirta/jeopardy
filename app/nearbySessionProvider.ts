@@ -236,11 +236,26 @@ export class NearbySessionProvider implements SessionProvider {
       }
       this.remotePeerId = peerId;
       this.remotePlayerName = control.playerName;
+      if (this.phase === 'playing') {
+        // Guest rejoining mid-game (the listener keeps advertising): skip
+        // the lobby and go straight to the game. The guest replies
+        // game-ready, which reattaches its seat by name below.
+        this.sendControl(peerId, {
+          type: 'game-started',
+          serverPeerId: SERVER_PEER_ID,
+          board: this.gameData,
+          isResume: true,
+        });
+        return;
+      }
       this.emitLobby();
       return;
     }
     if (this.role === 'host' && control.type === 'game-ready' && this.remotePlayerName) {
       this.serverTransport?.connectRemote(peerId, this.remotePlayerName);
+      // Clear the host UI's peer-disconnected banner on (re)connect.
+      const name = this.remotePlayerName;
+      this.connectCbs.forEach(cb => cb(peerId, name));
       return;
     }
     if (this.role === 'guest' && control.type === 'game-started') {

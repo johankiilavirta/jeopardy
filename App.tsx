@@ -179,6 +179,18 @@ export default function App() {
     cancelReconnect();
     disconnect();
     setPeerDisconnected(false);
+
+    // A nearby host can't rejoin: the authoritative server ran inside this
+    // app's JS process and died with it. RESUME GAME (seeding a fresh room
+    // with the snapshot) is the path back.
+    if (session.mode === 'nearby' && session.isHost) {
+      sessionRef.current = null;
+      void clearSession();
+      refreshResumeAvailable();
+      setScreen({ type: 'menu' });
+      return;
+    }
+
     const ctl = { cancelled: false, timer: null as ReturnType<typeof setTimeout> | null };
     reconnectCtlRef.current = ctl;
     setScreen({ type: 'reconnecting', roomCode: session.roomCode });
@@ -197,7 +209,11 @@ export default function App() {
 
     const attempt = () => {
       if (ctl.cancelled) return;
-      const transport = new OnlineSessionProvider(relayUrls(session.relayHost, session.relayPort).ws);
+      // Nearby guest: a fresh provider restarts the browse; the host's room
+      // keeps advertising for the whole game, so re-joining re-attaches.
+      const transport: SessionProvider = session.mode === 'nearby'
+        ? new NearbySessionProvider('guest')
+        : new OnlineSessionProvider(relayUrls(session.relayHost, session.relayPort).ws);
       transportRef.current = transport;
       let settled = false;
 
@@ -242,7 +258,7 @@ export default function App() {
             const board = (msg.board as GameData) ?? null;
             if (board) {
               setBoardData(board);
-              void saveSnapshotBoard(board);
+              void saveSnapshotBoard(board, session.mode);
             }
             sessionRef.current = session;
             void saveSession(session);
@@ -392,11 +408,11 @@ export default function App() {
           });
           const board = (msg.board as GameData) ?? null;
           setBoardData(board);
-          if (PERSISTENCE_ENABLED && mode === 'online') {
-            const session = { mode: 'online' as const, roomCode, playerName, relayHost, relayPort };
+          if (PERSISTENCE_ENABLED) {
+            const session = { mode, roomCode, playerName, relayHost, relayPort, isHost: action === 'create' };
             sessionRef.current = { ...session, savedAt: Date.now() };
             void saveSession(session);
-            void saveSnapshotBoard(board);
+            void saveSnapshotBoard(board, mode);
           }
           break;
         }
@@ -494,7 +510,8 @@ export default function App() {
         setResumeAvailable(false);
         return;
       }
-      connectAndDo('create', snapshot);
+      // Either device may become the new host — both hold snapshots.
+      connectAndDo('create', snapshot, snapshot.mode);
     });
   }, [connectAndDo]);
 

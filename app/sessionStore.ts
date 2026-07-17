@@ -33,12 +33,18 @@ export interface SavedSession {
   playerName: string;
   relayHost: string;
   relayPort: string;
+  /** Whether this device created the room. A nearby host can't rejoin —
+   *  the authoritative server lived in its own JS process. */
+  isHost: boolean;
   savedAt: number;
 }
 
 export interface SavedSnapshot {
   state: GameState;
   board: GameData | null;
+  /** Connection mode the snapshot was taken in — RESUME GAME re-hosts
+   *  the same kind of room. */
+  mode: 'nearby' | 'online';
   savedAt: number;
 }
 
@@ -64,9 +70,13 @@ export async function loadSession(): Promise<SavedSession | null> {
   try {
     const raw = await AsyncStorage.getItem(SESSION_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Omit<SavedSession, 'mode'> & { mode?: SavedSession['mode'] };
-    // Sessions saved before connection modes existed were all relay rooms.
-    const session: SavedSession = { ...parsed, mode: parsed.mode ?? 'online' };
+    const parsed = JSON.parse(raw) as Omit<SavedSession, 'mode' | 'isHost'> & {
+      mode?: SavedSession['mode'];
+      isHost?: boolean;
+    };
+    // Sessions saved before connection modes existed were all relay rooms;
+    // before isHost existed, reconnecting never depended on the role.
+    const session: SavedSession = { ...parsed, mode: parsed.mode ?? 'online', isHost: parsed.isHost ?? false };
     if (typeof session.roomCode !== 'number' || Date.now() - session.savedAt > SESSION_TTL_MS) {
       await AsyncStorage.removeItem(SESSION_KEY);
       return null;
@@ -100,11 +110,12 @@ export function saveSnapshotState(state: GameState): void {
   }, SNAPSHOT_DEBOUNCE_MS);
 }
 
-/** Board data is large-ish and constant per game: written once at game start. */
-export async function saveSnapshotBoard(board: GameData | null): Promise<void> {
+/** Board data is large-ish and constant per game: written once at game
+ *  start. Written even for a null (demo) board — the envelope also records
+ *  which connection mode the game was played in. */
+export async function saveSnapshotBoard(board: GameData | null, mode: 'nearby' | 'online'): Promise<void> {
   try {
-    if (board) await AsyncStorage.setItem(SNAPSHOT_BOARD_KEY, JSON.stringify(board));
-    else await AsyncStorage.removeItem(SNAPSHOT_BOARD_KEY);
+    await AsyncStorage.setItem(SNAPSHOT_BOARD_KEY, JSON.stringify({ board, mode }));
   } catch {}
 }
 
@@ -117,7 +128,19 @@ export async function loadSnapshot(): Promise<SavedSnapshot | null> {
       return null;
     }
     const boardRaw = await AsyncStorage.getItem(SNAPSHOT_BOARD_KEY);
-    return { state, board: boardRaw ? (JSON.parse(boardRaw) as GameData) : null, savedAt };
+    let board: GameData | null = null;
+    let mode: SavedSnapshot['mode'] = 'online';
+    if (boardRaw) {
+      const parsed = JSON.parse(boardRaw) as { board?: GameData | null; mode?: SavedSnapshot['mode'] } | GameData;
+      if (parsed && typeof parsed === 'object' && 'mode' in parsed) {
+        board = parsed.board ?? null;
+        mode = parsed.mode ?? 'online';
+      } else {
+        // Legacy record: the raw GameData itself (always an online game).
+        board = parsed as GameData;
+      }
+    }
+    return { state, board, mode, savedAt };
   } catch {
     return null;
   }

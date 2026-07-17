@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createClient, sendAction, type GameClient } from '../client.js';
+import { createInitialState } from '../reducer.js';
 import type { GameData } from '../../data/gameLoader';
 import type { SessionControlMessage } from '../../app/sessionProvider';
 
@@ -235,5 +236,79 @@ describe('NearbySessionProvider', () => {
     expect(host.client?.state?.finalClue).toBeNull();
 
     host.run(() => host.provider.stop());
+  });
+
+  it('reattaches a rejoining guest mid-game with the original board and state', () => {
+    const { host, guest } = setupLobby();
+    host.run(() => host.provider.startGame({ gameId: 1 }));
+
+    // Burn a clue, then the guest's device dies mid-game.
+    guest.run(() => sendAction(guest.provider, 'server', { type: 'SKIP_CLUE', clueId: 5 }));
+    expect(host.client?.state?.burnedClueIds).toContain(5);
+
+    let hostSawDisconnect = false;
+    let hostSawReconnect = false;
+    host.provider.onPeerDisconnected(() => { hostSawDisconnect = true; });
+    host.provider.onPeerConnected(() => { hostSawReconnect = true; });
+
+    guest.run(() => guest.provider.stop());
+    expect(hostSawDisconnect).toBe(true);
+
+    // A fresh guest provider (relaunched app) browses back in by name.
+    const rejoined = createPeer('guest', 'GUEST-2');
+    rejoined.run(() => rejoined.provider.joinRoom(123, 'Bob'));
+
+    const started = lastOfType(rejoined, 'game-started');
+    expect(started?.isResume).toBe(true);
+    expect((started?.board as GameData).gameNumber).toBe(1);
+    // No lobby detour on rejoin.
+    expect(rejoined.controls.some(m => m.type === 'lobby-update')).toBe(false);
+
+    // game-ready reattached the seat by name and pushed the live state.
+    expect(rejoined.client?.playerId).toBe('bob');
+    expect(rejoined.client?.state?.burnedClueIds).toContain(5);
+    expect(hostSawReconnect).toBe(true);
+
+    // The re-linked connection carries gameplay both ways again.
+    rejoined.run(() => sendAction(rejoined.provider, 'server', { type: 'SKIP_CLUE', clueId: 6 }));
+    expect(host.client?.state?.burnedClueIds).toContain(6);
+    expect(rejoined.client?.state?.burnedClueIds).toContain(6);
+
+    host.run(() => host.provider.stop());
+  });
+
+  it('resumes from a saved snapshot: server seeded, both sides told isResume', () => {
+    const { host, guest } = setupLobby();
+    const saved = {
+      ...createInitialState(['Alice', 'Bob'], 6, { category: 'FJ', text: 'FJ Q', answer: 'FJ A' }),
+      burnedClueIds: [0, 5],
+    };
+    saved.players['alice']!.score = 400;
+
+    host.run(() => host.provider.startGame({ resume: { state: saved, board: fixtures.game(3) } }));
+
+    expect(lastOfType(host, 'game-started')?.isResume).toBe(true);
+    expect(lastOfType(guest, 'game-started')?.isResume).toBe(true);
+    expect((lastOfType(guest, 'game-started')?.board as GameData).gameNumber).toBe(3);
+
+    // Seats reattach by name; scores and burned clues carry over.
+    expect(host.client?.playerId).toBe('alice');
+    expect(host.client?.state?.players['alice']?.score).toBe(400);
+    expect(guest.client?.state?.burnedClueIds).toEqual([0, 5]);
+    expect(guest.client?.state?.totalClues).toBe(6);
+
+    host.run(() => host.provider.stop());
+  });
+
+  it('rejects an invalid resume state without starting a server', () => {
+    const { host, guest } = setupLobby();
+    const errors: string[] = [];
+    host.provider.onError(msg => errors.push(msg));
+
+    host.run(() => host.provider.startGame({ resume: { state: { garbage: true } } }));
+
+    expect(errors).toEqual(['Saved game data is invalid']);
+    expect(host.controls.some(m => m.type === 'game-started')).toBe(false);
+    expect(guest.controls.some(m => m.type === 'game-started')).toBe(false);
   });
 });
