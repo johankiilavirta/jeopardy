@@ -45,25 +45,6 @@ export function JudgementTray({
   hasMoreToJudge,
   finalJeopardy = false,
 }: JudgementTrayProps) {
-  // Arrow keys judge too, but only when exactly one answer is up
-  // (right = correct, left = incorrect, down = pass/no penalty).
-  const soleStand = stands.length === 1 ? stands[0] : undefined;
-  const keyTarget = useRef<{ playerId: string; judge: JudgementTrayProps['onJudge'] } | null>(null);
-  keyTarget.current = soleStand ? { playerId: soleStand.playerId, judge: onJudge } : null;
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.addEventListener) return;
-    const handler = (e: KeyboardEvent) => {
-      const target = keyTarget.current;
-      if (!target) return;
-      if (e.key === 'ArrowRight') target.judge(target.playerId, true);
-      if (e.key === 'ArrowLeft') target.judge(target.playerId, false, true);
-      if (e.key === 'ArrowDown') target.judge(target.playerId, false, false);
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
-
   return (
     <View style={styles.row} pointerEvents="box-none">
       {sortLocalFirst(players, localPlayerId).map(player => {

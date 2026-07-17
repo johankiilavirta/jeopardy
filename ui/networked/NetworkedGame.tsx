@@ -364,9 +364,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       canRedo={initialState?.canRedo ?? false}
       onUndo={() => sendAction(transport, serverPeerId, { type: 'UNDO' })}
       onRedo={() => sendAction(transport, serverPeerId, { type: 'REDO' })}
-      // While answers are on the stand the arrow keys belong to the
-      // judgement tray's verdict shortcuts.
-      arrowKeysDisabled={stands.length > 0}
     >
     <View style={styles.root}>
     <SwipeUpMenu
