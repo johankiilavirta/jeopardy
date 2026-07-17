@@ -40,6 +40,7 @@ import {
   type SavedSession,
   type SavedSnapshot,
 } from './app/sessionStore';
+import { computeWinnerNames, recordMatch, type MatchResult } from './app/matchHistory';
 import { SettingsScreen } from './ui/screens/SettingsScreen';
 import { colors } from './ui/theme/tokens';
 
@@ -184,6 +185,10 @@ function isStaleAuthorityForSession(authority: SessionAuthority, session: SavedS
   return authority.roomId !== session.roomId || compareAuthority(authority, sessionAuthority(session)) < 0;
 }
 
+function newMatchId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export default function App() {
   const [fontsLoaded] = useFonts({
     Anton_400Regular,
@@ -208,6 +213,13 @@ export default function App() {
   const transportRef = useRef<SessionProvider | null>(null);
   const myPeerIdRef = useRef<string | null>(null);
   const devAutoStartedRef = useRef(false);
+
+  // Match history: a stable per-game id (survives reconnects, cleared on
+  // leave/new room) so re-finishing after an undo upserts instead of
+  // duplicating. Refs because the []-dep handleStateUpdate reads them.
+  const matchIdRef = useRef<string | null>(null);
+  const gameNumberRef = useRef<number | null>(null);
+  const [recentMatches, setRecentMatches] = useState<MatchResult[]>([]);
 
   // RESUME GAME is offered when an unfinished snapshot is saved on device.
   const [resumeAvailable, setResumeAvailable] = useState(false);
@@ -263,6 +275,21 @@ export default function App() {
       setResumeAvailable(false);
       void clearSession();
       void clearSnapshot();
+      if (matchIdRef.current) {
+        const players = Object.values(state.players).map(p => ({
+          name: p.name,
+          score: p.score,
+          correct: p.correct,
+          incorrect: p.incorrect,
+        }));
+        void recordMatch({
+          id: matchIdRef.current,
+          finishedAt: Date.now(),
+          gameNumber: gameNumberRef.current,
+          players,
+          winnerNames: computeWinnerNames(players),
+        }).then(list => setRecentMatches(list.slice(0, 5)));
+      }
     } else {
       saveSnapshotState(state);
     }
@@ -471,6 +498,9 @@ export default function App() {
               setBoardData(board);
               void saveSnapshotBoard(board, joinedSession.mode);
             }
+            // Keep the match id across a reconnect — it's the same game.
+            if (!matchIdRef.current) matchIdRef.current = newMatchId();
+            gameNumberRef.current = board?.gameNumber ?? null;
             sessionRef.current = joinedSession;
             void saveSession(joinedSession);
             break;
@@ -562,6 +592,7 @@ export default function App() {
     pendingGameScreenRef.current = null;
     setLobbyFadingOut(false);
     sessionRef.current = null;
+    matchIdRef.current = null;
     if (PERSISTENCE_ENABLED) void clearSession();
     setLobbyError(null);
     setJoinError(null);
@@ -714,6 +745,8 @@ export default function App() {
           });
           const board = (msg.board as GameData) ?? null;
           setBoardData(board);
+          if (!matchIdRef.current) matchIdRef.current = newMatchId();
+          gameNumberRef.current = board?.gameNumber ?? null;
           if (PERSISTENCE_ENABLED) {
             roomAuthority = authorityFromMessage(msg) ?? roomAuthority ?? { roomId: createRoomId(), epoch: 1, leaderId: createLeaderId() };
             const session = {
@@ -889,13 +922,17 @@ export default function App() {
           }
           break;
         }
-        case 'game-started':
+        case 'game-started': {
           createClient(transport, (state, pid, cu, cr) => {
             handleStateUpdate(state, pid, cu, cr);
           });
-          setBoardData((msg.board as GameData) ?? null);
+          const board = (msg.board as GameData) ?? null;
+          setBoardData(board);
+          if (!matchIdRef.current) matchIdRef.current = newMatchId();
+          gameNumberRef.current = board?.gameNumber ?? null;
           setScreen({ type: 'game', serverPeerId: msg.serverPeerId as string, roomCode: DEV_ROOM });
           break;
+        }
         case 'room-error':
           if (msg.message === 'Room not found') {
             // Recreate the room at the same fixed dev code so a second tab
@@ -977,6 +1014,7 @@ export default function App() {
     cancelReconnect();
     disconnect();
     sessionRef.current = null;
+    matchIdRef.current = null;
     pendingResumeRef.current = null;
     pendingGameScreenRef.current = null;
     setLobbyFadingOut(false);
@@ -1161,6 +1199,7 @@ export default function App() {
             visibleCategories={visibleCategories}
             onVisibleCategoriesChange={setVisibleCategories}
             isResume={screen.isResume}
+            recentMatches={recentMatches}
           />
         ) : null;
       case 'settings':

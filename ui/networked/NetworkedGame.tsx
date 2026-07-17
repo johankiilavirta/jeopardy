@@ -17,6 +17,7 @@ import { demoBoard } from '../fixtures/board';
 import { getClueContent } from '../fixtures/clues';
 import { toBoardDefinition, makeClueGetter, getVisibleBoard } from '../../data/gameLoader';
 import type { GameData, RoundNumber } from '../../data/gameLoader';
+import type { MatchResult } from '../../app/matchHistory';
 import { MainMenuScreen } from '../screens/MainMenuScreen';
 import { InGameSettingsScreen } from '../screens/InGameSettingsScreen';
 import { ChooseClueScreen } from '../screens/ChooseClueScreen';
@@ -52,6 +53,8 @@ interface NetworkedGameProps {
   visibleCategories?: number | undefined;
   onVisibleCategoriesChange?: (n: number) => void;
   isResume?: boolean | undefined;
+  /** Locally recorded finished games, newest first (last-5 chips row). */
+  recentMatches?: MatchResult[];
 }
 
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
@@ -62,7 +65,7 @@ const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
 
 
 
-export function NetworkedGame({ transport, serverPeerId, initialState, boardData, remotePeerConnectionStatus = 'connected', localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, onBoardVisible, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume }: NetworkedGameProps) {
+export function NetworkedGame({ transport, serverPeerId, initialState, boardData, remotePeerConnectionStatus = 'connected', localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, onBoardVisible, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume, recentMatches }: NetworkedGameProps) {
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
@@ -610,6 +613,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           const PLAYER_COLORS = ['#5B8DEF', '#E8A035'];
           const sorted = Object.values(gameState.players).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
           const totalFirstBuzzes = sorted.reduce((sum, p) => sum + (p.firstBuzzCount ?? 0), 0);
+          const colorByName = new Map(sorted.map((p, i) => [p.name, PLAYER_COLORS[i % PLAYER_COLORS.length]!]));
           const chartPlayers = sorted.map((p, i) => ({
             name: p.name,
             color: PLAYER_COLORS[i % PLAYER_COLORS.length]!,
@@ -659,6 +663,26 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                 </View>
                 <ScoreChart players={chartPlayers} width={chartW} height={160} />
               </View>
+              {recentMatches != null && recentMatches.length > 0 && (
+                <View style={styles.gameOverHistoryWrap}>
+                  <Text style={styles.gameOverHistoryLabel}>LAST 5 GAMES</Text>
+                  <View style={styles.gameOverHistoryRow}>
+                    {recentMatches.slice(0, 5).reverse().map(m => {
+                      const tie = m.winnerNames.length !== 1;
+                      const winner = m.winnerNames[0];
+                      const bg = tie
+                        ? 'rgba(255,255,255,0.35)'
+                        : colorByName.get(winner!) ?? '#666';
+                      const initial = tie ? '–' : winner!.trim().charAt(0).toUpperCase();
+                      return (
+                        <View key={m.id} style={[styles.gameOverHistoryChip, { backgroundColor: bg }]}>
+                          <Text style={styles.gameOverHistoryChipText}>{initial}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
             </View>
           );
         })()}
@@ -751,5 +775,32 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(255,255,255,0.6)',
     marginTop: 2,
+  },
+  gameOverHistoryWrap: {
+    marginTop: 24,
+    alignItems: 'center',
+  },
+  gameOverHistoryLabel: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 12,
+    letterSpacing: 1,
+    color: 'rgba(255,255,255,0.6)',
+  },
+  gameOverHistoryRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  gameOverHistoryChip: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gameOverHistoryChipText: {
+    fontFamily: typeTokens.ui700,
+    fontSize: 13,
+    color: '#fff',
   },
 });
