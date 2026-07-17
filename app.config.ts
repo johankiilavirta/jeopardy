@@ -5,6 +5,10 @@ const config: ExpoConfig = {
   ...appJson.expo,
   ios: {
     bundleIdentifier: 'com.anonymous.jeopardy',
+    infoPlist: {
+      NSLocalNetworkUsageDescription: 'Jeopardy uses your local network to find and join games hosted by nearby players.',
+      NSBonjourServices: ['_jeopardy._tcp'],
+    },
   },
   extra: {
     network: !!process.env.EXPO_PUBLIC_NETWORK,

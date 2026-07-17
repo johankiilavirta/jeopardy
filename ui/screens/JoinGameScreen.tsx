@@ -3,9 +3,9 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
+import { NumberKeyboard } from '../components/NumberKeyboard';
 import { colors, type as typeTokens } from '../theme/tokens';
 
 interface JoinGameScreenProps {
@@ -28,18 +28,19 @@ export function JoinGameScreen(props: JoinGameScreenProps) {
 
       <Text style={styles.subtitle}>Enter 3-digit room code</Text>
 
-      <TextInput
-        style={styles.codeInput}
-        value={code}
-        onChangeText={text => {
-          setCode(text.replace(/\D/g, '').slice(0, 3));
-        }}
-        keyboardType="number-pad"
-        maxLength={3}
-        placeholder="000"
-        placeholderTextColor="#444"
-        autoFocus
-      />
+      <View style={styles.codeInput} accessibilityLabel={`Room code ${code || 'empty'}`}>
+        <Text style={[styles.codeText, !code && styles.codePlaceholder]}>
+          {code.padEnd(3, '0')}
+        </Text>
+      </View>
+
+      <View style={styles.keypad}>
+        <NumberKeyboard
+          dark
+          onInsert={digit => setCode(current => `${current}${digit}`.slice(0, 3))}
+          onBackspace={() => setCode(current => current.slice(0, -1))}
+        />
+      </View>
 
       <Pressable
         style={[styles.joinButton, !valid && styles.joinButtonDisabled]}
@@ -93,9 +94,6 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   codeInput: {
-    fontFamily: typeTokens.board,
-    fontSize: 48,
-    color: '#fff',
     borderWidth: 2,
     borderColor: '#444',
     borderRadius: 8,
@@ -104,6 +102,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 16,
     width: 200,
+  },
+  codeText: {
+    fontFamily: typeTokens.board,
+    fontSize: 48,
+    color: '#fff',
+    textAlign: 'center',
+    letterSpacing: 16,
+  },
+  codePlaceholder: {
+    color: '#444',
+  },
+  keypad: {
+    width: '100%',
+    maxWidth: 320,
+    height: 240,
+    marginTop: 18,
   },
   statusLineWrap: {
     position: 'absolute',
@@ -119,7 +133,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.65)',
   },
   joinButton: {
-    marginTop: 24,
+    marginTop: 18,
     backgroundColor: colors.cell,
     paddingVertical: 14,
     paddingHorizontal: 48,

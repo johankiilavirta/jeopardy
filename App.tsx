@@ -14,12 +14,14 @@ import { createClient } from './src/client';
 import type { GameState } from './src/types';
 import type { GameData } from './data/gameLoader';
 import { OnlineSessionProvider } from './app/onlineSessionProvider';
+import { NearbySessionProvider } from './app/nearbySessionProvider';
 import { connectionModeForRoomCode } from './app/roomCodes';
 import type { SessionProvider } from './app/sessionProvider';
 import { DemoHarness } from './ui/demo/DemoHarness';
 import { NetworkedGame } from './ui/networked/NetworkedGame';
 import { MainMenuScreen } from './ui/screens/MainMenuScreen';
 import { JoinGameScreen } from './ui/screens/JoinGameScreen';
+import { NewGameScreen } from './ui/screens/NewGameScreen';
 import { LobbyScreen, type LobbyPlayer } from './ui/screens/LobbyScreen';
 import { ReconnectingScreen } from './ui/screens/ReconnectingScreen';
 import {
@@ -75,6 +77,7 @@ const PERSISTENCE_ENABLED = DEV_ROOM == null;
 
 type AppScreen =
   | { type: 'menu' }
+  | { type: 'new' }
   | { type: 'join' }
   | { type: 'lobby'; roomCode: number; isHost: boolean }
   | { type: 'game'; serverPeerId: string; roomCode: number; isResume?: boolean }
@@ -276,7 +279,11 @@ export default function App() {
   /** Connect to relay and create or join a room. Entering a new room
    *  deliberately abandons any previous session; `resume` seeds the game
    *  started from this room with a saved snapshot. */
-  const connectAndDo = useCallback((action: 'create' | { join: number }, resume?: SavedSnapshot) => {
+  const connectAndDo = useCallback((
+    action: 'create' | { join: number },
+    resume?: SavedSnapshot,
+    mode: 'nearby' | 'online' = 'online',
+  ) => {
     cancelReconnect();
     disconnect();
     pendingResumeRef.current = resume ?? null;
@@ -296,8 +303,9 @@ export default function App() {
       setScreen({ type: 'lobby', roomCode: 0, isHost: true });
     }
 
-    const url = `ws://${relayHost}:${relayPort}`;
-    const transport = new OnlineSessionProvider(url);
+    const transport: SessionProvider = mode === 'nearby'
+      ? new NearbySessionProvider(action === 'create' ? 'host' : 'guest')
+      : new OnlineSessionProvider(`ws://${relayHost}:${relayPort}`);
     transportRef.current = transport;
 
     transport.onError((err) => {
@@ -383,7 +391,7 @@ export default function App() {
           });
           const board = (msg.board as GameData) ?? null;
           setBoardData(board);
-          if (PERSISTENCE_ENABLED) {
+          if (PERSISTENCE_ENABLED && mode === 'online') {
             const session = { mode: 'online' as const, roomCode, playerName, relayHost, relayPort };
             sessionRef.current = { ...session, savedAt: Date.now() };
             void saveSession(session);
@@ -409,6 +417,10 @@ export default function App() {
       } else {
         transport.joinRoom(action.join, playerName);
       }
+    }).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : 'Could not start session';
+      if (action === 'create') setLobbyError(message);
+      else setJoinError(message);
     });
   }, [relayHost, relayPort, playerName, disconnect, cancelReconnect, handleStateUpdate, handleSocketLost]);
 
@@ -471,7 +483,9 @@ export default function App() {
     if (next && screenRef.current.type === 'lobby') setScreen(next);
   }, []);
 
-  const handleNewGame = useCallback(() => connectAndDo('create'), [connectAndDo]);
+  const handleNewGame = useCallback(() => setScreen({ type: 'new' }), []);
+  const handleNearbyNewGame = useCallback(() => connectAndDo('create', undefined, 'nearby'), [connectAndDo]);
+  const handleOnlineNewGame = useCallback(() => connectAndDo('create'), [connectAndDo]);
 
   /** RESUME GAME: host a fresh room seeded with the snapshot on this device. */
   const handleResumeGame = useCallback(() => {
@@ -502,7 +516,7 @@ export default function App() {
       return;
     }
     if (mode === 'nearby') {
-      setJoinError('Nearby play is not available yet');
+      connectAndDo({ join: code }, undefined, 'nearby');
       return;
     }
     setJoinError('Enter a room code from 100 to 999');
@@ -539,8 +553,10 @@ export default function App() {
 
   // Menu-overlay actions: abandon the current session, then do the action.
   const handleOverlayNewGame = useCallback(() => {
-    connectAndDo('create');
-  }, [connectAndDo]);
+    cancelReconnect();
+    disconnect();
+    setScreen({ type: 'new' });
+  }, [cancelReconnect, disconnect]);
 
   const handleOverlayJoinGame = useCallback(() => {
     cancelReconnect();
@@ -605,6 +621,14 @@ export default function App() {
             onJoinGame={handleJoinNav}
             onSettings={handleSettings}
             onResumeGame={resumeAvailable ? handleResumeGame : undefined}
+          />
+        );
+      case 'new':
+        return (
+          <NewGameScreen
+            onNearby={handleNearbyNewGame}
+            onOnline={handleOnlineNewGame}
+            onBack={() => setScreen({ type: 'menu' })}
           />
         );
       case 'reconnecting':

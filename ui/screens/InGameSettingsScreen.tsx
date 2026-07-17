@@ -36,8 +36,11 @@ export function InGameSettingsScreen(props: InGameSettingsScreenProps) {
       </View>
 
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        nestedScrollEnabled
       >
         <Text style={styles.sectionHeading}>Game</Text>
 
@@ -153,6 +156,9 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     width: '100%',
     alignSelf: 'center',
+  },
+  scroll: {
+    flex: 1,
   },
   sectionHeading: {
     fontFamily: typeTokens.ui700,

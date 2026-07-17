@@ -1,0 +1,11 @@
+{
+  "name": "nearby-network",
+  "version": "1.0.0",
+  "description": "Local Network.framework transport for nearby Jeopardy games",
+  "main": "src/index.ts",
+  "license": "MIT",
+  "peerDependencies": {
+    "expo": "*",
+    "react-native": "*"
+  }
+}

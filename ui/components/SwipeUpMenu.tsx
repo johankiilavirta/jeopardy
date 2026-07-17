@@ -115,7 +115,7 @@ export function SwipeUpMenu({ children, renderMenu, renderSettings, disabled }: 
       // Capture phase so the drag intercepts before Pressable children
       // consume the touch. Taps still fall through (only moves are captured).
       onMoveShouldSetPanResponderCapture: (_e, g) =>
-        g.dy > 12 && g.dy > Math.abs(g.dx) * 1.5,
+        overlayPage === 'menu' && g.dy > 12 && g.dy > Math.abs(g.dx) * 1.5,
       onPanResponderMove: (_e, g) => {
         menuY.setValue(Math.max(0, g.dy));
       },
@@ -143,7 +143,7 @@ export function SwipeUpMenu({ children, renderMenu, renderSettings, disabled }: 
         }).start();
       },
     });
-  }, [screenHeight, menuY, closeMenu]);
+  }, [screenHeight, menuY, closeMenu, overlayPage]);
 
   const backdropOpacity = menuY.interpolate({
     inputRange: [0, screenHeight],
