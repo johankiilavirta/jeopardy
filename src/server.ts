@@ -17,6 +17,7 @@ const defaultTimer: Timer = {
 export interface GameServer {
   history: GameHistory;
   playerPeers: Map<string, string>; // peerId -> playerId
+  stop(): void;
 }
 
 export interface ServerOptions {
@@ -72,6 +73,11 @@ export function createServer(
   const server: GameServer = {
     history: createHistory(initialState),
     playerPeers: new Map(),
+    stop() {
+      clearPhaseTimer();
+      clearAnswerTimers();
+      transport.stop();
+    },
   };
 
   let phaseTimerId: unknown = null;

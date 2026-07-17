@@ -124,7 +124,9 @@ const peerToWs = new Map<string, WebSocket>();
 
 function generateRoomCode(): number {
   for (let i = 0; i < 100; i++) {
-    const code = 100 + Math.floor(Math.random() * 900);
+    // 5xx–9xx identifies relay/WebSocket rooms. 1xx–4xx is reserved for
+    // nearby rooms hosted directly by an Apple device.
+    const code = 500 + Math.floor(Math.random() * 500);
     if (!rooms.has(code)) return code;
   }
   throw new Error('No room codes available');
@@ -260,7 +262,7 @@ function startServer(portIndex: number): void {
           // Honor a requested room code when it's free (dev shortcut so a
           // fixed EXPO_PUBLIC_ROOM is reproducible); otherwise allocate one.
           const requested = msg.roomCode != null ? Number(msg.roomCode) : null;
-          const code = requested != null && !rooms.has(requested)
+          const code = requested != null && requested >= 500 && requested <= 999 && !rooms.has(requested)
             ? requested
             : generateRoomCode();
           const room: Room = {

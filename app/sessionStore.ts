@@ -28,6 +28,7 @@ const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const SNAPSHOT_DEBOUNCE_MS = 1000;
 
 export interface SavedSession {
+  mode: 'nearby' | 'online';
   roomCode: number;
   playerName: string;
   relayHost: string;
@@ -63,7 +64,9 @@ export async function loadSession(): Promise<SavedSession | null> {
   try {
     const raw = await AsyncStorage.getItem(SESSION_KEY);
     if (!raw) return null;
-    const session = JSON.parse(raw) as SavedSession;
+    const parsed = JSON.parse(raw) as Omit<SavedSession, 'mode'> & { mode?: SavedSession['mode'] };
+    // Sessions saved before connection modes existed were all relay rooms.
+    const session: SavedSession = { ...parsed, mode: parsed.mode ?? 'online' };
     if (typeof session.roomCode !== 'number' || Date.now() - session.savedAt > SESSION_TTL_MS) {
       await AsyncStorage.removeItem(SESSION_KEY);
       return null;

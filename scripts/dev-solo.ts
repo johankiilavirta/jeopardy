@@ -5,7 +5,7 @@
  *   npm run solo                 # solo, real game #1, web
  *   npm run solo -- --game=4321  # pick a J!Archive game number
  *   npm run solo -- --players=2  # wait for 2 tabs before starting
- *   npm run solo -- --room=42    # fixed room code (default 42)
+ *   npm run solo -- --room=623   # fixed online room code (default 623)
  *
  * Open http://localhost:8081 (Expo prints the exact URL). For a 2-player
  * session, open a second browser tab at the same URL.
@@ -32,7 +32,7 @@ function arg(name: string, fallback: string): string {
   return hit ? hit.slice(name.length + 3) : fallback;
 }
 
-const room = arg('room', '123');
+const room = arg('room', '623');
 const players = arg('players', '1');
 const game = arg('game', '1');
 
