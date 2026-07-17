@@ -29,8 +29,11 @@ export function SettingsScreen(props: SettingsScreenProps) {
       </Pressable>
 
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        nestedScrollEnabled
       >
         <Text style={styles.title}>SETTINGS</Text>
 
@@ -93,6 +96,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     paddingTop: 64,
     paddingBottom: 32,
+  },
+  scroll: {
+    flex: 1,
   },
   backButton: {
     position: 'absolute',

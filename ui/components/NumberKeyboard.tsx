@@ -16,6 +16,8 @@ interface NumberKeyboardProps {
   onMaxWager?: () => void;
   /** Final Jeopardy: the keys swap cell navy for the round's charcoal. */
   final?: boolean;
+  /** Use the neutral charcoal keys outside of the blue game board. */
+  dark?: boolean;
 }
 
 function Key({
@@ -41,24 +43,24 @@ function Key({
   );
 }
 
-export const NumberKeyboard = memo(function NumberKeyboard({ onInsert, onBackspace, onMaxWager, final = false }: NumberKeyboardProps) {
+export const NumberKeyboard = memo(function NumberKeyboard({ onInsert, onBackspace, onMaxWager, final = false, dark = false }: NumberKeyboardProps) {
   return (
     <View style={styles.keyboard}>
       {NUMBER_ROWS.map((row, i) => (
         <View key={i} style={styles.row}>
           {row.map(ch => (
-            <Key key={ch} label={ch} final={final} onPress={() => onInsert(ch)} />
+            <Key key={ch} label={ch} final={final || dark} onPress={() => onInsert(ch)} />
           ))}
         </View>
       ))}
       <View style={styles.row}>
         {onMaxWager ? (
-          <Key label="MAX" final={final} onPress={onMaxWager} />
+          <Key label="MAX" final={final || dark} onPress={onMaxWager} />
         ) : (
           <View style={styles.spacer} />
         )}
-        <Key label="0" final={final} onPress={() => onInsert('0')} />
-        <Key label={BACKSPACE} final={final} onPress={onBackspace} />
+        <Key label="0" final={final || dark} onPress={() => onInsert('0')} />
+        <Key label={BACKSPACE} final={final || dark} onPress={onBackspace} />
       </View>
     </View>
   );

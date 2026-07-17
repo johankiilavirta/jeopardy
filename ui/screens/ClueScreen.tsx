@@ -343,7 +343,36 @@ export function ClueScreen({
   // and swipe-down to drag/dismiss the keyboard from anywhere on screen.
   const screenPanResponder = useMemo(() => {
     const snapBack = () =>
-      Animated.spring(kbDrag, { toValue: 0, useNativeDriver: true }).start();
+      Animated.spring(kbDrag, {
+        toValue: 0,
+        speed: 22,
+        bounciness: 0,
+        useNativeDriver: true,
+      }).start();
+
+    const finishDismiss = () => {
+      Animated.timing(kbDrag, {
+        toValue: panelHeight,
+        duration: 160,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (!finished) return;
+        // The finger-driven value has already carried the sheet entirely
+        // offscreen. Unmount it there, then update game state; do not also
+        // run the ordinary slide-out animation or spring the drag to zero.
+        kb.setValue(0);
+        kbDrag.setValue(0);
+        answerOpacity.setValue(0);
+        setKbMounted(false);
+        const s = stateRef.current;
+        if (s.answer) {
+          s.onLockAnswer?.(s.answer);
+        } else {
+          s.setDismissed(true);
+        }
+      });
+    };
 
     return PanResponder.create({
       onMoveShouldSetPanResponder: (_e, g) => {
@@ -362,20 +391,19 @@ export function ClueScreen({
       },
       onPanResponderMove: (_e, g) => {
         if (keyboardVisible && g.dy > 0) {
-          kbDrag.setValue(g.dy);
+          kbDrag.setValue(Math.min(g.dy, panelHeight));
         }
       },
       onPanResponderRelease: (_e, g) => {
         if (keyboardVisible && g.dy > 0) {
-          if (g.dy > LOCK_THRESHOLD || (g.dy > 50 && g.vy > LOCK_VELOCITY)) {
-            const s = stateRef.current;
-            if (s.answer) {
-              s.onLockAnswer?.(s.answer);
-            } else {
-              s.setDismissed(true);
-            }
+          // Project a short distance in the release direction so a quick,
+          // intentional flick can complete without requiring a long drag.
+          const projectedDistance = g.dy + Math.max(0, g.vy) * 120;
+          if (g.dy > LOCK_THRESHOLD || (g.dy > 24 && projectedDistance > LOCK_THRESHOLD && g.vy > LOCK_VELOCITY)) {
+            finishDismiss();
+          } else {
+            snapBack();
           }
-          snapBack();
         } else if (!keyboardVisible) {
           const isSwipeUp = g.dy < -30 || (g.dy < -10 && g.vy < -0.1);
           if (isSwipeUp) {
@@ -392,7 +420,7 @@ export function ClueScreen({
       },
       onPanResponderTerminate: snapBack,
     });
-  }, [keyboardVisible, kbDrag, onUnlockAnswer]);
+  }, [keyboardVisible, kbDrag, kb, answerOpacity, onUnlockAnswer, panelHeight]);
 
   const stateRef = useRef({
     canBuzz,
