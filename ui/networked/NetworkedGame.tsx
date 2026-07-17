@@ -300,23 +300,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     if (gameState?.status === 'FINAL_JEOPARDY_ANSWER') setLocalEcho(null);
   }, [gameState?.status]);
 
-  // Solo mode: auto-dismiss the reveal after 2.5 s. The player can still
-  // swipe or use arrow keys to self-judge (and record a score) before then.
-  // Final Jeopardy is exempt: it can't be skipped — every answer needs a
-  // verdict to reach GAME OVER.
-  useEffect(() => {
-    if (!gameState || !playerId) return;
-    if (Object.keys(gameState.players).length !== 1) return;
-    if (gameState.status !== 'REVEAL' || !gameState.activeClue) return;
-    if (gameState.activeClue.id === -1) return;
-    const clueId = gameState.activeClue.id;
-    const timer = setTimeout(() => {
-      dispatch({ type: 'SKIP_CLUE', playerId, clueId });
-    }, 2500);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState?.status, gameState?.activeClue?.id, playerId]);
-
   if (!gameState || !playerId) {
     console.log('Stuck on connecting! gameState:', !!gameState, 'playerId:', playerId);
     return (
