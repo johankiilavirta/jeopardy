@@ -15,6 +15,7 @@ import type { GameState } from './src/types';
 import type { GameData } from './data/gameLoader';
 import { OnlineSessionProvider } from './app/onlineSessionProvider';
 import { NearbySessionProvider } from './app/nearbySessionProvider';
+import { relayUrls } from './app/relayUrl';
 import { connectionModeForRoomCode } from './app/roomCodes';
 import type { SessionProvider } from './app/sessionProvider';
 import { DemoHarness } from './ui/demo/DemoHarness';
@@ -196,7 +197,7 @@ export default function App() {
 
     const attempt = () => {
       if (ctl.cancelled) return;
-      const transport = new OnlineSessionProvider(`ws://${session.relayHost}:${session.relayPort}`);
+      const transport = new OnlineSessionProvider(relayUrls(session.relayHost, session.relayPort).ws);
       transportRef.current = transport;
       let settled = false;
 
@@ -305,7 +306,7 @@ export default function App() {
 
     const transport: SessionProvider = mode === 'nearby'
       ? new NearbySessionProvider(action === 'create' ? 'host' : 'guest')
-      : new OnlineSessionProvider(`ws://${relayHost}:${relayPort}`);
+      : new OnlineSessionProvider(relayUrls(relayHost, relayPort).ws);
     transportRef.current = transport;
 
     transport.onError((err) => {
@@ -428,8 +429,7 @@ export default function App() {
   useEffect(() => {
     if (DEV_ROOM == null || devAutoStartedRef.current) return;
     devAutoStartedRef.current = true;
-    const url = `ws://${relayHost}:${relayPort}`;
-    const transport = new OnlineSessionProvider(url);
+    const transport = new OnlineSessionProvider(relayUrls(relayHost, relayPort).ws);
     transportRef.current = transport;
 
     transport.onControlMessage((msg) => {

@@ -228,6 +228,17 @@ function startServer(portIndex: number): void {
   // httpServer 'error' handler below can fall through to the next port.
   wss.on('error', () => {});
 
+  // Heartbeat: proxies in front of a hosted relay (e.g. Fly.io) drop
+  // WebSocket connections that go quiet, which kicks players sitting in
+  // the lobby or thinking about a clue. Protocol-level pings keep traffic
+  // flowing in both directions — browsers reply with pongs automatically.
+  const heartbeat = setInterval(() => {
+    for (const client of wss.clients) {
+      if (client.readyState === WebSocket.OPEN) client.ping();
+    }
+  }, 30_000);
+  wss.on('close', () => clearInterval(heartbeat));
+
   httpServer.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE' && portIndex < TRY_PORTS.length - 1) {
       console.log(`Port ${port} in use, trying next...`);
