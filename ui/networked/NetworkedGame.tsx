@@ -77,10 +77,14 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     latestStateRef.current = incoming;
     const current = currentVisibleStateRef.current;
 
-    if (incoming.status === 'FINAL_JEOPARDY_WAGER') {
+    const inFinal = (s: GameState) =>
+      s.status === 'FINAL_JEOPARDY_WAGER' || s.status === 'FINAL_JEOPARDY_ANSWER';
+
+    if (inFinal(incoming)) {
       // While a fade is already running, don't restart it — just keep the
       // frozen screen's scores current; the running fade swaps to
-      // latestStateRef when it lands.
+      // latestStateRef when it lands (which may already be the answer
+      // phase, if states advanced past the wager mid-fade).
       if (fjFadeActiveRef.current && current) {
         const tempState = { ...current, players: incoming.players };
         currentVisibleStateRef.current = tempState;
@@ -92,16 +96,25 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       // Jeopardy. Undo/redo landing on a wager state from inside the final
       // round (current clue is already the sentinel) swaps directly below.
       const enteringFinal =
+        incoming.status === 'FINAL_JEOPARDY_WAGER' &&
         current != null &&
-        current.status !== 'FINAL_JEOPARDY_WAGER' &&
-        current.status !== 'FINAL_JEOPARDY_ANSWER' &&
+        !inFinal(current) &&
         current.activeClue?.id !== -1;
 
-      if (enteringFinal) {
+      // The forward wager -> answer hand-off otherwise snaps the category
+      // screen straight into the clue: same fade, on a quicker beat.
+      // Undo back onto an answer state (current is REVEAL) swaps directly,
+      // and a reconnect landing mid-answer (current == null) does too.
+      const wagerToAnswer =
+        incoming.status === 'FINAL_JEOPARDY_ANSWER' &&
+        current?.status === 'FINAL_JEOPARDY_WAGER';
+
+      if (enteringFinal || wagerToAnswer) {
+        const [toBlackMs, fromBlackMs] = enteringFinal ? [1000, 1500] : [450, 900];
         fjFadeActiveRef.current = true;
         Animated.timing(fadeToBlackAnim, {
           toValue: 1,
-          duration: 1000,
+          duration: toBlackMs,
           useNativeDriver: true,
         }).start(({ finished }) => {
           fjFadeActiveRef.current = false;
@@ -112,14 +125,14 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
           Animated.timing(fadeToBlackAnim, {
             toValue: 0,
-            duration: 1500,
+            duration: fromBlackMs,
             useNativeDriver: true,
           }).start();
         });
 
         // Keep the old screen visible during the fade, but with the new
         // scores so the +/- animation plays over it.
-        const tempState = { ...current, players: incoming.players };
+        const tempState = { ...current!, players: incoming.players };
         currentVisibleStateRef.current = tempState;
         setGameState(tempState);
         return;
