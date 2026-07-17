@@ -16,6 +16,10 @@ export interface Player {
   correct: number;
   incorrect: number;
   scoreHistory: number[];
+  /** Buzz stats (optional: absent on states saved before they existed). */
+  buzzCount?: number;
+  firstBuzzCount?: number;
+  reactionMsTotal?: number;
 }
 
 export interface ActiveClue {
@@ -69,6 +73,9 @@ export interface SelectClueAction {
 export interface BuzzAction {
   type: 'BUZZ';
   playerId: string;
+  /** Time from the buzz window opening to this buzz, stamped by the
+   *  server (client-sent values are overwritten). */
+  reactionMs?: number;
 }
 
 /** Live keystroke sync while a buzzed player types (dispatched transiently) */

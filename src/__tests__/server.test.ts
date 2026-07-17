@@ -697,6 +697,47 @@ describe('GameServer', () => {
   });
 });
 
+describe('GameServer buzz reaction time', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('stamps server-measured reactionMs, overwriting any forged client value', () => {
+    let now = 100_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+
+    const { timer, fire } = createMockTimer();
+    const host = new MockTransport('host');
+    const server = createServer(host, ['Alice', 'Bob'], { timer });
+
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    p1.send('host', selectClueMsg);
+    fire(); // window opens at t=100_000
+
+    now = 100_750;
+    // The client forges a 1ms reaction — the server's measurement wins.
+    p2.send('host', JSON.stringify({ type: 'BUZZ', reactionMs: 1 }));
+
+    expect(server.history.current.players['bob']).toMatchObject({
+      buzzCount: 1,
+      firstBuzzCount: 1,
+      reactionMsTotal: 750,
+    });
+
+    now = 103_000;
+    p1.send('host', JSON.stringify({ type: 'BUZZ' }));
+    expect(server.history.current.players['alice']).toMatchObject({
+      buzzCount: 1,
+      firstBuzzCount: 0,
+      reactionMsTotal: 3000,
+    });
+  });
+});
+
 describe('GameServer Final Jeopardy undo/redo', () => {
   const finalClue = {
     category: 'WORLD CAPITALS',

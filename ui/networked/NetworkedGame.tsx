@@ -609,6 +609,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         {gameState.status === 'GAME_OVER' && (() => {
           const PLAYER_COLORS = ['#5B8DEF', '#E8A035'];
           const sorted = Object.values(gameState.players).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+          const totalFirstBuzzes = sorted.reduce((sum, p) => sum + (p.firstBuzzCount ?? 0), 0);
           const chartPlayers = sorted.map((p, i) => ({
             name: p.name,
             color: PLAYER_COLORS[i % PLAYER_COLORS.length]!,
@@ -628,9 +629,9 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                   {sorted.map((p, i) => {
                     const total = p.correct + p.incorrect;
                     const pct = total > 0 ? Math.round((p.correct / total) * 100) : 0;
-                    // Mock stats — replace with real data when available
-                    const buzzSpeedMs = 1200 + Math.round(Math.abs(Math.sin(p.id.length * 7)) * 3000);
-                    const firstBuzzPct = 20 + Math.round(Math.abs(Math.cos(p.id.length * 3)) * 60);
+                    const buzzCount = p.buzzCount ?? 0;
+                    const avgReactionMs = buzzCount > 0 ? Math.round((p.reactionMsTotal ?? 0) / buzzCount) : null;
+                    const firstBuzzPct = totalFirstBuzzes > 0 ? Math.round(((p.firstBuzzCount ?? 0) / totalFirstBuzzes) * 100) : 0;
                     return (
                       <View key={p.id} style={styles.gameOverPlayerRow}>
                         <View style={styles.gameOverNameRow}>
@@ -642,9 +643,11 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                         <Text style={styles.gameOverStats}>
                           {p.correct} correct · {p.incorrect} incorrect · {pct}% correctness
                         </Text>
-                        <Text style={styles.gameOverStats}>
-                          {firstBuzzPct}% buzzed first · {buzzSpeedMs}ms average reaction
-                        </Text>
+                        {buzzCount > 0 && (
+                          <Text style={styles.gameOverStats}>
+                            {firstBuzzPct}% buzzed first · {avgReactionMs}ms average reaction
+                          </Text>
+                        )}
                         {gameState.finalWagers?.[p.id] != null && (
                           <Text style={styles.gameOverStats}>
                             ${gameState.finalWagers[p.id]!.toLocaleString()} final wager
