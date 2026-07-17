@@ -1,14 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  Easing,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { relayUrls } from '../../app/relayUrl';
+import { NumberKeyboard } from '../components/NumberKeyboard';
 import { SwipeUpMenu } from '../components/SwipeUpMenu';
 import { MainMenuScreen } from './MainMenuScreen';
 import { SettingsScreen } from './SettingsScreen';
@@ -50,23 +53,173 @@ interface LobbyScreenProps {
 }
 
 const MAX_PLAYERS = 2;
+const SHEET_MIN_HEIGHT = 208;
+const SHEET_MAX_HEIGHT = 272;
+const SHEET_HEIGHT_PCT = 0.272;
+const SHEET_BOTTOM_OVERHANG = 56;
+const SHEET_RADIUS = 18;
+const DISMISS_THRESHOLD = 80;
+const DISMISS_VELOCITY = 0.5;
 
 export function LobbyScreen(props: LobbyScreenProps) {
+  const { height } = useWindowDimensions();
   const canStart = props.isHost && props.players.length >= MAX_PLAYERS;
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showRound1, setShowRound1] = useState(false);
   const [showRound2, setShowRound2] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardMounted, setKeyboardMounted] = useState(false);
   const [round1Categories, setRound1Categories] = useState<{ name: string; clueCount: number }[] | null>(null);
   const [round2Categories, setRound2Categories] = useState<{ name: string; clueCount: number }[] | null>(null);
   const [airDate, setAirDate] = useState<string | null>(null);
   const [seasonNumber, setSeasonNumber] = useState<number | null>(null);
   const [gameInfoStatus, setGameInfoStatus] = useState<'idle' | 'loading' | 'not-found'>('idle');
+  const panelHeight = Math.min(
+    SHEET_MAX_HEIGHT,
+    Math.max(SHEET_MIN_HEIGHT, Math.round(height * SHEET_HEIGHT_PCT)),
+  );
 
   // Fade the lobby out when App signals the game is ready to mount (first
   // STATE_UPDATE received) — not on the START press, which would delay the
   // start-game send and only ever play on the host's device.
   const contentOpacity = useRef(new Animated.Value(1)).current;
+  const setupScrollRef = useRef<ScrollView | null>(null);
+  const kb = useRef(new Animated.Value(0)).current;
+  const kbDrag = useRef(new Animated.Value(0)).current;
+  const advancedYRef = useRef(0);
+  const gameIdLayoutRef = useRef({ y: 0, height: 0 });
   const fadeStartedRef = useRef(false);
+
+  const moveGameIdIntoKeyboardWindow = useCallback(() => {
+    const layout = gameIdLayoutRef.current;
+    if (!layout.height) return;
+    const keyboardTop = height - panelHeight;
+    const targetTop = (keyboardTop - layout.height) / 2;
+    const y = Math.max(0, layout.y - targetTop);
+    requestAnimationFrame(() => {
+      setupScrollRef.current?.scrollTo({ y, animated: true });
+    });
+  }, [height, panelHeight]);
+
+  const openKeyboard = useCallback(() => {
+    kbDrag.setValue(0);
+    setKeyboardMounted(true);
+    setKeyboardVisible(true);
+    moveGameIdIntoKeyboardWindow();
+  }, [kbDrag, moveGameIdIntoKeyboardWindow]);
+
+  const closeKeyboard = useCallback(() => {
+    setKeyboardVisible(false);
+  }, []);
+
+  useEffect(() => {
+    if (keyboardVisible) {
+      Animated.spring(kb, {
+        toValue: 1,
+        speed: 16,
+        bounciness: 4,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(kb, {
+        toValue: 0,
+        duration: 180,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setKeyboardMounted(false);
+      });
+    }
+  }, [keyboardVisible, kb]);
+
+  const insertGameIdDigit = useCallback((digit: string) => {
+    props.onGameIdChange?.(`${props.gameId ?? ''}${digit}`.replace(/\D/g, '').slice(0, 6));
+  }, [props]);
+
+  const backspaceGameId = useCallback(() => {
+    props.onGameIdChange?.((props.gameId ?? '').slice(0, -1));
+  }, [props]);
+
+  const keyboardResponder = useMemo(() => {
+    const snapBack = () =>
+      Animated.spring(kbDrag, {
+        toValue: 0,
+        speed: 22,
+        bounciness: 0,
+        useNativeDriver: true,
+      }).start();
+
+    const finishDismiss = () => {
+      Animated.timing(kbDrag, {
+        toValue: panelHeight,
+        duration: 160,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (!finished) return;
+        kb.setValue(0);
+        kbDrag.setValue(0);
+        setKeyboardVisible(false);
+        setKeyboardMounted(false);
+      });
+    };
+
+    return PanResponder.create({
+      onMoveShouldSetPanResponder: (_e, g) => {
+        const vertical = Math.abs(g.dy) > 15 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5;
+        if (!vertical) return false;
+        return keyboardVisible && g.dy > 0;
+      },
+      onMoveShouldSetPanResponderCapture: (_e, g) => {
+        const vertical = Math.abs(g.dy) > 15 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5;
+        if (!vertical) return false;
+        return keyboardVisible && g.dy > 0;
+      },
+      onPanResponderMove: (_e, g) => {
+        if (keyboardVisible && g.dy > 0) {
+          kbDrag.setValue(Math.min(g.dy, panelHeight));
+        }
+      },
+      onPanResponderRelease: (_e, g) => {
+        if (keyboardVisible && g.dy > 0) {
+          const projectedDistance = g.dy + Math.max(0, g.vy) * 120;
+          if (
+            g.dy > DISMISS_THRESHOLD ||
+            (g.dy > 24 && projectedDistance > DISMISS_THRESHOLD && g.vy > DISMISS_VELOCITY)
+          ) {
+            finishDismiss();
+          } else {
+            snapBack();
+          }
+        }
+      },
+      onPanResponderTerminate: snapBack,
+    });
+  }, [kb, kbDrag, keyboardVisible, panelHeight]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.addEventListener) return;
+    const handler = (e: KeyboardEvent) => {
+      if (!keyboardVisible) return;
+      if (/^\d$/.test(e.key)) {
+        e.preventDefault();
+        insertGameIdDigit(e.key);
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        backspaceGameId();
+      } else if (e.key === 'Escape' || e.key === 'Enter' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        closeKeyboard();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [backspaceGameId, closeKeyboard, insertGameIdDigit, keyboardVisible]);
+
+  const panelRise = kb.interpolate({
+    inputRange: [0, 1],
+    outputRange: [panelHeight, 0],
+  });
   useEffect(() => {
     if (!props.fadeOut || fadeStartedRef.current) return;
     fadeStartedRef.current = true;
@@ -126,6 +279,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
 
   return (
     <SwipeUpMenu
+      disabled
       renderMenu={showSettings => (
         <MainMenuScreen
           onNewGame={props.onNewGame ?? props.onLeave}
@@ -146,179 +300,227 @@ export function LobbyScreen(props: LobbyScreenProps) {
       )}
     >
       <View style={styles.root}>
-        <Animated.View style={[StyleSheet.absoluteFill, styles.contentWrap, { opacity: contentOpacity }]}>
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            styles.contentWrap,
+            {
+              opacity: contentOpacity,
+            },
+          ]}
+        >
           <Pressable style={styles.leaveButton} onPress={props.onLeave}>
             <Text style={styles.leaveText}>← LEAVE</Text>
           </Pressable>
 
-          {props.roomCode > 0 ? (
-            <>
-              <Text style={styles.roomCode}>{props.roomCode}</Text>
-              <Text style={styles.subtitle}>Share this code with your friend</Text>
-            </>
-          ) : (
-            <>
-              <Text style={styles.creatingText}>Creating room...</Text>
-              <Text style={styles.subtitle}> </Text>
-            </>
-          )}
+          <ScrollView
+            ref={setupScrollRef}
+            style={styles.setupScroll}
+            contentContainerStyle={[
+              styles.setupScrollContent,
+              {
+                paddingBottom: 32 + panelHeight,
+              },
+            ]}
+            showsVerticalScrollIndicator={false}
+            showsHorizontalScrollIndicator={false}
+            scrollEventThrottle={16}
+          >
+            {props.roomCode > 0 ? (
+              <>
+                <Text style={styles.roomCode}>{props.roomCode}</Text>
+                <Text style={styles.subtitle}>Share this code with your friend</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.creatingText}>Creating room...</Text>
+                <Text style={styles.subtitle}> </Text>
+              </>
+            )}
 
-          <View style={styles.playerList}>
-            {slots.map((player, i) => (
-              <View key={player?.peerId ?? `empty-${i}`} style={styles.playerRow}>
-                <Text style={styles.slotLabel}>P{i + 1}</Text>
-                {player ? (
-                  <>
-                    <Text style={styles.playerName}>{player.name}</Text>
-                    {player.isHost && <Text style={styles.hostBadge}>HOST</Text>}
-                  </>
-                ) : (
-                  <Text style={styles.emptySlot}>Open</Text>
-                )}
-              </View>
-            ))}
-          </View>
+            <View style={styles.playerList}>
+              {slots.map((player, i) => (
+                <View key={player?.peerId ?? `empty-${i}`} style={styles.playerRow}>
+                  <Text style={styles.slotLabel}>P{i + 1}</Text>
+                  {player ? (
+                    <>
+                      <Text style={styles.playerName}>{player.name}</Text>
+                      {player.isHost && <Text style={styles.hostBadge}>HOST</Text>}
+                    </>
+                  ) : (
+                    <Text style={styles.emptySlot}>Open</Text>
+                  )}
+                </View>
+              ))}
+            </View>
 
-          {props.isHost && (
-            <>
-              <Pressable
-                style={[styles.startButton, !canStart && styles.startButtonDisabled]}
-                onPress={props.onStart}
-                disabled={!canStart}
-              >
-                <Text style={[styles.startButtonText, !canStart && styles.startButtonTextDisabled]}>
-                  START GAME
-                </Text>
-              </Pressable>
-
-            <Pressable
-              style={styles.advancedToggle}
-              onPress={() => setShowAdvanced(!showAdvanced)}
-            >
-              <Text style={styles.advancedToggleText}>
-                {showAdvanced ? '▾ Game Settings' : '▸ Game Settings'}
-              </Text>
-            </Pressable>
-
-            {showAdvanced && (
-              <View style={styles.advancedSection}>
-                <Text style={styles.label}>Animations</Text>
+            {props.isHost && (
+              <>
                 <Pressable
-                  style={styles.toggleBox}
-                  onPress={() =>
-                    props.onAnimationsChange?.(!(props.animationsEnabled ?? true))
-                  }
+                  style={[styles.startButton, !canStart && styles.startButtonDisabled]}
+                  onPress={props.onStart}
+                  disabled={!canStart}
                 >
-                  <Text
-                    style={[
-                      styles.toggleText,
-                      !(props.animationsEnabled ?? true) && styles.toggleTextOff,
-                    ]}
-                  >
-                    {(props.animationsEnabled ?? true) ? 'On' : 'Off'}
+                  <Text style={[styles.startButtonText, !canStart && styles.startButtonTextDisabled]}>
+                    START GAME
                   </Text>
                 </Pressable>
 
-                <Text style={[styles.label, styles.stackedLabel]}>Categories Displayed</Text>
-                <View style={styles.catCountRow}>
-                  {([4, 5, 6] as const).map(n => {
-                    const active = (props.visibleCategories ?? 6) === n;
-                    return (
-                      <Pressable
-                        key={n}
-                        style={[styles.catCountBtn, active && styles.catCountBtnActive]}
-                        onPress={() => props.onVisibleCategoriesChange?.(n)}
+                <Pressable
+                  style={styles.advancedToggle}
+                  onPress={() => {
+                    closeKeyboard();
+                    setShowAdvanced(!showAdvanced);
+                  }}
+                >
+                  <Text style={styles.advancedToggleText}>
+                    {showAdvanced ? '▾ Game Settings' : '▸ Game Settings'}
+                  </Text>
+                </Pressable>
+
+                {showAdvanced && (
+                  <View
+                    style={styles.advancedSection}
+                    onLayout={event => {
+                      advancedYRef.current = event.nativeEvent.layout.y;
+                    }}
+                  >
+                    <Text style={styles.label}>Animations</Text>
+                    <Pressable
+                      style={styles.toggleBox}
+                      onPress={() =>
+                        props.onAnimationsChange?.(!(props.animationsEnabled ?? true))
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.toggleText,
+                          !(props.animationsEnabled ?? true) && styles.toggleTextOff,
+                        ]}
                       >
-                        <Text style={[styles.catCountText, active && styles.catCountTextActive]}>
-                          {n}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-
-                <Text style={[styles.label, styles.stackedLabel]}>Game #</Text>
-                <TextInput
-                  style={styles.input}
-                  value={props.gameId ?? ''}
-                  onChangeText={props.onGameIdChange ?? (() => {})}
-                  placeholder="Random"
-                  placeholderTextColor="#666"
-                  keyboardType="number-pad"
-                />
-
-                {gameInfoStatus === 'loading' && (
-                  <Text style={styles.gameInfoNote}>Loading…</Text>
-                )}
-                {gameInfoStatus === 'not-found' && (
-                  <Text style={styles.gameInfoNote}>Game not found</Text>
-                )}
-
-                {round1Categories && (
-                  <>
-                    {seasonNumber != null && (
-                      <Text style={styles.gameMetadata}>Season {seasonNumber}</Text>
-                    )}
-                    {airDate && (
-                      <Text style={styles.gameMetadata}>
-                        {new Date(airDate + 'T12:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                      </Text>
-                    )}
-                    <Pressable
-                      style={styles.roundToggle}
-                      onPress={() => setShowRound1(v => !v)}
-                    >
-                      <Text style={styles.roundToggleText}>
-                        {showRound1 ? '▾ ' : '▸ '}
-                        Jeopardy!
-                        {round1Categories.some(c => c.clueCount < 5) && (
-                          <Text style={styles.clueCount}> *</Text>
-                        )}
+                        {(props.animationsEnabled ?? true) ? 'On' : 'Off'}
                       </Text>
                     </Pressable>
-                    {showRound1 && (
-                      <ScrollView style={styles.categoryList} nestedScrollEnabled>
-                        {round1Categories.map(({ name, clueCount }) => (
-                          <View key={name} style={styles.categoryRow}>
-                            <Text style={styles.categoryName}>{name}</Text>
-                            {clueCount < 5 && (
-                              <Text style={styles.clueCount}>{clueCount}/5</Text>
-                            )}
-                          </View>
-                        ))}
-                      </ScrollView>
-                    )}
 
+                    <Text style={[styles.label, styles.stackedLabel]}>Categories Displayed</Text>
+                    <View style={styles.catCountRow}>
+                      {([4, 5, 6] as const).map(n => {
+                        const active = (props.visibleCategories ?? 6) === n;
+                        return (
+                          <Pressable
+                            key={n}
+                            style={[styles.catCountBtn, active && styles.catCountBtnActive]}
+                            onPress={() => props.onVisibleCategoriesChange?.(n)}
+                          >
+                            <Text style={[styles.catCountText, active && styles.catCountTextActive]}>
+                              {n}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+
+                    <Text style={[styles.label, styles.stackedLabel]}>Game #</Text>
                     <Pressable
-                      style={styles.roundToggle}
-                      onPress={() => setShowRound2(v => !v)}
+                      style={styles.input}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Game number ${props.gameId || 'random'}`}
+                      onLayout={event => {
+                        gameIdLayoutRef.current = {
+                          y: advancedYRef.current + event.nativeEvent.layout.y,
+                          height: event.nativeEvent.layout.height,
+                        };
+                      }}
+                      onPress={openKeyboard}
                     >
-                      <Text style={styles.roundToggleText}>
-                        {showRound2 ? '▾ ' : '▸ '}
-                        Double Jeopardy!
-                        {round2Categories?.some(c => c.clueCount < 5) && (
-                          <Text style={styles.clueCount}> *</Text>
-                        )}
+                      <Text style={[styles.inputText, !props.gameId && styles.inputPlaceholder]}>
+                        {props.gameId || 'Random'}
                       </Text>
                     </Pressable>
-                    {showRound2 && round2Categories && (
-                      <ScrollView style={styles.categoryList} nestedScrollEnabled>
-                        {round2Categories.map(({ name, clueCount }) => (
-                          <View key={name} style={styles.categoryRow}>
-                            <Text style={styles.categoryName}>{name}</Text>
-                            {clueCount < 5 && (
-                              <Text style={styles.clueCount}>{clueCount}/5</Text>
-                            )}
-                          </View>
-                        ))}
-                      </ScrollView>
+
+                    {gameInfoStatus === 'loading' && (
+                      <Text style={styles.gameInfoNote}>Loading...</Text>
                     )}
-                  </>
+                    {gameInfoStatus === 'not-found' && (
+                      <Text style={styles.gameInfoNote}>Game not found</Text>
+                    )}
+
+                    {round1Categories && (
+                      <>
+                        {seasonNumber != null && (
+                          <Text style={styles.gameMetadata}>Season {seasonNumber}</Text>
+                        )}
+                        {airDate && (
+                          <Text style={styles.gameMetadata}>
+                            {new Date(airDate + 'T12:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                          </Text>
+                        )}
+                        <Pressable
+                          style={styles.roundToggle}
+                          onPress={() => setShowRound1(v => !v)}
+                        >
+                          <Text style={styles.roundToggleText}>
+                            {showRound1 ? '▾ ' : '▸ '}
+                            Jeopardy!
+                            {round1Categories.some(c => c.clueCount < 5) && (
+                              <Text style={styles.clueCount}> *</Text>
+                            )}
+                          </Text>
+                        </Pressable>
+                        {showRound1 && (
+                          <ScrollView
+                            style={styles.categoryList}
+                            nestedScrollEnabled
+                            showsVerticalScrollIndicator={false}
+                            showsHorizontalScrollIndicator={false}
+                          >
+                            {round1Categories.map(({ name, clueCount }) => (
+                              <View key={name} style={styles.categoryRow}>
+                                <Text style={styles.categoryName}>{name}</Text>
+                                {clueCount < 5 && (
+                                  <Text style={styles.clueCount}>{clueCount}/5</Text>
+                                )}
+                              </View>
+                            ))}
+                          </ScrollView>
+                        )}
+
+                        <Pressable
+                          style={styles.roundToggle}
+                          onPress={() => setShowRound2(v => !v)}
+                        >
+                          <Text style={styles.roundToggleText}>
+                            {showRound2 ? '▾ ' : '▸ '}
+                            Double Jeopardy!
+                            {round2Categories?.some(c => c.clueCount < 5) && (
+                              <Text style={styles.clueCount}> *</Text>
+                            )}
+                          </Text>
+                        </Pressable>
+                        {showRound2 && round2Categories && (
+                          <ScrollView
+                            style={styles.categoryList}
+                            nestedScrollEnabled
+                            showsVerticalScrollIndicator={false}
+                            showsHorizontalScrollIndicator={false}
+                          >
+                            {round2Categories.map(({ name, clueCount }) => (
+                              <View key={name} style={styles.categoryRow}>
+                                <Text style={styles.categoryName}>{name}</Text>
+                                {clueCount < 5 && (
+                                  <Text style={styles.clueCount}>{clueCount}/5</Text>
+                                )}
+                              </View>
+                            ))}
+                          </ScrollView>
+                        )}
+                      </>
+                    )}
+                  </View>
                 )}
-              </View>
+              </>
             )}
-          </>
-        )}
+          </ScrollView>
 
         {props.error && (
           <View style={styles.statusLineWrap}>
@@ -326,6 +528,34 @@ export function LobbyScreen(props: LobbyScreenProps) {
           </View>
         )}
         </Animated.View>
+
+        {keyboardVisible && (
+          <Pressable
+            style={styles.dismissLayer}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss keyboard"
+            onPress={closeKeyboard}
+          />
+        )}
+
+        {keyboardMounted && (
+          <Animated.View
+            style={[
+              styles.sheetWrap,
+              { transform: [{ translateY: Animated.add(panelRise, kbDrag) }] },
+            ]}
+            {...keyboardResponder.panHandlers}
+          >
+            <View style={[styles.sheet, { height: panelHeight + SHEET_BOTTOM_OVERHANG }]}>
+              <Pressable onPress={() => {}} style={[styles.sheetInner, { height: panelHeight }]}>
+                <View style={styles.grabber} />
+                <View style={styles.keypad}>
+                  <NumberKeyboard dark onInsert={insertGameIdDigit} onBackspace={backspaceGameId} />
+                </View>
+              </Pressable>
+            </View>
+          </Animated.View>
+        )}
       </View>
     </SwipeUpMenu>
   );
@@ -337,6 +567,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   contentWrap: {
+    width: '100%',
+  },
+  setupScroll: {
+    flex: 1,
+    width: '100%',
+  },
+  setupScrollContent: {
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 32,
@@ -495,11 +733,20 @@ const styles = StyleSheet.create({
   input: {
     fontFamily: typeTokens.ui500,
     fontSize: 16,
-    color: '#fff',
     borderWidth: 1,
     borderColor: '#444',
     borderRadius: 6,
     padding: 10,
+    minHeight: 42,
+    justifyContent: 'center',
+  },
+  inputText: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 16,
+    color: '#fff',
+  },
+  inputPlaceholder: {
+    color: '#666',
   },
   gameMetadata: {
     fontFamily: typeTokens.ui500,
@@ -558,5 +805,47 @@ const styles = StyleSheet.create({
   },
   startButtonTextDisabled: {
     color: '#666',
+  },
+  dismissLayer: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 1,
+  },
+  sheetWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: -SHEET_BOTTOM_OVERHANG,
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  sheet: {
+    width: '96%',
+    backgroundColor: colors.cellFinalRecessed,
+    borderTopLeftRadius: SHEET_RADIUS,
+    borderTopRightRadius: SHEET_RADIUS,
+    overflow: 'hidden',
+  },
+  sheetInner: {
+    paddingHorizontal: 12,
+    paddingBottom: 14,
+  },
+  grabber: {
+    alignSelf: 'center',
+    width: 44,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  keypad: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
   },
 });
