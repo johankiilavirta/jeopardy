@@ -72,8 +72,12 @@ export function SwipeUpMenu({ children, renderMenu, renderSettings, disabled }: 
     const handler = (e: KeyboardEvent) => {
       const s = stateRef.current;
       if (s.menuVisible) {
-        if (e.key === 'Escape' || e.key === 'm' || e.key === 'M' || e.key === 'ArrowDown') s.closeMenu();
-      } else if (!s.disabled && (e.key === 'm' || e.key === 'M')) {
+        if (e.key === 'Escape' || e.key === 'm' || e.key === 'M' || e.key === 'ArrowDown') {
+          if (e.key === 'ArrowDown') e.preventDefault();
+          s.closeMenu();
+        }
+      } else if (!s.disabled && (e.key === 'm' || e.key === 'M' || e.key === 'ArrowUp')) {
+        if (e.key === 'ArrowUp') e.preventDefault();
         s.openMenu();
       }
     };

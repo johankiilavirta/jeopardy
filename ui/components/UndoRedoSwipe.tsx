@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, PanResponder, StyleSheet, View } from 'react-native';
 import { colors } from '../theme/tokens';
 
@@ -8,6 +8,9 @@ interface UndoRedoSwipeProps {
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  /** Suppress the arrow-key shortcuts while another surface owns the arrow
+   *  keys (e.g. the judgement tray's verdict keys). Swipes stay active. */
+  arrowKeysDisabled?: boolean;
 }
 
 const ICON_SIZE = 48;
@@ -21,6 +24,7 @@ export function UndoRedoSwipe({
   canRedo,
   onUndo,
   onRedo,
+  arrowKeysDisabled,
 }: UndoRedoSwipeProps) {
   const dragX = useRef(new Animated.Value(0)).current;
   const dxRef = useRef(0);
@@ -35,6 +39,28 @@ export function UndoRedoSwipe({
   onUndoRef.current = onUndo;
   const onRedoRef = useRef(onRedo);
   onRedoRef.current = onRedo;
+
+  const arrowKeysDisabledRef = useRef(arrowKeysDisabled);
+  arrowKeysDisabledRef.current = arrowKeysDisabled;
+
+  // Web keyboard shortcuts: swipes are awkward with a mouse, so the arrow
+  // keys mirror the gestures (left = undo, right = redo).
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.addEventListener) return;
+    const handler = (e: KeyboardEvent) => {
+      if (arrowKeysDisabledRef.current) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === 'ArrowLeft' && canUndoRef.current) {
+        e.preventDefault();
+        onUndoRef.current();
+      } else if (e.key === 'ArrowRight' && canRedoRef.current) {
+        e.preventDefault();
+        onRedoRef.current();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const springBack = () => {
     directionRef.current = null;
