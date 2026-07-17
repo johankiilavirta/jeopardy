@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { relayUrls } from '../../app/relayUrl';
 import { SwipeUpMenu } from '../components/SwipeUpMenu';
 import { MainMenuScreen } from './MainMenuScreen';
 import { SettingsScreen } from './SettingsScreen';
@@ -94,9 +95,8 @@ export function LobbyScreen(props: LobbyScreenProps) {
     setGameInfoStatus('loading');
     const timer = setTimeout(async () => {
       try {
-        const host = props.relayHost ?? 'localhost';
-        const port = props.relayPort ?? '8787';
-        const res = await fetch(`http://${host}:${port}/game-info/${id}`);
+        const base = relayUrls(props.relayHost ?? 'localhost', props.relayPort ?? '8787').http;
+        const res = await fetch(`${base}/game-info/${id}`);
         if (!res.ok) {
           setRound1Categories(null); setRound2Categories(null);
           setAirDate(null); setSeasonNumber(null);

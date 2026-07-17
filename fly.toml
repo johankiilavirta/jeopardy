@@ -1,0 +1,21 @@
+# Fly.io config for the relay server.
+#
+# The relay holds rooms and game state in memory, so run exactly one
+# machine. auto_stop lets Fly park the machine when nobody is connected
+# (open WebSockets keep it awake during play); it restarts on the next
+# connection. A stopped machine loses in-progress rooms, but the app
+# saves snapshots on-device and offers RESUME GAME.
+
+app = "jeopardy-relay-johan"
+primary_region = "arn"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
