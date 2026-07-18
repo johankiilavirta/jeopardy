@@ -1,8 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Animated,
-  Easing,
-  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,16 +8,10 @@ import {
   View,
 } from 'react-native';
 import { AnswerKeyboard } from '../components/AnswerKeyboard';
+import { KeyboardSheet, useKeyboardSheet } from '../components/KeyboardSheet';
 import { NumberKeyboard } from '../components/NumberKeyboard';
 import { colors, type as typeTokens } from '../theme/tokens';
 
-const SHEET_MIN_HEIGHT = 208;
-const SHEET_MAX_HEIGHT = 272;
-const SHEET_HEIGHT_PCT = 0.272;
-const SHEET_BOTTOM_OVERHANG = 56;
-const SHEET_RADIUS = 18;
-const DISMISS_THRESHOLD = 80;
-const DISMISS_VELOCITY = 0.5;
 const SCREEN_TOP_PADDING = 64;
 const SCREEN_SIDE_PADDING = 32;
 const TITLE_TO_CONTENT_GAP = 32;
@@ -74,14 +65,6 @@ export function SettingsScreen(props: SettingsScreenProps) {
   const { height } = useWindowDimensions();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [activeField, setActiveField] = useState<SettingsField | null>(null);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [keyboardMounted, setKeyboardMounted] = useState(false);
-  const panelHeight = Math.min(
-    SHEET_MAX_HEIGHT,
-    Math.max(SHEET_MIN_HEIGHT, Math.round(height * SHEET_HEIGHT_PCT)),
-  );
-  const kb = useRef(new Animated.Value(0)).current;
-  const kbDrag = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollView | null>(null);
   const sectionYRef = useRef({ main: 0, advanced: 0 });
   const fieldLayoutRef = useRef<Record<SettingsField, { y: number; height: number }>>({
@@ -90,51 +73,28 @@ export function SettingsScreen(props: SettingsScreenProps) {
     relayPort: { y: 0, height: 0 },
   });
 
+  const sheet = useKeyboardSheet(
+    undefined,
+    // onClose: clear the active field
+    () => setActiveField(null),
+  );
+
   const scrollFieldIntoKeyboardWindow = useCallback((field: SettingsField) => {
     const layout = fieldLayoutRef.current[field];
     if (!layout.height) return;
-    const keyboardTop = height - panelHeight;
+    const keyboardTop = height - sheet.panelHeight;
     const targetTop = (keyboardTop - layout.height) / 2;
     const y = Math.max(0, layout.y - targetTop);
     requestAnimationFrame(() => {
       scrollRef.current?.scrollTo({ y, animated: true });
     });
-  }, [height, panelHeight]);
+  }, [height, sheet.panelHeight]);
 
   const openKeyboard = useCallback((field: SettingsField) => {
-    kbDrag.setValue(0);
     setActiveField(field);
-    setKeyboardMounted(true);
-    setKeyboardVisible(true);
+    sheet.open();
     scrollFieldIntoKeyboardWindow(field);
-  }, [kbDrag, scrollFieldIntoKeyboardWindow]);
-
-  const closeKeyboard = useCallback(() => {
-    setKeyboardVisible(false);
-  }, []);
-
-  useEffect(() => {
-    if (keyboardVisible) {
-      Animated.spring(kb, {
-        toValue: 1,
-        speed: 16,
-        bounciness: 4,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      Animated.timing(kb, {
-        toValue: 0,
-        duration: 180,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (finished) {
-          setKeyboardMounted(false);
-          setActiveField(null);
-        }
-      });
-    }
-  }, [keyboardVisible, kb]);
+  }, [sheet, scrollFieldIntoKeyboardWindow]);
 
   const insertChar = useCallback((char: string) => {
     if (activeField === 'playerName') {
@@ -156,64 +116,6 @@ export function SettingsScreen(props: SettingsScreenProps) {
     }
   }, [activeField, props]);
 
-  const keyboardResponder = useMemo(() => {
-    const snapBack = () =>
-      Animated.spring(kbDrag, {
-        toValue: 0,
-        speed: 22,
-        bounciness: 0,
-        useNativeDriver: true,
-      }).start();
-
-    const finishDismiss = () => {
-      Animated.timing(kbDrag, {
-        toValue: panelHeight,
-        duration: 160,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (!finished) return;
-        kb.setValue(0);
-        kbDrag.setValue(0);
-        setKeyboardVisible(false);
-        setKeyboardMounted(false);
-        setActiveField(null);
-      });
-    };
-
-    return PanResponder.create({
-      onMoveShouldSetPanResponder: (_e, g) => {
-        const vertical = Math.abs(g.dy) > 15 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5;
-        if (!vertical) return false;
-        return keyboardVisible && g.dy > 0;
-      },
-      onMoveShouldSetPanResponderCapture: (_e, g) => {
-        const vertical = Math.abs(g.dy) > 15 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5;
-        if (!vertical) return false;
-        return keyboardVisible && g.dy > 0;
-      },
-      onPanResponderMove: (_e, g) => {
-        if (keyboardVisible && g.dy > 0) {
-          kbDrag.setValue(Math.min(g.dy, panelHeight));
-        }
-      },
-      onPanResponderRelease: (_e, g) => {
-        if (keyboardVisible && g.dy > 0) {
-          const projectedDistance = g.dy + Math.max(0, g.vy) * 120;
-          if (
-            g.dy > DISMISS_THRESHOLD ||
-            (g.dy > 24 && projectedDistance > DISMISS_THRESHOLD && g.vy > DISMISS_VELOCITY)
-          ) {
-            finishDismiss();
-          } else {
-            snapBack();
-          }
-        }
-      },
-      onPanResponderTerminate: snapBack,
-    });
-  }, [kb, kbDrag, keyboardVisible, panelHeight]);
-
   useEffect(() => {
     if (typeof window === 'undefined' || !window.addEventListener) return;
     const handler = (e: KeyboardEvent) => {
@@ -223,7 +125,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
         backspaceChar();
       } else if (e.key === 'Escape' || e.key === 'Enter' || e.key === 'ArrowDown') {
         e.preventDefault();
-        closeKeyboard();
+        sheet.close();
       } else if (activeField === 'relayPort' && /^\d$/.test(e.key)) {
         e.preventDefault();
         insertChar(e.key);
@@ -237,12 +139,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [activeField, backspaceChar, closeKeyboard, insertChar]);
-
-  const panelRise = kb.interpolate({
-    inputRange: [0, 1],
-    outputRange: [panelHeight, 0],
-  });
+  }, [activeField, backspaceChar, sheet, insertChar]);
 
   return (
     <View style={styles.root}>
@@ -257,7 +154,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
           styles.scrollContent,
           {
             minHeight: height,
-            paddingBottom: SCREEN_SIDE_PADDING + panelHeight,
+            paddingBottom: SCREEN_SIDE_PADDING + sheet.panelHeight,
           },
         ]}
         keyboardShouldPersistTaps="handled"
@@ -266,9 +163,9 @@ export function SettingsScreen(props: SettingsScreenProps) {
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
         onTouchStart={() => {
-          if (keyboardVisible) closeKeyboard();
+          if (sheet.visible) sheet.close();
         }}
-        onScrollBeginDrag={closeKeyboard}
+        onScrollBeginDrag={sheet.close}
         scrollEventThrottle={16}
       >
         <Text style={styles.title}>SETTINGS</Text>
@@ -301,7 +198,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
         <Pressable
           style={styles.advancedToggle}
           onPress={() => {
-            closeKeyboard();
+            sheet.close();
             setShowAdvanced(!showAdvanced);
           }}
         >
@@ -355,30 +252,15 @@ export function SettingsScreen(props: SettingsScreenProps) {
         )}
       </ScrollView>
 
-      {keyboardMounted && (
-        <Animated.View
-          style={[
-            styles.sheetWrap,
-            { transform: [{ translateY: Animated.add(panelRise, kbDrag) }] },
-          ]}
-          {...keyboardResponder.panHandlers}
-        >
-          <View style={[styles.sheet, { height: panelHeight + SHEET_BOTTOM_OVERHANG }]}>
-            <Pressable onPress={() => {}} style={[styles.sheetInner, { height: panelHeight }]}>
-              <View style={styles.grabber} />
-              <View style={styles.keypad}>
-                {activeField === 'relayPort' ? (
-                  <NumberKeyboard dark onInsert={insertChar} onBackspace={backspaceChar} />
-                ) : activeField === 'relayHost' ? (
-                  <HostKeyboard onInsert={insertChar} onBackspace={backspaceChar} />
-                ) : (
-                  <AnswerKeyboard onInsert={insertChar} onBackspace={backspaceChar} final />
-                )}
-              </View>
-            </Pressable>
-          </View>
-        </Animated.View>
-      )}
+      <KeyboardSheet controls={sheet}>
+        {activeField === 'relayPort' ? (
+          <NumberKeyboard dark onInsert={insertChar} onBackspace={backspaceChar} />
+        ) : activeField === 'relayHost' ? (
+          <HostKeyboard onInsert={insertChar} onBackspace={backspaceChar} />
+        ) : (
+          <AnswerKeyboard onInsert={insertChar} onBackspace={backspaceChar} final />
+        )}
+      </KeyboardSheet>
     </View>
   );
 }
@@ -452,40 +334,6 @@ const styles = StyleSheet.create({
     fontFamily: typeTokens.ui500,
     fontSize: 14,
     color: '#888',
-  },
-  sheetWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: -SHEET_BOTTOM_OVERHANG,
-    alignItems: 'center',
-    zIndex: 2,
-  },
-  sheet: {
-    width: '96%',
-    backgroundColor: colors.cellFinalRecessed,
-    borderTopLeftRadius: SHEET_RADIUS,
-    borderTopRightRadius: SHEET_RADIUS,
-    overflow: 'hidden',
-  },
-  sheetInner: {
-    paddingHorizontal: 12,
-    paddingBottom: 14,
-  },
-  grabber: {
-    alignSelf: 'center',
-    width: 44,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  keypad: {
-    flex: 1,
-    width: '100%',
-    maxWidth: 420,
-    alignSelf: 'center',
   },
   hostKeyboard: {
     flex: 1,

@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  Easing,
-  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { relayUrls } from '../../app/relayUrl';
+import { KeyboardSheet, useKeyboardSheet } from '../components/KeyboardSheet';
 import { NumberKeyboard } from '../components/NumberKeyboard';
 import { SwipeUpMenu } from '../components/SwipeUpMenu';
 import { MainMenuScreen } from './MainMenuScreen';
@@ -53,13 +52,6 @@ interface LobbyScreenProps {
 }
 
 const MAX_PLAYERS = 2;
-const SHEET_MIN_HEIGHT = 208;
-const SHEET_MAX_HEIGHT = 272;
-const SHEET_HEIGHT_PCT = 0.272;
-const SHEET_BOTTOM_OVERHANG = 56;
-const SHEET_RADIUS = 18;
-const DISMISS_THRESHOLD = 80;
-const DISMISS_VELOCITY = 0.5;
 
 export function LobbyScreen(props: LobbyScreenProps) {
   const { height } = useWindowDimensions();
@@ -67,70 +59,34 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showRound1, setShowRound1] = useState(false);
   const [showRound2, setShowRound2] = useState(false);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [keyboardMounted, setKeyboardMounted] = useState(false);
   const [round1Categories, setRound1Categories] = useState<{ name: string; clueCount: number }[] | null>(null);
   const [round2Categories, setRound2Categories] = useState<{ name: string; clueCount: number }[] | null>(null);
   const [airDate, setAirDate] = useState<string | null>(null);
   const [seasonNumber, setSeasonNumber] = useState<number | null>(null);
   const [gameInfoStatus, setGameInfoStatus] = useState<'idle' | 'loading' | 'not-found'>('idle');
-  const panelHeight = Math.min(
-    SHEET_MAX_HEIGHT,
-    Math.max(SHEET_MIN_HEIGHT, Math.round(height * SHEET_HEIGHT_PCT)),
-  );
 
   // Fade the lobby out when App signals the game is ready to mount (first
   // STATE_UPDATE received) — not on the START press, which would delay the
   // start-game send and only ever play on the host's device.
   const contentOpacity = useRef(new Animated.Value(1)).current;
   const setupScrollRef = useRef<ScrollView | null>(null);
-  const kb = useRef(new Animated.Value(0)).current;
-  const kbDrag = useRef(new Animated.Value(0)).current;
   const advancedYRef = useRef(0);
   const gameIdLayoutRef = useRef({ y: 0, height: 0 });
   const fadeStartedRef = useRef(false);
 
-  const moveGameIdIntoKeyboardWindow = useCallback(() => {
-    const layout = gameIdLayoutRef.current;
-    if (!layout.height) return;
-    const keyboardTop = height - panelHeight;
-    const targetTop = (keyboardTop - layout.height) / 2;
-    const y = Math.max(0, layout.y - targetTop);
-    requestAnimationFrame(() => {
-      setupScrollRef.current?.scrollTo({ y, animated: true });
-    });
-  }, [height, panelHeight]);
-
-  const openKeyboard = useCallback(() => {
-    kbDrag.setValue(0);
-    setKeyboardMounted(true);
-    setKeyboardVisible(true);
-    moveGameIdIntoKeyboardWindow();
-  }, [kbDrag, moveGameIdIntoKeyboardWindow]);
-
-  const closeKeyboard = useCallback(() => {
-    setKeyboardVisible(false);
-  }, []);
-
-  useEffect(() => {
-    if (keyboardVisible) {
-      Animated.spring(kb, {
-        toValue: 1,
-        speed: 16,
-        bounciness: 4,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      Animated.timing(kb, {
-        toValue: 0,
-        duration: 180,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (finished) setKeyboardMounted(false);
+  const sheet = useKeyboardSheet(
+    // onOpen: scroll the game # input into the keyboard window
+    () => {
+      const layout = gameIdLayoutRef.current;
+      if (!layout.height) return;
+      const keyboardTop = height - sheet.panelHeight;
+      const targetTop = (keyboardTop - layout.height) / 2;
+      const y = Math.max(0, layout.y - targetTop);
+      requestAnimationFrame(() => {
+        setupScrollRef.current?.scrollTo({ y, animated: true });
       });
-    }
-  }, [keyboardVisible, kb]);
+    },
+  );
 
   const insertGameIdDigit = useCallback((digit: string) => {
     props.onGameIdChange?.(`${props.gameId ?? ''}${digit}`.replace(/\D/g, '').slice(0, 6));
@@ -140,67 +96,10 @@ export function LobbyScreen(props: LobbyScreenProps) {
     props.onGameIdChange?.((props.gameId ?? '').slice(0, -1));
   }, [props]);
 
-  const keyboardResponder = useMemo(() => {
-    const snapBack = () =>
-      Animated.spring(kbDrag, {
-        toValue: 0,
-        speed: 22,
-        bounciness: 0,
-        useNativeDriver: true,
-      }).start();
-
-    const finishDismiss = () => {
-      Animated.timing(kbDrag, {
-        toValue: panelHeight,
-        duration: 160,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (!finished) return;
-        kb.setValue(0);
-        kbDrag.setValue(0);
-        setKeyboardVisible(false);
-        setKeyboardMounted(false);
-      });
-    };
-
-    return PanResponder.create({
-      onMoveShouldSetPanResponder: (_e, g) => {
-        const vertical = Math.abs(g.dy) > 15 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5;
-        if (!vertical) return false;
-        return keyboardVisible && g.dy > 0;
-      },
-      onMoveShouldSetPanResponderCapture: (_e, g) => {
-        const vertical = Math.abs(g.dy) > 15 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5;
-        if (!vertical) return false;
-        return keyboardVisible && g.dy > 0;
-      },
-      onPanResponderMove: (_e, g) => {
-        if (keyboardVisible && g.dy > 0) {
-          kbDrag.setValue(Math.min(g.dy, panelHeight));
-        }
-      },
-      onPanResponderRelease: (_e, g) => {
-        if (keyboardVisible && g.dy > 0) {
-          const projectedDistance = g.dy + Math.max(0, g.vy) * 120;
-          if (
-            g.dy > DISMISS_THRESHOLD ||
-            (g.dy > 24 && projectedDistance > DISMISS_THRESHOLD && g.vy > DISMISS_VELOCITY)
-          ) {
-            finishDismiss();
-          } else {
-            snapBack();
-          }
-        }
-      },
-      onPanResponderTerminate: snapBack,
-    });
-  }, [kb, kbDrag, keyboardVisible, panelHeight]);
-
   useEffect(() => {
     if (typeof window === 'undefined' || !window.addEventListener) return;
     const handler = (e: KeyboardEvent) => {
-      if (!keyboardVisible) return;
+      if (!sheet.visible) return;
       if (/^\d$/.test(e.key)) {
         e.preventDefault();
         insertGameIdDigit(e.key);
@@ -209,17 +108,13 @@ export function LobbyScreen(props: LobbyScreenProps) {
         backspaceGameId();
       } else if (e.key === 'Escape' || e.key === 'Enter' || e.key === 'ArrowDown') {
         e.preventDefault();
-        closeKeyboard();
+        sheet.close();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [backspaceGameId, closeKeyboard, insertGameIdDigit, keyboardVisible]);
+  }, [backspaceGameId, sheet, insertGameIdDigit]);
 
-  const panelRise = kb.interpolate({
-    inputRange: [0, 1],
-    outputRange: [panelHeight, 0],
-  });
   useEffect(() => {
     if (!props.fadeOut || fadeStartedRef.current) return;
     fadeStartedRef.current = true;
@@ -319,7 +214,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
             contentContainerStyle={[
               styles.setupScrollContent,
               {
-                paddingBottom: 32 + panelHeight,
+                paddingBottom: 32 + sheet.panelHeight,
               },
             ]}
             showsVerticalScrollIndicator={false}
@@ -369,7 +264,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                 <Pressable
                   style={styles.advancedToggle}
                   onPress={() => {
-                    closeKeyboard();
+                    sheet.close();
                     setShowAdvanced(!showAdvanced);
                   }}
                 >
@@ -431,7 +326,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                           height: event.nativeEvent.layout.height,
                         };
                       }}
-                      onPress={openKeyboard}
+                      onPress={sheet.open}
                     >
                       <Text style={[styles.inputText, !props.gameId && styles.inputPlaceholder]}>
                         {props.gameId || 'Random'}
@@ -529,33 +424,9 @@ export function LobbyScreen(props: LobbyScreenProps) {
         )}
         </Animated.View>
 
-        {keyboardVisible && (
-          <Pressable
-            style={styles.dismissLayer}
-            accessibilityRole="button"
-            accessibilityLabel="Dismiss keyboard"
-            onPress={closeKeyboard}
-          />
-        )}
-
-        {keyboardMounted && (
-          <Animated.View
-            style={[
-              styles.sheetWrap,
-              { transform: [{ translateY: Animated.add(panelRise, kbDrag) }] },
-            ]}
-            {...keyboardResponder.panHandlers}
-          >
-            <View style={[styles.sheet, { height: panelHeight + SHEET_BOTTOM_OVERHANG }]}>
-              <Pressable onPress={() => {}} style={[styles.sheetInner, { height: panelHeight }]}>
-                <View style={styles.grabber} />
-                <View style={styles.keypad}>
-                  <NumberKeyboard dark onInsert={insertGameIdDigit} onBackspace={backspaceGameId} />
-                </View>
-              </Pressable>
-            </View>
-          </Animated.View>
-        )}
+        <KeyboardSheet controls={sheet}>
+          <NumberKeyboard dark onInsert={insertGameIdDigit} onBackspace={backspaceGameId} />
+        </KeyboardSheet>
       </View>
     </SwipeUpMenu>
   );
@@ -681,13 +552,6 @@ const styles = StyleSheet.create({
   stackedLabel: {
     marginTop: 16,
   },
-  settingsRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  settingsHalf: {
-    flex: 1,
-  },
   toggleBox: {
     borderWidth: 1,
     borderColor: '#444',
@@ -807,47 +671,5 @@ const styles = StyleSheet.create({
   },
   startButtonTextDisabled: {
     color: '#666',
-  },
-  dismissLayer: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    zIndex: 1,
-  },
-  sheetWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: -SHEET_BOTTOM_OVERHANG,
-    alignItems: 'center',
-    zIndex: 2,
-  },
-  sheet: {
-    width: '96%',
-    backgroundColor: colors.cellFinalRecessed,
-    borderTopLeftRadius: SHEET_RADIUS,
-    borderTopRightRadius: SHEET_RADIUS,
-    overflow: 'hidden',
-  },
-  sheetInner: {
-    paddingHorizontal: 12,
-    paddingBottom: 14,
-  },
-  grabber: {
-    alignSelf: 'center',
-    width: 44,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  keypad: {
-    flex: 1,
-    width: '100%',
-    maxWidth: 420,
-    alignSelf: 'center',
   },
 });
