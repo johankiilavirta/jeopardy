@@ -22,6 +22,7 @@ const SHEET_RADIUS = 18;
 const DISMISS_THRESHOLD = 80;
 const DISMISS_VELOCITY = 0.5;
 const SCREEN_SIDE_PADDING = 24;
+const BUILD_TAG = 'board recovery-2026-07-18';
 
 type SettingsField = 'playerName' | 'relayHost' | 'relayPort';
 
@@ -385,6 +386,7 @@ export function InGameSettingsScreen(props: InGameSettingsScreenProps) {
                 {props.relayPort || '8787'}
               </Text>
             </Pressable>
+            <Text style={styles.buildTag}>{BUILD_TAG}</Text>
           </View>
         )}
       </ScrollView>
@@ -536,6 +538,12 @@ const styles = StyleSheet.create({
     fontFamily: typeTokens.ui500,
     fontSize: 13,
     color: '#555',
+  },
+  buildTag: {
+    marginTop: 8,
+    fontFamily: typeTokens.ui500,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.16)',
   },
   advancedToggle: {
     marginTop: 24,

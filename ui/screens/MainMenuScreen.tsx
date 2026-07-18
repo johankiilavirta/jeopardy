@@ -10,7 +10,6 @@ import { colors, type as typeTokens } from '../theme/tokens';
 const SCREEN_TOP_PADDING = 64;
 const SCREEN_SIDE_PADDING = 32;
 const TITLE_TO_CONTENT_GAP = 40;
-const BUILD_TAG = 'board recovery-2026-07-18';
 
 interface MainMenuScreenProps {
   onNewGame: () => void;
@@ -59,7 +58,6 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
           </Pressable>
         </View>
       </ScrollView>
-      <Text style={styles.buildTag}>{BUILD_TAG}</Text>
     </View>
   );
 }
@@ -107,13 +105,5 @@ const styles = StyleSheet.create({
     fontFamily: typeTokens.ui700,
     fontSize: 18,
     color: colors.gold,
-  },
-  buildTag: {
-    position: 'absolute',
-    left: 10,
-    bottom: 8,
-    fontFamily: typeTokens.ui500,
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.16)',
   },
 });

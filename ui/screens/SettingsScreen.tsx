@@ -15,6 +15,7 @@ import { colors, type as typeTokens } from '../theme/tokens';
 const SCREEN_TOP_PADDING = 64;
 const SCREEN_SIDE_PADDING = 32;
 const TITLE_TO_CONTENT_GAP = 32;
+const BUILD_TAG = 'board recovery-2026-07-18';
 
 type SettingsField = 'playerName' | 'relayHost' | 'relayPort';
 
@@ -248,6 +249,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
                 {props.relayPort || '8787'}
               </Text>
             </Pressable>
+            <Text style={styles.buildTag}>{BUILD_TAG}</Text>
           </View>
         )}
       </ScrollView>
@@ -326,6 +328,12 @@ const styles = StyleSheet.create({
   },
   inputPlaceholder: {
     color: '#666',
+  },
+  buildTag: {
+    marginTop: 8,
+    fontFamily: typeTokens.ui500,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.16)',
   },
   advancedToggle: {
     marginTop: 24,
