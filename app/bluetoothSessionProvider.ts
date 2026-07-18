@@ -14,8 +14,8 @@ const PROTOCOL_VERSION = 2;
 const SUPPORTED_PROTOCOL_VERSIONS = new Set([2, 3]);
 const BOARD_PRELOAD_CAPABILITY = 'board-preload-v1';
 const SERVER_PEER_ID = 'server';
-const HEARTBEAT_MS = 2000;
-const HEARTBEAT_MISSED_MS = 4000;
+const HEARTBEAT_MS = 500;
+const HEARTBEAT_MISSED_MS = 1000;
 const HEARTBEAT_TIMEOUT_MS = 7000;
 type Role = 'host' | 'guest';
 

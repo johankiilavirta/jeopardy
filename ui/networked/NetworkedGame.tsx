@@ -29,6 +29,8 @@ interface NetworkedGameProps {
   initialState?: { state: GameState; playerId: string | null; canUndo?: boolean; canRedo?: boolean } | null;
   boardData?: GameData | null;
   peerDisconnected?: boolean;
+  localIsHost?: boolean;
+  localRecovery?: 'none' | 'reconnecting' | 'promoting';
   roomCode?: number;
   relayHost?: string;
   relayPort?: string;
@@ -58,7 +60,7 @@ const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
 
 
 
-export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume }: NetworkedGameProps) {
+export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume }: NetworkedGameProps) {
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
@@ -194,9 +196,12 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     introShownRef.current.add(2); // Skip round 2 category intro as well
   }
 
+  const recoveringLocally = localRecovery !== 'none';
+
   const dispatch = useCallback((action: Action) => {
+    if (recoveringLocally) return;
     sendAction(transport, serverPeerId, action as unknown as Record<string, unknown>);
-  }, [transport, serverPeerId]);
+  }, [transport, serverPeerId, recoveringLocally]);
 
   // Dev shortcut: Y key burns all-but-one clue on the current board.
   const yKeyHandlerRef = useRef<(() => void) | null>(null);
@@ -347,6 +352,9 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const disconnectedPlayerId = peerDisconnected
     ? Object.keys(gameState.players).find(id => id !== playerId) ?? null
     : null;
+  const remotePlayerId = Object.keys(gameState.players).find(id => id !== playerId) ?? null;
+  const hostPlayerId = localIsHost ? playerId : remotePlayerId;
+  const promotingPlayerId = recoveringLocally && !localIsHost ? playerId : null;
 
   // Update the Y-key handler every render so it closes over fresh state.
   yKeyHandlerRef.current = () => {
@@ -373,10 +381,14 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
   return (
     <UndoRedoSwipe
-      canUndo={initialState?.canUndo ?? false}
-      canRedo={initialState?.canRedo ?? false}
-      onUndo={() => sendAction(transport, serverPeerId, { type: 'UNDO' })}
-      onRedo={() => sendAction(transport, serverPeerId, { type: 'REDO' })}
+      canUndo={!recoveringLocally && (initialState?.canUndo ?? false)}
+      canRedo={!recoveringLocally && (initialState?.canRedo ?? false)}
+      onUndo={() => {
+        if (!recoveringLocally) sendAction(transport, serverPeerId, { type: 'UNDO' });
+      }}
+      onRedo={() => {
+        if (!recoveringLocally) sendAction(transport, serverPeerId, { type: 'REDO' });
+      }}
     >
     <View style={styles.root}>
     <SwipeUpMenu
@@ -401,6 +413,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           onRelayHostChange={onRelayHostChange ?? (() => {})}
           relayPort={relayPortSetting ?? relayPort ?? '8787'}
           onRelayPortChange={onRelayPortChange ?? (() => {})}
+          roomCode={roomCode}
         />
       )}
     >
@@ -415,6 +428,9 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
             localPlayerId={playerId}
             board={visibleBoard}
             disconnectedPlayerId={disconnectedPlayerId}
+            hostPlayerId={hostPlayerId}
+            promotingPlayerId={promotingPlayerId}
+            recovering={recoveringLocally}
             boardAnimKey={animationsEnabled ? boardAnimKeyRef.current : 0}
             animationsEnabled={animationsEnabled}
             judgingPlayerId={gameState.status === 'REVEAL' && !isFinalClue ? onStand : null}
@@ -422,14 +438,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
             onSkipClue={handleSkipClue}
           />
         </View>
-
-        {peerDisconnected && !gameState.activeClue && (
-          <View style={[styles.statusLineWrap, styles.rejoinWrap]}>
-            <Text style={styles.statusLine}>
-              {`${relayHost ?? 'localhost'}:${relayPort ?? '8787'} @ ${roomCode ?? '???'}`}
-            </Text>
-          </View>
-        )}
 
         {gameState.activeClue && (
           <View style={StyleSheet.absoluteFill}>
@@ -583,26 +591,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-  },
-  statusLineWrap: {
-    position: 'absolute',
-    left: 24,
-    bottom: 20,
-    height: 40,
-    justifyContent: 'center',
-    zIndex: 1,
-  },
-  statusLine: {
-    fontFamily: typeTokens.ui500,
-    fontSize: 13,
-    letterSpacing: 0.5,
-    color: 'rgba(255,255,255,0.65)',
-  },
-  rejoinWrap: {
-    backgroundColor: colors.bg,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 4,
   },
   connecting: {
     flex: 1,

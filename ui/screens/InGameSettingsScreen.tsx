@@ -70,6 +70,7 @@ interface InGameSettingsScreenProps {
   onRelayHostChange: (host: string) => void;
   relayPort: string;
   onRelayPortChange: (port: string) => void;
+  roomCode?: number | undefined;
 }
 
 export function InGameSettingsScreen(props: InGameSettingsScreenProps) {
@@ -278,7 +279,12 @@ export function InGameSettingsScreen(props: InGameSettingsScreenProps) {
       >
         <Text style={styles.sectionHeading}>Game</Text>
 
-        <Text style={styles.label}>Animations</Text>
+        <Text style={styles.label}>Connection</Text>
+        <Text style={styles.detailText}>
+          {`${props.relayHost || 'localhost'}:${props.relayPort || '8787'} @ ${props.roomCode ?? '???'}`}
+        </Text>
+
+        <Text style={[styles.label, styles.stackedLabel]}>Animations</Text>
         <Pressable
           style={styles.toggleBox}
           onPress={() => props.onAnimationsChange(!props.animationsEnabled)}
@@ -525,6 +531,11 @@ const styles = StyleSheet.create({
   },
   inputPlaceholder: {
     color: '#666',
+  },
+  detailText: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 13,
+    color: '#555',
   },
   advancedToggle: {
     marginTop: 24,

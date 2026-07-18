@@ -5,6 +5,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { KeyboardSheet, useKeyboardSheet } from '../components/KeyboardSheet';
@@ -22,6 +23,7 @@ interface JoinGameScreenProps {
 }
 
 export function JoinGameScreen(props: JoinGameScreenProps) {
+  const { height } = useWindowDimensions();
   const [code, setCode] = useState('');
   const valid = /^\d{3}$/.test(code);
   const displayCode = code.padEnd(3, '0');
@@ -43,7 +45,7 @@ export function JoinGameScreen(props: JoinGameScreenProps) {
     () => {
       const layout = codeLayoutRef.current;
       if (!layout.height) return;
-      const keyboardTop = (typeof window !== 'undefined' ? window.innerHeight : 800) - sheet.panelHeight;
+      const keyboardTop = height - sheet.panelHeight;
       const targetTop = (keyboardTop - layout.height) / 2;
       const offset = Math.max(0, layout.y - targetTop);
       requestAnimationFrame(() => {

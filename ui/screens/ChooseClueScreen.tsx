@@ -17,6 +17,12 @@ interface ChooseClueScreenProps {
   onSkipClue?: ((clueId: number) => void) | undefined;
   /** Id of a player who has disconnected. */
   disconnectedPlayerId?: string | null;
+  /** Id of the device currently hosting the game. */
+  hostPlayerId?: string | null;
+  /** Id of the device waiting to promote to host. */
+  promotingPlayerId?: string | null;
+  /** Recovery keeps the board visible but blocks new board actions. */
+  recovering?: boolean;
   /** Passed through to Board to trigger the DJ board-intro flash. */
   boardAnimKey?: number | undefined;
   /** Highlights the player whose answer is being judged. */
@@ -31,13 +37,16 @@ export function ChooseClueScreen({
   onSelectClue,
   onSkipClue,
   disconnectedPlayerId,
+  hostPlayerId,
+  promotingPlayerId,
+  recovering = false,
   boardAnimKey,
   judgingPlayerId,
   animationsEnabled = true,
 }: ChooseClueScreenProps) {
   // null currentTurnPlayerId means anyone may pick the first clue.
   const locked =
-    state.currentTurnPlayerId !== null && state.currentTurnPlayerId !== localPlayerId;
+    recovering || (state.currentTurnPlayerId !== null && state.currentTurnPlayerId !== localPlayerId);
 
   // Final Jeopardy (the sentinel clue id) is nobody's turn — everyone
   // wagers and answers at once — so the turn indicator goes dark and the
@@ -132,6 +141,8 @@ export function ChooseClueScreen({
           currentTurnPlayerId={isFinalJeopardy ? null : state.currentTurnPlayerId}
           localPlayerId={localPlayerId}
           disconnectedPlayerId={disconnectedPlayerId}
+          hostPlayerId={hostPlayerId}
+          promotingPlayerId={promotingPlayerId}
           judgingPlayerId={judgingPlayerId}
           animationsEnabled={animationsEnabled}
           finalJeopardy={isFinalJeopardy}

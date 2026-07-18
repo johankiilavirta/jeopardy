@@ -90,6 +90,8 @@ type AppScreen =
   | { type: 'settings' }
   | { type: 'demo' };
 
+type LocalRecoveryState = 'none' | 'reconnecting' | 'promoting';
+
 function randomPlayerName(): string {
   return `Player ${String(Math.floor(1000 + Math.random() * 9000))}`;
 }
@@ -162,6 +164,7 @@ export default function App() {
   const [initialGameState, setInitialGameState] = useState<{ state: GameState; playerId: string | null; canUndo?: boolean; canRedo?: boolean } | null>(null);
   const [boardData, setBoardData] = useState<GameData | null>(null);
   const [peerDisconnected, setPeerDisconnected] = useState(false);
+  const [localRecovery, setLocalRecovery] = useState<LocalRecoveryState>('none');
   const transportRef = useRef<SessionProvider | null>(null);
   const myPeerIdRef = useRef<string | null>(null);
   const devAutoStartedRef = useRef(false);
@@ -183,7 +186,7 @@ export default function App() {
     timer: ReturnType<typeof setTimeout> | null;
     promoteTimer: ReturnType<typeof setTimeout> | null;
   } | null>(null);
-  const startReconnectRef = useRef<(session: SavedSession) => void>(() => {});
+  const startReconnectRef = useRef<(session: SavedSession, options?: { keepGameMounted?: boolean }) => void>(() => {});
   const promoteLocalSessionRef = useRef<(session: SavedSession) => void>(() => {});
 
   const disconnect = useCallback(() => {
@@ -192,6 +195,7 @@ export default function App() {
     myPeerIdRef.current = null;
     setLobbyPlayers([]);
     setLobbyError(null);
+    setLocalRecovery('none');
   }, []);
 
   const cancelReconnect = useCallback(() => {
@@ -226,8 +230,11 @@ export default function App() {
   /** The socket died while on the game screen — get back in. */
   const handleSocketLost = useCallback(() => {
     if (!PERSISTENCE_ENABLED) return;
-    if (screenRef.current.type === 'game' && sessionRef.current) {
-      startReconnectRef.current(sessionRef.current);
+    const session = sessionRef.current;
+    if (screenRef.current.type === 'game' && session) {
+      startReconnectRef.current(session, {
+        keepGameMounted: canAutoRejoinAfterPeerDisconnect(session),
+      });
     }
   }, []);
 
@@ -239,7 +246,7 @@ export default function App() {
       session &&
       canAutoRejoinAfterPeerDisconnect(session)
     ) {
-      startReconnectRef.current(session);
+      startReconnectRef.current(session, { keepGameMounted: true });
       return;
     }
     setPeerDisconnected(true);
@@ -247,12 +254,18 @@ export default function App() {
 
   /** Rejoin a live room, retrying until it works, the relay says the room
    *  is gone, or the player cancels from the Reconnecting screen. */
-  const startReconnect = useCallback((session: SavedSession) => {
+  const startReconnect = useCallback((session: SavedSession, options: { keepGameMounted?: boolean } = {}) => {
     cancelReconnect();
-    disconnect();
-    setPeerDisconnected(false);
-
     const isLocal = isLocalSessionMode(session.mode);
+    const keepGameMounted = !!options.keepGameMounted && isLocal && !session.isHost && screenRef.current.type === 'game';
+    transportRef.current?.stop();
+    transportRef.current = null;
+    myPeerIdRef.current = null;
+    setLobbyPlayers([]);
+    setLobbyError(null);
+    setPeerDisconnected(keepGameMounted);
+    setLocalRecovery(keepGameMounted ? 'reconnecting' : 'none');
+
     const shouldPromote = isLocal && !session.isHost;
     const promoteAfter = shouldPromote ? Date.now() + LOCAL_FAILOVER_PROMOTE_MS : null;
     const formerHostGiveUpAfter = isLocal && session.isHost
@@ -265,7 +278,7 @@ export default function App() {
       promoteTimer: null as ReturnType<typeof setTimeout> | null,
     };
     reconnectCtlRef.current = ctl;
-    setScreen({ type: 'reconnecting', roomCode: session.roomCode });
+    if (!keepGameMounted) setScreen({ type: 'reconnecting', roomCode: session.roomCode });
 
     const finishReconnect = () => {
       if (ctl.timer != null) {
@@ -285,6 +298,7 @@ export default function App() {
       finishReconnect();
       transportRef.current?.stop();
       transportRef.current = null;
+      if (keepGameMounted) setLocalRecovery('promoting');
       promoteLocalSessionRef.current(session);
     };
 
@@ -299,6 +313,7 @@ export default function App() {
       transportRef.current?.stop();
       transportRef.current = null;
       sessionRef.current = null;
+      setLocalRecovery('none');
       void clearSession();
       refreshResumeAvailable();
       setScreen({ type: 'menu' });
@@ -357,6 +372,8 @@ export default function App() {
             settled = true;
             clearTimeout(welcomeTimeout);
             finishReconnect();
+            setLocalRecovery('none');
+            setPeerDisconnected(false);
             const joinedSession = {
               ...session,
               ...(incomingAuthority ?? {}),
@@ -401,6 +418,8 @@ export default function App() {
             settled = true;
             clearTimeout(welcomeTimeout);
             finishReconnect();
+            setLocalRecovery('none');
+            setPeerDisconnected(false);
             const joinedSession = {
               ...session,
               ...(incomingAuthority ?? {}),
@@ -449,10 +468,21 @@ export default function App() {
       autoStart?: boolean;
       playerName?: string;
       authority?: SessionAuthority;
+      keepGameMounted?: boolean;
     } = {},
   ) => {
     cancelReconnect();
-    disconnect();
+    const keepGameMounted = !!options.keepGameMounted && action === 'create' && isLocalSessionMode(mode) && screenRef.current.type === 'game';
+    if (keepGameMounted) {
+      transportRef.current?.stop();
+      transportRef.current = null;
+      myPeerIdRef.current = null;
+      setLobbyPlayers([]);
+      setLobbyError(null);
+      setLocalRecovery('promoting');
+    } else {
+      disconnect();
+    }
     pendingResumeRef.current = resume ?? null;
     pendingGameScreenRef.current = null;
     setLobbyFadingOut(false);
@@ -460,7 +490,7 @@ export default function App() {
     if (PERSISTENCE_ENABLED) void clearSession();
     setLobbyError(null);
     setJoinError(null);
-    setPeerDisconnected(false);
+    if (!keepGameMounted) setPeerDisconnected(false);
 
     let roomCode = action !== 'create' ? action.join : 0;
     const effectivePlayerName = options.playerName ?? playerName;
@@ -468,7 +498,7 @@ export default function App() {
 
     // For create, navigate to lobby right away (connection in background).
     // For join, stay on the join screen until we confirm the room exists.
-    if (action === 'create') {
+    if (action === 'create' && !keepGameMounted) {
       setScreen({ type: 'lobby', roomCode: 0, isHost: true });
     }
 
@@ -519,11 +549,13 @@ export default function App() {
         case 'room-created':
           roomCode = msg.roomCode as number;
           roomAuthority = authorityFromMessage(msg) ?? roomAuthority;
-          setScreen({
-            type: 'lobby',
-            roomCode,
-            isHost: true,
-          });
+          if (!keepGameMounted) {
+            setScreen({
+              type: 'lobby',
+              roomCode,
+              isHost: true,
+            });
+          }
           setLobbyError(null);
           if (options.autoStart && pendingResumeRef.current) {
             transport.startGame({
@@ -563,6 +595,7 @@ export default function App() {
             // joiner get the same transition.
             if (!gameMounted) {
               gameMounted = true;
+              setLocalRecovery('none');
               if (screenRef.current.type === 'lobby') {
                 pendingGameScreenRef.current = gameScreen;
                 setLobbyFadingOut(true);
@@ -653,6 +686,7 @@ export default function App() {
           roomId: session.roomId,
           epoch: nextEpoch(session.epoch),
         },
+        keepGameMounted: true,
       });
       return;
     }
@@ -673,6 +707,7 @@ export default function App() {
           roomId: session.roomId,
           epoch: nextEpoch(session.epoch),
         },
+        keepGameMounted: true,
       });
     });
   }, [boardData, connectAndDo, initialGameState, refreshResumeAvailable]);
@@ -941,6 +976,8 @@ export default function App() {
             initialState={initialGameState}
             boardData={boardData}
             peerDisconnected={peerDisconnected}
+            localIsHost={sessionRef.current?.isHost ?? false}
+            localRecovery={localRecovery}
             roomCode={screen.roomCode}
             relayHost={relayHost}
             relayPort={relayPort}

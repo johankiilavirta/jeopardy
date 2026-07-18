@@ -11,8 +11,8 @@ import { createRoomId, normalizeEpoch, type SessionAuthority } from './sessionAu
 // v2: game-started carries real board data (board + isResume).
 const PROTOCOL_VERSION = 2;
 const SERVER_PEER_ID = 'server';
-const HEARTBEAT_MS = 2000;
-const HEARTBEAT_MISSED_MS = 4000;
+const HEARTBEAT_MS = 500;
+const HEARTBEAT_MISSED_MS = 1000;
 const HEARTBEAT_TIMEOUT_MS = 7000;
 type Role = 'host' | 'guest';
 

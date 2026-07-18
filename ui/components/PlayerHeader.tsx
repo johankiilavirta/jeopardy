@@ -27,6 +27,10 @@ interface PlayerHeaderProps {
   localPlayerId?: string | undefined;
   /** Id of a player who has disconnected. */
   disconnectedPlayerId?: string | null | undefined;
+  /** Id of the device currently hosting the game. */
+  hostPlayerId?: string | null | undefined;
+  /** Id of the device waiting to promote to host. */
+  promotingPlayerId?: string | null | undefined;
   /** The player whose answer is currently shown in the judgment tray. */
   judgingPlayerId?: string | null | undefined;
   /** Whether animations should play. */
@@ -37,7 +41,7 @@ interface PlayerHeaderProps {
   finalJeopardy?: boolean;
 }
 
-export function PlayerHeader({ players, currentTurnPlayerId, localPlayerId, disconnectedPlayerId, judgingPlayerId, animationsEnabled = true, hideScores = false, finalJeopardy = false }: PlayerHeaderProps) {
+export function PlayerHeader({ players, currentTurnPlayerId, localPlayerId, disconnectedPlayerId, hostPlayerId, promotingPlayerId, judgingPlayerId, animationsEnabled = true, hideScores = false, finalJeopardy = false }: PlayerHeaderProps) {
   // While an answer is being judged, only the judged player is highlighted.
   const highlightId = judgingPlayerId ?? currentTurnPlayerId;
 
@@ -50,6 +54,13 @@ export function PlayerHeader({ players, currentTurnPlayerId, localPlayerId, disc
           score={player.score}
           activeTurn={player.id === highlightId}
           disconnected={player.id === disconnectedPlayerId}
+          roleMarker={
+            player.id === promotingPlayerId
+              ? 'promoting'
+              : player.id === hostPlayerId
+                ? 'host'
+                : undefined
+          }
           animationsEnabled={animationsEnabled}
           hideScore={hideScores}
           finalJeopardy={finalJeopardy}

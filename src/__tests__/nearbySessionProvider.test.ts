@@ -374,12 +374,12 @@ describe('NearbySessionProvider', () => {
     guest.provider.onPeerDisconnected(peerId => disconnected.push(peerId));
 
     bus.killSilently('HOST');
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(1200);
 
     expect(lastOfType(guest, 'host-liveness')?.state).toBe('missed');
     expect(disconnected).toEqual([]);
 
-    await vi.advanceTimersByTimeAsync(4000);
+    await vi.advanceTimersByTimeAsync(6500);
 
     expect(disconnected).toEqual(['server']);
     expect(lastOfType(guest, 'host-liveness')?.state).toBe('dead');
