@@ -2242,7 +2242,7 @@ SPEC CHECKSUMS:
   ExpoModulesWorklets: 3a5a7126f22ccacf3189bdf0be37022efd5e4578
   FBLazyVector: 24e62c765683b8d89006a88a2c8f5cf019f0074d
   hermes-engine: 2d52355d8bcebd6f887b119863a20a2c41f33fd1
-  NearbyNetwork: 0e9ba42a4e43f45f6cffda09f9610180d18e47b2
+  NearbyNetwork: accf435a7469b24696c1bf990f411cbb9d20a8a7
   RCTDeprecation: a4c521821fab57cbb125b36effe84d897d0dfa12
   RCTRequired: 9f3a7e5645d4bc3f551593de7550bb66ab6e42bc
   RCTSwiftUI: 239ed2eb9e73de5a6f518810630f0c95e01c8702

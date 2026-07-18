@@ -45,9 +45,9 @@ describe('sessionStore', () => {
   afterEach(() => vi.useRealTimers());
 
   it('round-trips a session including mode and isHost', async () => {
-    await saveSession({ mode: 'nearby', roomCode: 123, playerName: 'Alice', relayHost: 'localhost', relayPort: '8787', isHost: true });
+    await saveSession({ mode: 'nearby', roomCode: 423, playerName: 'Alice', relayHost: 'localhost', relayPort: '8787', isHost: true });
     const session = await loadSession();
-    expect(session).toMatchObject({ mode: 'nearby', roomCode: 123, playerName: 'Alice', isHost: true });
+    expect(session).toMatchObject({ mode: 'nearby', roomCode: 423, playerName: 'Alice', isHost: true });
   });
 
   it('defaults legacy sessions (no mode/isHost) to an online guest', async () => {

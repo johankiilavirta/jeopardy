@@ -61,7 +61,33 @@ class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
 
   override func bundleURL() -> URL? {
 #if DEBUG
-    return RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: ".expo/.virtual-metro-entry")
+    if let url = RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: ".expo/.virtual-metro-entry") {
+      return url
+    }
+    guard
+      let ipPath = Bundle.main.path(forResource: "ip", ofType: "txt"),
+      let host = try? String(contentsOfFile: ipPath).trimmingCharacters(in: .whitespacesAndNewlines),
+      !host.isEmpty
+    else {
+      return nil
+    }
+
+    var components = URLComponents()
+    components.scheme = "http"
+    components.host = host
+    components.port = 8081
+    components.path = "/.expo/.virtual-metro-entry.bundle"
+    components.queryItems = [
+      URLQueryItem(name: "platform", value: "ios"),
+      URLQueryItem(name: "dev", value: "true"),
+      URLQueryItem(name: "lazy", value: "true"),
+      URLQueryItem(name: "minify", value: "false"),
+      URLQueryItem(name: "inlineSourceMap", value: "false"),
+      URLQueryItem(name: "modulesOnly", value: "false"),
+      URLQueryItem(name: "runModule", value: "true"),
+      URLQueryItem(name: "app", value: Bundle.main.bundleIdentifier ?? "com.anonymous.jeopardy"),
+    ]
+    return components.url
 #else
     return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
 #endif

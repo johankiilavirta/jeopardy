@@ -157,12 +157,12 @@ function lastOfType(peer: TestPeer, type: string): SessionControlMessage | undef
   return [...peer.controls].reverse().find(m => m.type === type);
 }
 
-/** Host creates room 123, guest browses and joins, lobby settles. */
+/** Host creates room 423, guest browses and joins, lobby settles. */
 function setupLobby(): { host: TestPeer; guest: TestPeer } {
   const host = createPeer('host', 'HOST');
   const guest = createPeer('guest', 'GUEST-1');
-  host.run(() => host.provider.createRoom('Alice', 123));
-  guest.run(() => guest.provider.joinRoom(123, 'Bob'));
+  host.run(() => host.provider.createRoom('Alice', 423));
+  guest.run(() => guest.provider.joinRoom(423, 'Bob'));
   return { host, guest };
 }
 
@@ -256,7 +256,7 @@ describe('NearbySessionProvider', () => {
 
     // A fresh guest provider (relaunched app) browses back in by name.
     const rejoined = createPeer('guest', 'GUEST-2');
-    rejoined.run(() => rejoined.provider.joinRoom(123, 'Bob'));
+    rejoined.run(() => rejoined.provider.joinRoom(423, 'Bob'));
 
     const started = lastOfType(rejoined, 'game-started');
     expect(started?.isResume).toBe(true);

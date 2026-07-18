@@ -6,12 +6,13 @@ const SCREEN_SIDE_PADDING = 32;
 const TITLE_TO_CONTENT_GAP = 32;
 
 interface NewGameScreenProps {
+  onBluetooth: () => void;
   onNearby: () => void;
   onOnline: () => void;
   onBack: () => void;
 }
 
-export function NewGameScreen({ onNearby, onOnline, onBack }: NewGameScreenProps) {
+export function NewGameScreen({ onBluetooth, onNearby, onOnline, onBack }: NewGameScreenProps) {
   return (
     <View style={styles.root}>
       <Pressable style={styles.backButton} onPress={onBack}>
@@ -25,13 +26,17 @@ export function NewGameScreen({ onNearby, onOnline, onBack }: NewGameScreenProps
       >
         <Text style={styles.title}>NEW GAME</Text>
         <View style={styles.options}>
+          <Pressable style={styles.option} onPress={onBluetooth}>
+            <Text style={styles.optionTitle}>BLUETOOTH</Text>
+            <Text style={styles.optionDetail}>ROOMS 100-399</Text>
+          </Pressable>
           <Pressable style={styles.option} onPress={onNearby}>
             <Text style={styles.optionTitle}>NEARBY</Text>
-            <Text style={styles.optionDetail}>NO INTERNET REQUIRED</Text>
+            <Text style={styles.optionDetail}>ROOMS 400-499</Text>
           </Pressable>
           <Pressable style={styles.option} onPress={onOnline}>
             <Text style={styles.optionTitle}>ONLINE</Text>
-            <Text style={styles.optionDetail}>PLAY WITH A ROOM CODE</Text>
+            <Text style={styles.optionDetail}>ROOMS 500-999</Text>
           </Pressable>
         </View>
       </ScrollView>

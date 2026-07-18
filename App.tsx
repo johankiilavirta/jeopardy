@@ -15,9 +15,10 @@ import type { GameState } from './src/types';
 import type { GameData } from './data/gameLoader';
 import { OnlineSessionProvider } from './app/onlineSessionProvider';
 import { NearbySessionProvider } from './app/nearbySessionProvider';
+import { BluetoothSessionProvider } from './app/bluetoothSessionProvider';
 import { relayUrls } from './app/relayUrl';
 import { connectionModeForRoomCode } from './app/roomCodes';
-import type { SessionProvider } from './app/sessionProvider';
+import type { SessionMode, SessionProvider } from './app/sessionProvider';
 import { DemoHarness } from './ui/demo/DemoHarness';
 import { NetworkedGame } from './ui/networked/NetworkedGame';
 import { MainMenuScreen } from './ui/screens/MainMenuScreen';
@@ -88,6 +89,36 @@ type AppScreen =
 
 function randomPlayerName(): string {
   return `Player ${String(Math.floor(1000 + Math.random() * 9000))}`;
+}
+
+function createSessionProvider(
+  mode: SessionMode,
+  role: 'host' | 'guest',
+  relayUrl: string,
+): SessionProvider {
+  switch (mode) {
+    case 'bluetooth':
+      return new BluetoothSessionProvider(role);
+    case 'nearby':
+      return new NearbySessionProvider(role);
+    case 'online':
+      return new OnlineSessionProvider(relayUrl);
+  }
+}
+
+function connectionTimeoutMessage(mode: SessionMode): string {
+  switch (mode) {
+    case 'bluetooth':
+      return 'Could not connect over Bluetooth';
+    case 'nearby':
+      return 'Could not connect nearby';
+    case 'online':
+      return 'Could not connect to relay';
+  }
+}
+
+function canAutoRejoinAfterPeerDisconnect(session: SavedSession): boolean {
+  return !session.isHost && (session.mode === 'nearby' || session.mode === 'bluetooth');
 }
 
 export default function App() {
@@ -173,6 +204,20 @@ export default function App() {
     }
   }, []);
 
+  const handlePeerDisconnected = useCallback(() => {
+    const session = sessionRef.current;
+    if (
+      PERSISTENCE_ENABLED &&
+      screenRef.current.type === 'game' &&
+      session &&
+      canAutoRejoinAfterPeerDisconnect(session)
+    ) {
+      startReconnectRef.current(session);
+      return;
+    }
+    setPeerDisconnected(true);
+  }, []);
+
   /** Rejoin a live room, retrying until it works, the relay says the room
    *  is gone, or the player cancels from the Reconnecting screen. */
   const startReconnect = useCallback((session: SavedSession) => {
@@ -180,10 +225,10 @@ export default function App() {
     disconnect();
     setPeerDisconnected(false);
 
-    // A nearby host can't rejoin: the authoritative server ran inside this
+    // Local hosts can't rejoin: the authoritative server ran inside this
     // app's JS process and died with it. RESUME GAME (seeding a fresh room
     // with the snapshot) is the path back.
-    if (session.mode === 'nearby' && session.isHost) {
+    if ((session.mode === 'nearby' || session.mode === 'bluetooth') && session.isHost) {
       sessionRef.current = null;
       void clearSession();
       refreshResumeAvailable();
@@ -209,11 +254,13 @@ export default function App() {
 
     const attempt = () => {
       if (ctl.cancelled) return;
-      // Nearby guest: a fresh provider restarts the browse; the host's room
+      // Local guests: a fresh provider restarts discovery; the host's room
       // keeps advertising for the whole game, so re-joining re-attaches.
-      const transport: SessionProvider = session.mode === 'nearby'
-        ? new NearbySessionProvider('guest')
-        : new OnlineSessionProvider(relayUrls(session.relayHost, session.relayPort).ws);
+      const transport = createSessionProvider(
+        session.mode,
+        'guest',
+        relayUrls(session.relayHost, session.relayPort).ws,
+      );
       transportRef.current = transport;
       let settled = false;
 
@@ -229,7 +276,7 @@ export default function App() {
         if (!settled) retry();
         else handleSocketLost();
       });
-      transport.onPeerDisconnected(() => setPeerDisconnected(true));
+      transport.onPeerDisconnected(handlePeerDisconnected);
       transport.onPeerConnected(() => setPeerDisconnected(false));
 
       transport.onControlMessage((msg) => {
@@ -290,16 +337,16 @@ export default function App() {
     };
 
     attempt();
-  }, [cancelReconnect, disconnect, refreshResumeAvailable, handleStateUpdate, handleSocketLost]);
+  }, [cancelReconnect, disconnect, refreshResumeAvailable, handleStateUpdate, handleSocketLost, handlePeerDisconnected]);
   startReconnectRef.current = startReconnect;
 
-  /** Connect to relay and create or join a room. Entering a new room
-   *  deliberately abandons any previous session; `resume` seeds the game
-   *  started from this room with a saved snapshot. */
+  /** Create or join a room. Entering a new room deliberately abandons any
+   *  previous session; `resume` seeds the game started from this room with a
+   *  saved snapshot. */
   const connectAndDo = useCallback((
     action: 'create' | { join: number },
     resume?: SavedSnapshot,
-    mode: 'nearby' | 'online' = 'online',
+    mode: SessionMode = 'online',
   ) => {
     cancelReconnect();
     disconnect();
@@ -320,9 +367,11 @@ export default function App() {
       setScreen({ type: 'lobby', roomCode: 0, isHost: true });
     }
 
-    const transport: SessionProvider = mode === 'nearby'
-      ? new NearbySessionProvider(action === 'create' ? 'host' : 'guest')
-      : new OnlineSessionProvider(relayUrls(relayHost, relayPort).ws);
+    const transport = createSessionProvider(
+      mode,
+      action === 'create' ? 'host' : 'guest',
+      relayUrls(relayHost, relayPort).ws,
+    );
     transportRef.current = transport;
 
     transport.onError((err) => {
@@ -338,9 +387,7 @@ export default function App() {
       }
     });
 
-    transport.onPeerDisconnected(() => {
-      setPeerDisconnected(true);
-    });
+    transport.onPeerDisconnected(handlePeerDisconnected);
 
     transport.onPeerConnected(() => {
       setPeerDisconnected(false);
@@ -349,7 +396,7 @@ export default function App() {
     // Time out if we don't get a welcome within 7 seconds
     const timeout = setTimeout(() => {
       if (!myPeerIdRef.current) {
-        const err = 'Could not connect to relay';
+        const err = connectionTimeoutMessage(mode);
         if (action !== 'create') {
           setJoinError(err);
         } else {
@@ -439,7 +486,7 @@ export default function App() {
       if (action === 'create') setLobbyError(message);
       else setJoinError(message);
     });
-  }, [relayHost, relayPort, playerName, disconnect, cancelReconnect, handleStateUpdate, handleSocketLost]);
+  }, [relayHost, relayPort, playerName, disconnect, cancelReconnect, handleStateUpdate, handleSocketLost, handlePeerDisconnected]);
 
   // Dev shortcut: auto-create or join room
   useEffect(() => {
@@ -500,6 +547,7 @@ export default function App() {
   }, []);
 
   const handleNewGame = useCallback(() => setScreen({ type: 'new' }), []);
+  const handleBluetoothNewGame = useCallback(() => connectAndDo('create', undefined, 'bluetooth'), [connectAndDo]);
   const handleNearbyNewGame = useCallback(() => connectAndDo('create', undefined, 'nearby'), [connectAndDo]);
   const handleOnlineNewGame = useCallback(() => connectAndDo('create'), [connectAndDo]);
 
@@ -530,6 +578,10 @@ export default function App() {
     const mode = connectionModeForRoomCode(code);
     if (mode === 'online') {
       connectAndDo({ join: code });
+      return;
+    }
+    if (mode === 'bluetooth') {
+      connectAndDo({ join: code }, undefined, 'bluetooth');
       return;
     }
     if (mode === 'nearby') {
@@ -643,6 +695,7 @@ export default function App() {
       case 'new':
         return (
           <NewGameScreen
+            onBluetooth={handleBluetoothNewGame}
             onNearby={handleNearbyNewGame}
             onOnline={handleOnlineNewGame}
             onBack={() => setScreen({ type: 'menu' })}

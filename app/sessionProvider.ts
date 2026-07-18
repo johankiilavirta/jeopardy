@@ -1,13 +1,14 @@
 import type { Transport } from '../src/transport';
 
 export type SessionControlMessage = Record<string, unknown> & { type: string };
+export type SessionMode = 'bluetooth' | 'nearby' | 'online';
 
 /**
  * Room/lobby lifecycle plus the gameplay message transport it produces.
  * Nearby and online implementations expose this same boundary to the app.
  */
 export interface SessionProvider extends Transport {
-  readonly mode: 'nearby' | 'online';
+  readonly mode: SessionMode;
   readonly ready: Promise<string>;
   readonly isClosed: boolean;
 

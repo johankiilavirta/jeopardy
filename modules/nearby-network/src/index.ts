@@ -26,3 +26,4 @@ export interface NearbyNetworkNativeModule extends NativeModule<NearbyNetworkEve
 }
 
 export default requireOptionalNativeModule<NearbyNetworkNativeModule>('NearbyNetwork');
+export const BluetoothNetwork = requireOptionalNativeModule<NearbyNetworkNativeModule>('BluetoothNetwork');

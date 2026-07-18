@@ -2,9 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { connectionModeForRoomCode } from '../../app/roomCodes';
 
 describe('connectionModeForRoomCode', () => {
-  it('routes 100–499 to nearby sessions', () => {
-    expect(connectionModeForRoomCode(100)).toBe('nearby');
-    expect(connectionModeForRoomCode(274)).toBe('nearby');
+  it('routes 100–399 to bluetooth sessions', () => {
+    expect(connectionModeForRoomCode(100)).toBe('bluetooth');
+    expect(connectionModeForRoomCode(274)).toBe('bluetooth');
+    expect(connectionModeForRoomCode(399)).toBe('bluetooth');
+  });
+
+  it('routes 400–499 to nearby sessions', () => {
+    expect(connectionModeForRoomCode(400)).toBe('nearby');
+    expect(connectionModeForRoomCode(450)).toBe('nearby');
     expect(connectionModeForRoomCode(499)).toBe('nearby');
   });
 
@@ -16,6 +22,7 @@ describe('connectionModeForRoomCode', () => {
 
   it('rejects reserved and malformed codes', () => {
     expect(connectionModeForRoomCode(99)).toBeNull();
+    expect(connectionModeForRoomCode(0)).toBeNull();
     expect(connectionModeForRoomCode(1000)).toBeNull();
     expect(connectionModeForRoomCode(682.5)).toBeNull();
     expect(connectionModeForRoomCode(Number.NaN)).toBeNull();

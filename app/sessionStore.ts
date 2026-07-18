@@ -15,6 +15,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { GameState } from '../src/types';
 import type { GameData } from '../data/gameLoader';
+import type { SessionMode } from './sessionProvider';
 
 const SESSION_KEY = 'jeopardy/session';
 const SNAPSHOT_STATE_KEY = 'jeopardy/snapshot-state';
@@ -28,7 +29,7 @@ const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const SNAPSHOT_DEBOUNCE_MS = 1000;
 
 export interface SavedSession {
-  mode: 'nearby' | 'online';
+  mode: SessionMode;
   roomCode: number;
   playerName: string;
   relayHost: string;
@@ -44,7 +45,7 @@ export interface SavedSnapshot {
   board: GameData | null;
   /** Connection mode the snapshot was taken in — RESUME GAME re-hosts
    *  the same kind of room. */
-  mode: 'nearby' | 'online';
+  mode: SessionMode;
   savedAt: number;
 }
 
@@ -113,7 +114,7 @@ export function saveSnapshotState(state: GameState): void {
 /** Board data is large-ish and constant per game: written once at game
  *  start. Written even for a null (demo) board — the envelope also records
  *  which connection mode the game was played in. */
-export async function saveSnapshotBoard(board: GameData | null, mode: 'nearby' | 'online'): Promise<void> {
+export async function saveSnapshotBoard(board: GameData | null, mode: SessionMode): Promise<void> {
   try {
     await AsyncStorage.setItem(SNAPSHOT_BOARD_KEY, JSON.stringify({ board, mode }));
   } catch {}
