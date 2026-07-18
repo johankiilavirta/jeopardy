@@ -203,6 +203,9 @@ describe('BluetoothSessionProvider', () => {
     expect(promoted.client?.state?.players['alice']?.score).toBe(400);
     expect(promoted.client?.state?.burnedClueIds).toEqual([0]);
 
+    let promotedSawReconnect = false;
+    promoted.provider.onPeerConnected(() => { promotedSawReconnect = true; });
+
     const formerHost = createPeer('guest', 'HOST-REJOIN');
     formerHost.run(() => formerHost.provider.joinRoom(142, 'Alice', { roomId: 'room-a', epoch: 1 }));
 
@@ -213,6 +216,10 @@ describe('BluetoothSessionProvider', () => {
     expect((rejoinStarted?.board as GameData).gameNumber).toBe(42);
     expect(formerHost.client?.playerId).toBe('alice');
     expect(formerHost.client?.state?.players['alice']?.score).toBe(400);
+    expect(promotedSawReconnect).toBe(false);
+
+    formerHost.run(() => sendAction(formerHost.provider, 'server', { type: 'CLIENT_SCREEN_READY' }));
+    expect(promotedSawReconnect).toBe(true);
 
     formerHost.run(() => sendAction(formerHost.provider, 'server', { type: 'SKIP_CLUE', clueId: 1 }));
     expect(promoted.client?.state?.burnedClueIds).toContain(1);

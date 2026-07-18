@@ -282,6 +282,11 @@ describe('NearbySessionProvider', () => {
     // game-ready reattached the seat by name and pushed the live state.
     expect(rejoined.client?.playerId).toBe('bob');
     expect(rejoined.client?.state?.burnedClueIds).toContain(5);
+    expect(hostSawReconnect).toBe(false);
+
+    // The host UI clears its disconnected state only once the rejoining
+    // app confirms the game screen has mounted.
+    rejoined.run(() => sendAction(rejoined.provider, 'server', { type: 'CLIENT_SCREEN_READY' }));
     expect(hostSawReconnect).toBe(true);
 
     // The re-linked connection carries gameplay both ways again.

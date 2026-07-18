@@ -37,6 +37,7 @@ interface NetworkedGameProps {
   onLeave?: () => void;
   onNewGame?: () => void;
   onJoinGame?: () => void;
+  onBoardVisible?: () => void;
   playerName?: string;
   onNameChange?: (name: string) => void;
   relayHostSetting?: string;
@@ -60,7 +61,7 @@ const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
 
 
 
-export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume }: NetworkedGameProps) {
+export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, onBoardVisible, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume }: NetworkedGameProps) {
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
@@ -72,6 +73,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // latest by then (an undo may have superseded the faded-to state).
   const latestStateRef = useRef<GameState | null>(initialState?.state ?? null);
   const fjFadeActiveRef = useRef(false);
+  const boardVisibleAckedRef = useRef(false);
 
   useEffect(() => {
     if (!initialState?.state) return;
@@ -152,6 +154,13 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     currentVisibleStateRef.current = incoming;
     setGameState(incoming);
   }, [initialState?.state, fadeToBlackAnim]);
+
+  useEffect(() => {
+    if (!gameState || !initialState?.playerId || boardVisibleAckedRef.current) return;
+    boardVisibleAckedRef.current = true;
+    const frame = requestAnimationFrame(() => onBoardVisible?.());
+    return () => cancelAnimationFrame(frame);
+  }, [gameState, initialState?.playerId, onBoardVisible]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const playerId = initialState?.playerId ?? null;

@@ -538,6 +538,9 @@ export default function App() {
         case 'host-liveness':
           setPeerDisconnected(isMissedHostLiveness(msg));
           break;
+        case 'client-screen-ready':
+          setPeerDisconnected(false);
+          break;
         case 'room-created':
           roomCode = msg.roomCode as number;
           roomAuthority = authorityFromMessage(msg) ?? roomAuthority;
@@ -976,6 +979,11 @@ export default function App() {
             onLeave={handleGameLeave}
             onNewGame={handleOverlayNewGame}
             onJoinGame={handleOverlayJoinGame}
+            onBoardVisible={() => {
+              const session = sessionRef.current;
+              if (!session || !isLocalSessionMode(session.mode) || session.isHost) return;
+              transportRef.current?.send(screen.serverPeerId, JSON.stringify({ type: 'CLIENT_SCREEN_READY' }));
+            }}
             playerName={playerName}
             onNameChange={handleNameChange}
             relayHostSetting={relayHost}

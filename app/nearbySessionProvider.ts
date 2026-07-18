@@ -62,6 +62,14 @@ function isControl(message: string): NearbyControl | null {
   }
 }
 
+function isClientScreenReady(message: string): boolean {
+  try {
+    return (JSON.parse(message) as { type?: string }).type === 'CLIENT_SCREEN_READY';
+  } catch {
+    return false;
+  }
+}
+
 class NearbyServerTransport implements Transport {
   private connectCbs: ((peerId: string, playerName?: string) => void)[] = [];
   private disconnectCbs: ((peerId: string) => void)[] = [];
@@ -271,6 +279,12 @@ export class NearbySessionProvider implements SessionProvider {
     if (this.role === 'guest') this.markHostSeen();
     const control = isControl(message);
     if (!control) {
+      if (this.role === 'host' && isClientScreenReady(message)) {
+        const name = this.remotePlayerName;
+        if (name) this.connectCbs.forEach(cb => cb(peerId, name));
+        this.emitControl({ type: 'client-screen-ready', ...this.authorityFields() });
+        return;
+      }
       if (this.role === 'host') this.serverTransport?.deliverRemote(peerId, message);
       else this.messageCbs.forEach(cb => cb(SERVER_PEER_ID, message));
       return;
@@ -303,9 +317,6 @@ export class NearbySessionProvider implements SessionProvider {
     }
     if (this.role === 'host' && control.type === 'game-ready' && this.remotePlayerName) {
       this.serverTransport?.connectRemote(peerId, this.remotePlayerName);
-      // Clear the host UI's peer-disconnected banner on (re)connect.
-      const name = this.remotePlayerName;
-      this.connectCbs.forEach(cb => cb(peerId, name));
       return;
     }
     if (this.role === 'guest' && control.type === 'game-started') {
