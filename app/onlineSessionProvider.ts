@@ -1,5 +1,6 @@
 import { WebSocketTransport } from '../src/webSocketTransport';
 import type { SessionControlMessage, SessionProvider } from './sessionProvider';
+import type { SessionAuthority } from './sessionAuthority';
 
 /** WebSocket relay implementation of the shared room/session lifecycle. */
 export class OnlineSessionProvider implements SessionProvider {
@@ -17,7 +18,7 @@ export class OnlineSessionProvider implements SessionProvider {
     return this.socket.isClosed;
   }
 
-  createRoom(playerName: string, requestedRoomCode?: number): void {
+  createRoom(playerName: string, requestedRoomCode?: number, _authority?: SessionAuthority): void {
     this.socket.sendRaw({
       type: 'create-room',
       playerName,
@@ -25,7 +26,7 @@ export class OnlineSessionProvider implements SessionProvider {
     });
   }
 
-  joinRoom(roomCode: number, playerName: string): void {
+  joinRoom(roomCode: number, playerName: string, _authority?: SessionAuthority): void {
     this.socket.sendRaw({ type: 'join-room', roomCode, playerName });
   }
 

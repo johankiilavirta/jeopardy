@@ -6,6 +6,7 @@ import { createServer, type GameServer } from '../src/server';
 import type { Transport } from '../src/transport';
 import type { GameState } from '../src/types';
 import type { SessionControlMessage, SessionProvider } from './sessionProvider';
+import { createRoomId, normalizeEpoch, type SessionAuthority } from './sessionAuthority';
 
 // Keep the wire version at v2 so older Bluetooth builds accept our hello.
 // Newer builds advertise board preloading as a capability.
@@ -13,6 +14,9 @@ const PROTOCOL_VERSION = 2;
 const SUPPORTED_PROTOCOL_VERSIONS = new Set([2, 3]);
 const BOARD_PRELOAD_CAPABILITY = 'board-preload-v1';
 const SERVER_PEER_ID = 'server';
+const HEARTBEAT_MS = 2000;
+const HEARTBEAT_MISSED_MS = 4000;
+const HEARTBEAT_TIMEOUT_MS = 7000;
 type Role = 'host' | 'guest';
 
 type BluetoothControl = {
@@ -23,10 +27,14 @@ type BluetoothControl = {
   playerName?: string;
   players?: Array<{ peerId: string; name: string; isHost: boolean }>;
   serverPeerId?: string;
+  roomCode?: number;
+  roomId?: string;
+  epoch?: number;
   board?: GameData | null;
   isResume?: boolean;
   startId?: number;
   message?: string;
+  sentAt?: number;
 };
 
 function pickGame(gameId?: number): GameData | null {
@@ -38,6 +46,14 @@ function pickGame(gameId?: number): GameData | null {
     if (game) return game;
   }
   return null;
+}
+
+function playerNamesFromState(state: GameState | null): string[] {
+  return state ? Object.values(state.players).map(player => player.name) : [];
+}
+
+function unrefTimer(timer: ReturnType<typeof setInterval>): void {
+  (timer as { unref?: () => void }).unref?.();
 }
 
 function isControl(message: string): BluetoothControl | null {
@@ -90,6 +106,8 @@ export class BluetoothSessionProvider implements SessionProvider {
   readonly ready: Promise<string>;
   private closed = false;
   private roomCode = 0;
+  private roomId = '';
+  private epoch = 1;
   private playerName = '';
   private remotePeerId: string | null = null;
   private remotePlayerName: string | null = null;
@@ -104,6 +122,11 @@ export class BluetoothSessionProvider implements SessionProvider {
   private preloadedBoard: GameData | null = null;
   private preloadedIsResume = false;
   private nextStartId = 1;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatWatchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private lastHostSeenAt = 0;
+  private hostDisconnectEmitted = false;
+  private hostLivenessState: 'connected' | 'missed' | 'dead' = 'connected';
   private pendingStart: {
     startId: number;
     gameData: GameData | null;
@@ -134,37 +157,42 @@ export class BluetoothSessionProvider implements SessionProvider {
 
   get isClosed(): boolean { return this.closed; }
 
-  createRoom(playerName: string, requestedRoomCode?: number): void {
+  createRoom(playerName: string, requestedRoomCode?: number, authority?: SessionAuthority): void {
     if (this.role !== 'host' || !BluetoothNetwork) return this.emitError('Bluetooth hosting is unavailable');
     this.playerName = playerName;
     this.roomCode = requestedRoomCode ?? (100 + Math.floor(Math.random() * 300));
+    this.roomId = authority?.roomId ?? createRoomId();
+    this.epoch = normalizeEpoch(authority?.epoch);
     BluetoothNetwork.host(this.roomCode, playerName);
-    this.emitControl({ type: 'room-created', roomCode: this.roomCode });
+    this.emitControl({ type: 'room-created', ...this.authorityFields() });
     this.emitLobby();
   }
 
-  joinRoom(roomCode: number, playerName: string): void {
+  joinRoom(roomCode: number, playerName: string, authority?: SessionAuthority): void {
     if (this.role !== 'guest' || !BluetoothNetwork) return this.emitError('Bluetooth joining is unavailable');
     this.roomCode = roomCode;
     this.playerName = playerName;
+    this.roomId = authority?.roomId ?? '';
+    this.epoch = normalizeEpoch(authority?.epoch, 0);
     this.targetRoomCode = roomCode;
     BluetoothNetwork.browse();
   }
 
   startGame(options?: { gameId?: number; resume?: object }): void {
     if (this.role !== 'host' || !BluetoothNetwork) return;
-    if (!this.remotePeerId || !this.remotePlayerName) return this.emitError('Need 2 players to start');
 
     const resume = options?.resume as { state?: GameState; board?: GameData | null } | undefined;
     const resumeState = resume ? validateResumeState(resume.state) : null;
     if (resume && !resumeState) return this.emitError('Saved game data is invalid');
+    if ((!this.remotePeerId || !this.remotePlayerName) && !resumeState) return this.emitError('Need 2 players to start');
 
     const gameData = resumeState ? (resume?.board ?? null) : pickGame(options?.gameId);
-    if (!this.remoteSupportsBoardPreload) {
-      this.beginGame(gameData, resumeState, !!resumeState, true);
+    if (!this.remotePeerId || !this.remoteSupportsBoardPreload) {
+      this.beginGame(gameData, resumeState, !!resumeState, !!this.remotePeerId);
       return;
     }
 
+    const remotePeerId = this.remotePeerId;
     const startId = this.nextStartId++;
     if (this.pendingStart) clearTimeout(this.pendingStart.timeout);
     this.pendingStart = {
@@ -178,11 +206,12 @@ export class BluetoothSessionProvider implements SessionProvider {
         this.emitError('Bluetooth start timed out');
       }, 10_000),
     };
-    this.sendControl(this.remotePeerId, {
+    this.sendControl(remotePeerId, {
       type: 'board-preload',
       board: gameData,
       isResume: !!resumeState,
       startId,
+      ...this.authorityFields(),
     });
   }
 
@@ -192,7 +221,11 @@ export class BluetoothSessionProvider implements SessionProvider {
     isResume: boolean,
     sendBoardInStart = false,
   ): void {
-    if (!BluetoothNetwork || !this.remotePeerId || !this.remotePlayerName) return;
+    if (!BluetoothNetwork) return;
+    const playerNames = this.remotePlayerName
+      ? [this.playerName, this.remotePlayerName]
+      : playerNamesFromState(resumeState);
+    if (playerNames.length < 2) return this.emitError('Need 2 players to start');
     this.gameData = gameData;
     this.phase = 'playing';
 
@@ -211,18 +244,21 @@ export class BluetoothSessionProvider implements SessionProvider {
     );
     this.gameServer = createServer(
       this.serverTransport,
-      [this.playerName, this.remotePlayerName],
+      playerNames,
       buildServerOptions(gameData, resumeState),
     );
 
-    const started = { type: 'game-started', serverPeerId: SERVER_PEER_ID, board: gameData, isResume };
+    const started = { type: 'game-started', serverPeerId: SERVER_PEER_ID, board: gameData, isResume, ...this.authorityFields() };
     this.emitControl(started);
-    this.sendControl(this.remotePeerId, {
-      type: 'game-started',
-      serverPeerId: SERVER_PEER_ID,
-      isResume,
-      ...(sendBoardInStart ? { board: gameData } : {}),
-    });
+    if (this.remotePeerId) {
+      this.sendControl(this.remotePeerId, {
+        type: 'game-started',
+        serverPeerId: SERVER_PEER_ID,
+        isResume,
+        ...(sendBoardInStart ? { board: gameData } : {}),
+        ...this.authorityFields(),
+      });
+    }
     InProcessTransport.link(this.localServer, this.localEndpoint);
   }
 
@@ -245,6 +281,8 @@ export class BluetoothSessionProvider implements SessionProvider {
   stop(): void {
     if (this.closed) return;
     this.closed = true;
+    this.stopHeartbeat();
+    this.stopHeartbeatWatchdog();
     this.gameServer?.stop();
     if (this.pendingStart) clearTimeout(this.pendingStart.timeout);
     BluetoothNetwork?.stop();
@@ -261,13 +299,17 @@ export class BluetoothSessionProvider implements SessionProvider {
 
   private handleNativeConnected(peerId: string): void {
     this.remotePeerId = peerId;
-    if (this.role === 'guest') this.connectCbs.forEach(cb => cb(SERVER_PEER_ID));
+    if (this.role === 'guest') {
+      this.markHostSeen();
+      this.connectCbs.forEach(cb => cb(SERVER_PEER_ID));
+    }
     if (this.role === 'guest') {
       this.sendControl(peerId, {
         type: 'hello',
         protocolVersion: PROTOCOL_VERSION,
         capabilities: [BOARD_PRELOAD_CAPABILITY],
         playerName: this.playerName,
+        ...this.knownAuthorityFields(),
       });
     }
   }
@@ -288,6 +330,7 @@ export class BluetoothSessionProvider implements SessionProvider {
   }
 
   private handleNativeMessage(peerId: string, message: string): void {
+    if (this.role === 'guest') this.markHostSeen();
     const control = isControl(message);
     if (!control) {
       if (this.role === 'host') this.serverTransport?.deliverRemote(peerId, message);
@@ -296,6 +339,7 @@ export class BluetoothSessionProvider implements SessionProvider {
     }
 
     if (this.role === 'host' && control.type === 'hello') {
+      if (this.handleHostAuthorityConflict(peerId, control)) return;
       if (!SUPPORTED_PROTOCOL_VERSIONS.has(control.protocolVersion ?? 0) || !control.playerName) {
         this.sendControl(peerId, { type: 'room-error', message: 'Incompatible Bluetooth game version' });
         return;
@@ -303,12 +347,14 @@ export class BluetoothSessionProvider implements SessionProvider {
       this.remotePeerId = peerId;
       this.remotePlayerName = control.playerName;
       this.remoteSupportsBoardPreload = control.capabilities?.includes(BOARD_PRELOAD_CAPABILITY) ?? false;
+      this.startHeartbeat();
       if (this.phase === 'playing') {
         if (this.remoteSupportsBoardPreload) {
           this.sendControl(peerId, {
             type: 'board-preload',
             board: this.gameData,
             isResume: true,
+            ...this.authorityFields(),
           });
         } else {
           this.sendControl(peerId, {
@@ -316,6 +362,7 @@ export class BluetoothSessionProvider implements SessionProvider {
             serverPeerId: SERVER_PEER_ID,
             board: this.gameData,
             isResume: true,
+            ...this.authorityFields(),
           });
         }
         return;
@@ -332,7 +379,7 @@ export class BluetoothSessionProvider implements SessionProvider {
         return;
       }
       if (this.phase === 'playing') {
-        this.sendControl(peerId, { type: 'game-started', serverPeerId: SERVER_PEER_ID, isResume: true });
+        this.sendControl(peerId, { type: 'game-started', serverPeerId: SERVER_PEER_ID, isResume: true, ...this.authorityFields() });
       }
       return;
     }
@@ -343,6 +390,8 @@ export class BluetoothSessionProvider implements SessionProvider {
       return;
     }
     if (this.role === 'guest' && control.type === 'board-preload') {
+      if (!this.acceptHostAuthority(control)) return;
+      this.markHostSeen();
       this.preloadedBoard = control.board ?? null;
       this.preloadedIsResume = !!control.isResume;
       this.sendControl(peerId, {
@@ -352,15 +401,23 @@ export class BluetoothSessionProvider implements SessionProvider {
       return;
     }
     if (this.role === 'guest' && control.type === 'game-started') {
+      if (!this.acceptHostAuthority(control)) return;
+      this.markHostSeen();
       this.emitControl({
         type: 'game-started',
         serverPeerId: SERVER_PEER_ID,
         board: control.board ?? this.preloadedBoard,
         isResume: control.isResume ?? this.preloadedIsResume,
+        ...this.authorityFields(),
       });
       this.preloadedBoard = null;
       this.preloadedIsResume = false;
       this.sendControl(peerId, { type: 'game-ready' });
+      return;
+    }
+    if (this.role === 'guest' && control.type === 'heartbeat') {
+      if (!this.acceptHostAuthority(control)) return;
+      this.markHostSeen();
       return;
     }
     this.emitControl(control as SessionControlMessage);
@@ -373,8 +430,103 @@ export class BluetoothSessionProvider implements SessionProvider {
         ? [{ peerId: this.remotePeerId, name: this.remotePlayerName, isHost: false }]
         : []),
     ];
-    this.emitControl({ type: 'lobby-update', players });
-    if (this.remotePeerId) this.sendControl(this.remotePeerId, { type: 'lobby-update', players });
+    const message = { type: 'lobby-update', players, ...this.authorityFields() };
+    this.emitControl(message);
+    if (this.remotePeerId) this.sendControl(this.remotePeerId, message);
+  }
+
+  private authorityFields(): { roomCode: number; roomId: string; epoch: number } {
+    return { roomCode: this.roomCode, roomId: this.roomId, epoch: this.epoch };
+  }
+
+  private knownAuthorityFields(): Partial<SessionAuthority> {
+    return this.roomId ? { roomId: this.roomId, epoch: this.epoch } : {};
+  }
+
+  private handleHostAuthorityConflict(peerId: string, control: BluetoothControl): boolean {
+    if (!control.roomId) return false;
+    if (this.roomId && control.roomId !== this.roomId) {
+      this.sendControl(peerId, { type: 'room-error', message: 'Different Bluetooth game is using this room code' });
+      return true;
+    }
+    const incomingEpoch = normalizeEpoch(control.epoch, 0);
+    if (incomingEpoch > this.epoch) {
+      this.emitControl({ type: 'superseded-host', ...this.authorityFields(), epoch: incomingEpoch, oldEpoch: this.epoch });
+      this.sendControl(peerId, { type: 'room-error', message: 'A newer Bluetooth host is active', ...this.authorityFields() });
+      return true;
+    }
+    return false;
+  }
+
+  private acceptHostAuthority(control: BluetoothControl): boolean {
+    if (control.roomId && this.roomId && control.roomId !== this.roomId) {
+      this.emitError('Different Bluetooth game is using this room code');
+      return false;
+    }
+    if (!control.roomId) return true;
+    if (control.roomId) this.roomId = control.roomId;
+    const incomingEpoch = normalizeEpoch(control.epoch, 0);
+    if (this.roomId && incomingEpoch < this.epoch) return false;
+    if (incomingEpoch > this.epoch) this.epoch = incomingEpoch;
+    return true;
+  }
+
+  private startHeartbeat(): void {
+    if (this.role !== 'host' || !this.remotePeerId) return;
+    this.stopHeartbeat();
+    const send = () => {
+      if (this.remotePeerId) {
+        this.sendControl(this.remotePeerId, {
+          type: 'heartbeat',
+          sentAt: Date.now(),
+          ...this.authorityFields(),
+        });
+      }
+    };
+    send();
+    this.heartbeatTimer = setInterval(send, HEARTBEAT_MS);
+    unrefTimer(this.heartbeatTimer);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer != null) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  private markHostSeen(): void {
+    this.lastHostSeenAt = Date.now();
+    this.hostDisconnectEmitted = false;
+    if (this.hostLivenessState !== 'connected') {
+      this.hostLivenessState = 'connected';
+      this.emitControl({ type: 'host-liveness', state: 'connected', ...this.authorityFields() });
+    }
+    if (this.heartbeatWatchdogTimer != null) return;
+    this.heartbeatWatchdogTimer = setInterval(() => {
+      if (this.closed || this.role !== 'guest' || this.hostDisconnectEmitted) return;
+      const silentMs = Date.now() - this.lastHostSeenAt;
+      if (silentMs >= HEARTBEAT_MISSED_MS && this.hostLivenessState === 'connected') {
+        this.hostLivenessState = 'missed';
+        this.emitControl({ type: 'host-liveness', state: 'missed', ...this.authorityFields() });
+      }
+      if (silentMs < HEARTBEAT_TIMEOUT_MS) return;
+      this.hostDisconnectEmitted = true;
+      this.hostLivenessState = 'dead';
+      this.emitControl({ type: 'host-liveness', state: 'dead', ...this.authorityFields() });
+      this.remotePeerId = null;
+      this.remotePlayerName = null;
+      this.remoteSupportsBoardPreload = false;
+      this.disconnectCbs.forEach(cb => cb(SERVER_PEER_ID));
+    }, HEARTBEAT_MS);
+    unrefTimer(this.heartbeatWatchdogTimer);
+  }
+
+  private stopHeartbeatWatchdog(): void {
+    if (this.heartbeatWatchdogTimer != null) {
+      clearInterval(this.heartbeatWatchdogTimer);
+      this.heartbeatWatchdogTimer = null;
+    }
   }
 
   private sendControl(peerId: string, message: Omit<BluetoothControl, '__nearby'>): void {

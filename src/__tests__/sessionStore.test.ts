@@ -45,12 +45,21 @@ describe('sessionStore', () => {
   afterEach(() => vi.useRealTimers());
 
   it('round-trips a session including mode and isHost', async () => {
-    await saveSession({ mode: 'nearby', roomCode: 423, playerName: 'Alice', relayHost: 'localhost', relayPort: '8787', isHost: true });
+    await saveSession({
+      mode: 'nearby',
+      roomCode: 423,
+      playerName: 'Alice',
+      relayHost: 'localhost',
+      relayPort: '8787',
+      roomId: 'room-a',
+      epoch: 2,
+      isHost: true,
+    });
     const session = await loadSession();
-    expect(session).toMatchObject({ mode: 'nearby', roomCode: 423, playerName: 'Alice', isHost: true });
+    expect(session).toMatchObject({ mode: 'nearby', roomCode: 423, playerName: 'Alice', roomId: 'room-a', epoch: 2, isHost: true });
   });
 
-  it('defaults legacy sessions (no mode/isHost) to an online guest', async () => {
+  it('defaults legacy sessions (no mode/isHost/authority) to an online guest', async () => {
     storage.map.set(
       'jeopardy/session',
       JSON.stringify({ roomCode: 512, playerName: 'Bob', relayHost: 'h', relayPort: '8787', savedAt: Date.now() }),
@@ -58,6 +67,8 @@ describe('sessionStore', () => {
     const session = await loadSession();
     expect(session?.mode).toBe('online');
     expect(session?.isHost).toBe(false);
+    expect(session?.roomId).toBe('legacy-online-512');
+    expect(session?.epoch).toBe(1);
   });
 
   it('round-trips a snapshot with board and mode', async () => {

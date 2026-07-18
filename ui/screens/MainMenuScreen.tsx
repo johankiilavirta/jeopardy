@@ -10,6 +10,7 @@ import { colors, type as typeTokens } from '../theme/tokens';
 const SCREEN_TOP_PADDING = 64;
 const SCREEN_SIDE_PADDING = 32;
 const TITLE_TO_CONTENT_GAP = 40;
+const BUILD_TAG = 'failover-watchdog';
 
 interface MainMenuScreenProps {
   onNewGame: () => void;
@@ -31,19 +32,32 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
         <Text style={styles.title}>JEOPARDY</Text>
         <View style={styles.buttons}>
           {props.onResumeGame && (
-            <Pressable style={[styles.button, styles.resumeButton]} onPress={props.onResumeGame}>
+            <Pressable
+              style={({ pressed }) => [styles.button, styles.resumeButton, pressed && styles.buttonPressed]}
+              onPress={props.onResumeGame}
+            >
               <Text style={styles.buttonText}>RESUME GAME</Text>
             </Pressable>
           )}
-          <Pressable style={styles.button} onPress={props.onNewGame}>
+          <Pressable
+            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+            onPress={props.onNewGame}
+          >
             <Text style={styles.buttonText}>NEW GAME</Text>
           </Pressable>
-          <Pressable style={styles.button} onPress={props.onJoinGame}>
+          <Pressable
+            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+            onPress={props.onJoinGame}
+          >
             <Text style={styles.buttonText}>JOIN GAME</Text>
           </Pressable>
-          <Pressable style={styles.button} onPress={props.onSettings}>
+          <Pressable
+            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+            onPress={props.onSettings}
+          >
             <Text style={styles.buttonText}>SETTINGS</Text>
           </Pressable>
+          <Text style={styles.buildTag}>{BUILD_TAG}</Text>
         </View>
       </ScrollView>
     </View>
@@ -82,6 +96,9 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     alignItems: 'center',
   },
+  buttonPressed: {
+    backgroundColor: colors.activeOutline,
+  },
   resumeButton: {
     borderWidth: 1,
     borderColor: colors.gold,
@@ -90,5 +107,13 @@ const styles = StyleSheet.create({
     fontFamily: typeTokens.ui700,
     fontSize: 18,
     color: colors.gold,
+  },
+  buildTag: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 12,
+    color: colors.categoryText,
+    opacity: 0.45,
+    textAlign: 'center',
+    marginTop: 4,
   },
 });

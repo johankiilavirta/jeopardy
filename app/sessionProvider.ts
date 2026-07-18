@@ -1,4 +1,5 @@
 import type { Transport } from '../src/transport';
+import type { SessionAuthority } from './sessionAuthority';
 
 export type SessionControlMessage = Record<string, unknown> & { type: string };
 export type SessionMode = 'bluetooth' | 'nearby' | 'online';
@@ -12,8 +13,8 @@ export interface SessionProvider extends Transport {
   readonly ready: Promise<string>;
   readonly isClosed: boolean;
 
-  createRoom(playerName: string, requestedRoomCode?: number): void;
-  joinRoom(roomCode: number, playerName: string): void;
+  createRoom(playerName: string, requestedRoomCode?: number, authority?: SessionAuthority): void;
+  joinRoom(roomCode: number, playerName: string, authority?: SessionAuthority): void;
   startGame(options?: { gameId?: number; resume?: object }): void;
   stop(): void;
 
