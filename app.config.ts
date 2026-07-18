@@ -6,6 +6,7 @@ const config: ExpoConfig = {
   ios: {
     bundleIdentifier: 'com.anonymous.jeopardy',
     infoPlist: {
+      NSBluetoothAlwaysUsageDescription: 'Jeopardy uses Bluetooth to host and join games with nearby players when Wi-Fi is unavailable.',
       NSLocalNetworkUsageDescription: 'Jeopardy uses your local network to find and join games hosted by nearby players.',
       NSBonjourServices: ['_jeopardy._tcp'],
     },

@@ -3,11 +3,9 @@ import * as http from 'http';
 import * as path from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from '../src/server.js';
-import { normalizeForResume } from '../src/reducer.js';
+import { buildServerOptions, validateResumeState } from '../src/gameSetup.js';
 import type { GameState } from '../src/types.js';
 import { Room, RoomPlayer, RoomServerTransport } from './room.js';
-
-const TOTAL_CLUES_DEMO = 30; // 6×5 fallback board
 
 /** How long an in-progress room survives with zero players connected. */
 const EMPTY_ROOM_GRACE_MS = 5 * 60 * 1000;
@@ -366,10 +364,7 @@ function startServer(portIndex: number): void {
           // Resuming a saved game? The host sends the snapshot it kept on
           // device: the full GameState plus the board it was playing.
           const resume = msg.resume as { state?: GameState; board?: FullGameData | null } | undefined;
-          const resumeState = resume?.state && typeof resume.state === 'object'
-            && resume.state.players && Array.isArray(resume.state.burnedClueIds)
-            ? normalizeForResume(resume.state)
-            : null;
+          const resumeState = resume ? validateResumeState(resume.state) : null;
           if (resume && !resumeState) {
             relaySend(ws, { type: 'room-error', message: 'Saved game data is invalid' });
             return;
@@ -379,16 +374,7 @@ function startServer(portIndex: number): void {
           const gameData = resumeState
             ? (resume?.board ?? null)
             : gameId ? lookupFullGame(gameId) : null;
-          // Count both rounds so the game spans Jeopardy! + Double Jeopardy!
-          // and ends only when every clue (across both) is burned. Counts
-          // actual clues, so incomplete categories are handled correctly.
-          const countClues = (cats: CategoryData[]): number =>
-            cats.reduce((n, c) => n + c.clues.length, 0);
-          const totalClues = resumeState
-            ? resumeState.totalClues
-            : gameData
-              ? countClues(gameData.round1) + countClues(gameData.round2)
-              : TOTAL_CLUES_DEMO;
+          const serverOptions = buildServerOptions(gameData, resumeState);
 
           room.phase = 'playing';
           room.gameData = gameData ?? null;
@@ -397,26 +383,21 @@ function startServer(portIndex: number): void {
 
           const playerNames = room.players.map(p => p.name);
           const isFastForward = process.env.FAST_FORWARD === '1' || process.env.FAST_FORWARD === 'true';
-          let stateToLoad = resumeState;
 
-          if (isFastForward && !stateToLoad) {
+          if (isFastForward && !serverOptions.initialState) {
             const getClueIds = (cats: CategoryData[], offset: number) =>
               cats.flatMap((c, col) => c.clues.map((cl, row) => offset + col * 5 + row));
             const allIds = gameData
               ? [...getClueIds(gameData.round1, 0), ...getClueIds(gameData.round2, 30)]
-              : Array.from({ length: totalClues }, (_, i) => i);
-            
+              : Array.from({ length: serverOptions.totalClues }, (_, i) => i);
+
             const { createInitialState } = require('../src/reducer.js');
-            const init = createInitialState(playerNames, totalClues, gameData?.final ?? null);
+            const init = createInitialState(playerNames, serverOptions.totalClues, gameData?.final ?? null);
             init.burnedClueIds = allIds.slice(0, -1);
-            stateToLoad = init;
+            serverOptions.initialState = init;
           }
 
-          createServer(serverTransport, playerNames, {
-            totalClues,
-            ...(stateToLoad ? { initialState: stateToLoad } : {}),
-            finalClue: gameData?.final ?? null,
-          });
+          createServer(serverTransport, playerNames, serverOptions);
 
           const serverPeerId = 'server';
           console.log(`  Room ${roomCode} game ${resumeState ? 'resumed' : 'started'} (game #${gameId ?? 'demo'})`);

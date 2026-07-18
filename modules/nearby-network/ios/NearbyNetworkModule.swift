@@ -1,16 +1,20 @@
 import ExpoModulesCore
 import Foundation
-import Network
+import MultipeerConnectivity
 
 public final class NearbyNetworkModule: Module {
-  private let queue = DispatchQueue(label: "jeopardy.nearby-network")
-  private var listener: NWListener?
-  private var browser: NWBrowser?
-  private var endpoints: [String: NWEndpoint] = [:]
-  private var connections: [String: NWConnection] = [:]
-  private var receiveBuffers: [String: Data] = [:]
-  private let serviceType = "_jeopardy._tcp"
-  private let maximumMessageBytes = 1_048_576
+  fileprivate let queue = DispatchQueue(label: "jeopardy.nearby-network")
+  private let serviceType = "jeopardy"
+  fileprivate let maximumMessageBytes = 1_048_576
+
+  private lazy var delegateProxy = NearbyNetworkDelegate(owner: self)
+  private var localPeer: MCPeerID?
+  fileprivate var session: MCSession?
+  private var advertiser: MCNearbyServiceAdvertiser?
+  private var browser: MCNearbyServiceBrowser?
+  fileprivate var foundPeers: [String: MCPeerID] = [:]
+  fileprivate var connectedPeers: [String: MCPeerID] = [:]
+  private var roomCode: Int?
 
   public func definition() -> ModuleDefinition {
     Name("NearbyNetwork")
@@ -50,221 +54,243 @@ public final class NearbyNetworkModule: Module {
     }
   }
 
-  private func parameters() -> NWParameters {
-    let parameters = NWParameters.tcp
-    parameters.includePeerToPeer = true
-    return parameters
-  }
-
   private func startHosting(roomCode: Int, displayName: String) {
     stopAll()
-    do {
-      let listener = try NWListener(using: parameters())
-      let safeName = String(displayName.prefix(32))
-      let txt = NWTXTRecord(["room": "\(roomCode)", "name": safeName])
-      listener.service = NWListener.Service(name: UUID().uuidString, type: serviceType, txtRecord: txt)
-      listener.stateUpdateHandler = { [weak self] state in
-        self?.handleListenerState(state)
-      }
-      listener.newConnectionHandler = { [weak self] connection in
-        guard let self else { return }
-        self.queue.async { self.accept(connection) }
-      }
-      self.listener = listener
-      listener.start(queue: queue)
-    } catch {
-      emitError("Could not host nearby game: \(error.localizedDescription)")
-    }
+    self.roomCode = roomCode
+
+    let peer = makePeer(displayName: displayName)
+    let session = MCSession(peer: peer, securityIdentity: nil, encryptionPreference: .required)
+    session.delegate = delegateProxy
+
+    let advertiser = MCNearbyServiceAdvertiser(
+      peer: peer,
+      discoveryInfo: [
+        "room": "\(roomCode)",
+        "name": String(displayName.prefix(32)),
+      ],
+      serviceType: serviceType
+    )
+    advertiser.delegate = delegateProxy
+
+    self.localPeer = peer
+    self.session = session
+    self.advertiser = advertiser
+    advertiser.startAdvertisingPeer()
+    sendEvent("onStateChanged", ["state": "hosting"])
   }
 
   private func startBrowsing() {
     stopAll()
-    let browser = NWBrowser(for: .bonjour(type: serviceType, domain: nil), using: parameters())
-    browser.stateUpdateHandler = { [weak self] state in
-      switch state {
-      case .ready:
-        self?.sendEvent("onStateChanged", ["state": "browsing"])
-      case .failed(let error):
-        self?.emitError("Nearby browsing failed: \(error.localizedDescription)")
-      case .waiting(let error):
-        self?.sendEvent("onStateChanged", ["state": "waiting: \(error.localizedDescription)"])
-      default:
-        break
-      }
-    }
-    browser.browseResultsChangedHandler = { [weak self] results, changes in
-      guard let self else { return }
-      self.queue.async { self.handleBrowseResults(results, changes: changes) }
-    }
-    self.browser = browser
-    browser.start(queue: queue)
-  }
 
-  private func handleBrowseResults(
-    _ results: Set<NWBrowser.Result>,
-    changes: Set<NWBrowser.Result.Change>
-  ) {
-    let currentIds = Set(results.map { peerId(for: $0.endpoint) })
-    for oldId in endpoints.keys where !currentIds.contains(oldId) {
-      endpoints.removeValue(forKey: oldId)
-      sendEvent("onPeerLost", ["peerId": oldId])
-    }
-    for result in results {
-      let id = peerId(for: result.endpoint)
-      endpoints[id] = result.endpoint
-      guard case let .bonjour(metadata) = result.metadata,
-            let roomText = metadata["room"],
-            let roomCode = Int(roomText) else { continue }
-      let name = metadata["name"] ?? "Nearby Game"
-      sendEvent("onPeerFound", ["peerId": id, "name": name, "roomCode": roomCode])
-    }
+    let peer = makePeer(displayName: "guest")
+    let session = MCSession(peer: peer, securityIdentity: nil, encryptionPreference: .required)
+    session.delegate = delegateProxy
+
+    let browser = MCNearbyServiceBrowser(peer: peer, serviceType: serviceType)
+    browser.delegate = delegateProxy
+
+    self.localPeer = peer
+    self.session = session
+    self.browser = browser
+    browser.startBrowsingForPeers()
+    sendEvent("onStateChanged", ["state": "browsing"])
   }
 
   private func connectToPeer(_ peerId: String) {
-    guard let endpoint = endpoints[peerId] else {
+    guard let browser, let session, let peer = foundPeers[peerId] else {
       emitError("Nearby game is no longer available")
       return
     }
-    browser?.cancel()
-    browser = nil
-    startConnection(NWConnection(to: endpoint, using: parameters()), peerId: peerId)
-  }
-
-  private func accept(_ connection: NWConnection) {
-    let peerId = UUID().uuidString
-    startConnection(connection, peerId: peerId)
-  }
-
-  private func startConnection(_ connection: NWConnection, peerId: String) {
-    connections[peerId] = connection
-    receiveBuffers[peerId] = Data()
-    connection.stateUpdateHandler = { [weak self, weak connection] state in
-      guard let self, let connection else { return }
-      self.queue.async { self.handleConnectionState(state, connection: connection, peerId: peerId) }
-    }
-    connection.start(queue: queue)
-  }
-
-  private func handleConnectionState(_ state: NWConnection.State, connection: NWConnection, peerId: String) {
-    switch state {
-    case .ready:
-      sendEvent("onPeerConnected", ["peerId": peerId])
-      receiveNext(on: connection, peerId: peerId)
-    case .failed(let error):
-      emitError("Nearby connection failed: \(error.localizedDescription)")
-      removeConnection(peerId)
-    case .cancelled:
-      removeConnection(peerId)
-    default:
-      break
-    }
-  }
-
-  private func receiveNext(on connection: NWConnection, peerId: String) {
-    connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self, weak connection] data, _, complete, error in
-      guard let self, let connection else { return }
-      self.queue.async {
-        if let data, !data.isEmpty {
-          self.receiveBuffers[peerId, default: Data()].append(data)
-          self.drainFrames(peerId: peerId)
-        }
-        if let error {
-          self.emitError("Nearby receive failed: \(error.localizedDescription)")
-          connection.cancel()
-          return
-        }
-        if complete {
-          connection.cancel()
-          return
-        }
-        self.receiveNext(on: connection, peerId: peerId)
-      }
-    }
-  }
-
-  private func drainFrames(peerId: String) {
-    guard var buffer = receiveBuffers[peerId] else { return }
-    while buffer.count >= 4 {
-      let length = buffer.prefix(4).reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
-      if length > maximumMessageBytes {
-        emitError("Nearby message exceeded the 1 MB limit")
-        connections[peerId]?.cancel()
-        return
-      }
-      let frameLength = 4 + Int(length)
-      if buffer.count < frameLength { break }
-      let payload = buffer.subdata(in: 4..<frameLength)
-      buffer.removeSubrange(0..<frameLength)
-      guard let message = String(data: payload, encoding: .utf8) else {
-        emitError("Nearby peer sent invalid text")
-        continue
-      }
-      sendEvent("onMessage", ["peerId": peerId, "message": message])
-    }
-    receiveBuffers[peerId] = buffer
+    browser.invitePeer(peer, to: session, withContext: nil, timeout: 20)
   }
 
   private func sendMessage(_ message: String, to peerId: String) {
-    guard let connection = connections[peerId], let payload = message.data(using: .utf8) else {
+    guard let session else {
       emitError("Nearby peer is not connected")
       return
     }
-    guard payload.count <= maximumMessageBytes else {
+    guard let payload = message.data(using: .utf8), payload.count <= maximumMessageBytes else {
       emitError("Nearby message exceeded the 1 MB limit")
       return
     }
-    var length = UInt32(payload.count).bigEndian
-    var frame = withUnsafeBytes(of: &length) { Data($0) }
-    frame.append(payload)
-    connection.send(content: frame, completion: .contentProcessed { [weak self] error in
-      if let error { self?.emitError("Nearby send failed: \(error.localizedDescription)") }
-    })
-  }
-
-  private func handleListenerState(_ state: NWListener.State) {
-    switch state {
-    case .ready:
-      sendEvent("onStateChanged", ["state": "hosting"])
-    case .failed(let error):
-      emitError("Nearby host failed: \(error.localizedDescription)")
-    case .waiting(let error):
-      sendEvent("onStateChanged", ["state": "waiting: \(error.localizedDescription)"])
-    default:
-      break
+    let peers: [MCPeerID]
+    if peerId == "*" {
+      peers = session.connectedPeers
+    } else if let peer = connectedPeers[peerId] {
+      peers = [peer]
+    } else {
+      emitError("Nearby peer is not connected")
+      return
     }
-  }
-
-  private func removeConnection(_ peerId: String) {
-    guard connections.removeValue(forKey: peerId) != nil else { return }
-    receiveBuffers.removeValue(forKey: peerId)
-    sendEvent("onPeerDisconnected", ["peerId": peerId])
-  }
-
-  private func peerId(for endpoint: NWEndpoint) -> String {
-    if case let .service(name, type, domain, _) = endpoint {
-      return "\(name)|\(type)|\(domain)"
+    guard !peers.isEmpty else {
+      emitError("Nearby peer is not connected")
+      return
     }
-    return endpoint.debugDescription
+    do {
+      try session.send(payload, toPeers: peers, with: .reliable)
+    } catch {
+      emitError("Nearby send failed: \(error.localizedDescription)")
+    }
   }
 
   private func stopAll() {
-    listener?.cancel()
-    listener = nil
-    browser?.cancel()
+    advertiser?.stopAdvertisingPeer()
+    advertiser?.delegate = nil
+    advertiser = nil
+
+    browser?.stopBrowsingForPeers()
+    browser?.delegate = nil
     browser = nil
-    let active = connections
-    connections.removeAll()
-    receiveBuffers.removeAll()
-    endpoints.removeAll()
-    for (peerId, connection) in active {
-      connection.stateUpdateHandler = nil
-      connection.cancel()
+
+    let disconnected = Array(connectedPeers.keys)
+    session?.disconnect()
+    session?.delegate = nil
+    session = nil
+    localPeer = nil
+    foundPeers.removeAll()
+    connectedPeers.removeAll()
+    roomCode = nil
+
+    for peerId in disconnected {
       sendEvent("onPeerDisconnected", ["peerId": peerId])
     }
     sendEvent("onStateChanged", ["state": "stopped"])
   }
 
-  private func emitError(_ message: String) {
+  private func makePeer(displayName: String) -> MCPeerID {
+    let safeName = String(displayName.prefix(32)).isEmpty ? "player" : String(displayName.prefix(32))
+    return MCPeerID(displayName: "\(safeName)-\(UUID().uuidString.prefix(8))")
+  }
+
+  fileprivate func peerKey(_ peerID: MCPeerID) -> String {
+    peerID.displayName
+  }
+
+  fileprivate func emitError(_ message: String) {
     sendEvent("onError", ["message": message])
   }
+}
+
+private final class NearbyNetworkDelegate: NSObject, MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNearbyServiceBrowserDelegate {
+  private weak var owner: NearbyNetworkModule?
+
+  init(owner: NearbyNetworkModule) {
+    self.owner = owner
+  }
+
+  // MARK: - MCNearbyServiceAdvertiserDelegate
+
+  func advertiser(
+    _ advertiser: MCNearbyServiceAdvertiser,
+    didReceiveInvitationFromPeer peerID: MCPeerID,
+    withContext context: Data?,
+    invitationHandler: @escaping (Bool, MCSession?) -> Void
+  ) {
+    guard let owner else { return invitationHandler(false, nil) }
+    owner.queue.async {
+      invitationHandler(true, owner.session)
+    }
+  }
+
+  func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {
+    guard let owner else { return }
+    owner.queue.async {
+      owner.emitError("Nearby host failed: \(error.localizedDescription)")
+    }
+  }
+
+  // MARK: - MCNearbyServiceBrowserDelegate
+
+  func browser(
+    _ browser: MCNearbyServiceBrowser,
+    foundPeer peerID: MCPeerID,
+    withDiscoveryInfo info: [String: String]?
+  ) {
+    guard let owner else { return }
+    owner.queue.async {
+      guard let roomText = info?["room"], let roomCode = Int(roomText) else { return }
+      let id = owner.peerKey(peerID)
+      owner.foundPeers[id] = peerID
+      owner.sendEvent("onPeerFound", [
+        "peerId": id,
+        "name": info?["name"] ?? "Nearby Game",
+        "roomCode": roomCode,
+      ])
+    }
+  }
+
+  func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
+    guard let owner else { return }
+    owner.queue.async {
+      let id = owner.peerKey(peerID)
+      owner.foundPeers.removeValue(forKey: id)
+      owner.sendEvent("onPeerLost", ["peerId": id])
+    }
+  }
+
+  func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: Error) {
+    guard let owner else { return }
+    owner.queue.async {
+      owner.emitError("Nearby browsing failed: \(error.localizedDescription)")
+    }
+  }
+
+  // MARK: - MCSessionDelegate
+
+  func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
+    guard let owner else { return }
+    owner.queue.async {
+      let id = owner.peerKey(peerID)
+      switch state {
+      case .connected:
+        owner.connectedPeers[id] = peerID
+        owner.sendEvent("onPeerConnected", ["peerId": id])
+      case .notConnected:
+        if owner.connectedPeers.removeValue(forKey: id) != nil {
+          owner.sendEvent("onPeerDisconnected", ["peerId": id])
+        }
+      case .connecting:
+        owner.sendEvent("onStateChanged", ["state": "connecting"])
+      @unknown default:
+        break
+      }
+    }
+  }
+
+  func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
+    guard let owner else { return }
+    owner.queue.async {
+      guard data.count <= owner.maximumMessageBytes else {
+        owner.emitError("Nearby message exceeded the 1 MB limit")
+        return
+      }
+      guard let message = String(data: data, encoding: .utf8) else {
+        owner.emitError("Nearby peer sent invalid text")
+        return
+      }
+      owner.sendEvent("onMessage", ["peerId": owner.peerKey(peerID), "message": message])
+    }
+  }
+
+  func session(
+    _ session: MCSession,
+    didReceive stream: InputStream,
+    withName streamName: String,
+    fromPeer peerID: MCPeerID
+  ) {}
+
+  func session(
+    _ session: MCSession,
+    didStartReceivingResourceWithName resourceName: String,
+    fromPeer peerID: MCPeerID,
+    with progress: Progress
+  ) {}
+
+  func session(
+    _ session: MCSession,
+    didFinishReceivingResourceWithName resourceName: String,
+    fromPeer peerID: MCPeerID,
+    at localURL: URL?,
+    withError error: Error?
+  ) {}
 }

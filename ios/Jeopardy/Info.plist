@@ -48,6 +48,8 @@
 	<array>
 		<string>_jeopardy._tcp</string>
 	</array>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Jeopardy uses Bluetooth to host and join games with nearby players when Wi-Fi is unavailable.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Jeopardy uses your local network to find and join games hosted by nearby players.</string>
 	<key>RCTNewArchEnabled</key>
