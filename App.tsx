@@ -46,7 +46,6 @@ import { colors } from './ui/theme/tokens';
 const CONNECTION_TIMEOUT_MS = 7000;
 const RECONNECT_RETRY_MS = 3000;
 const LOCAL_FAILOVER_PROMOTE_MS = 12000;
-const LOCAL_FORMER_HOST_JOIN_MS = 30000;
 
 const extra = Constants.expoConfig?.extra as {
   network?: boolean;
@@ -268,9 +267,6 @@ export default function App() {
 
     const shouldPromote = isLocal && !session.isHost;
     const promoteAfter = shouldPromote ? Date.now() + LOCAL_FAILOVER_PROMOTE_MS : null;
-    const formerHostGiveUpAfter = isLocal && session.isHost
-      ? Date.now() + LOCAL_FORMER_HOST_JOIN_MS
-      : null;
 
     const ctl = {
       cancelled: false,
@@ -337,10 +333,6 @@ export default function App() {
         transport.stop();
         if (promoteAfter != null && Date.now() >= promoteAfter) {
           promote();
-          return;
-        }
-        if (formerHostGiveUpAfter != null && Date.now() >= formerHostGiveUpAfter) {
-          giveUp();
           return;
         }
         ctl.timer = setTimeout(attempt, RECONNECT_RETRY_MS);
