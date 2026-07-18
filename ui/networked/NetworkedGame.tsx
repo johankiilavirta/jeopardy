@@ -73,7 +73,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // latest by then (an undo may have superseded the faded-to state).
   const latestStateRef = useRef<GameState | null>(initialState?.state ?? null);
   const fjFadeActiveRef = useRef(false);
-  const boardVisibleAckedRef = useRef(false);
 
   useEffect(() => {
     if (!initialState?.state) return;
@@ -154,13 +153,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     currentVisibleStateRef.current = incoming;
     setGameState(incoming);
   }, [initialState?.state, fadeToBlackAnim]);
-
-  useEffect(() => {
-    if (!gameState || !initialState?.playerId || boardVisibleAckedRef.current) return;
-    boardVisibleAckedRef.current = true;
-    const frame = requestAnimationFrame(() => onBoardVisible?.());
-    return () => cancelAnimationFrame(frame);
-  }, [gameState, initialState?.playerId, onBoardVisible]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const playerId = initialState?.playerId ?? null;
@@ -326,6 +318,12 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   useEffect(() => {
     if (gameState?.status === 'FINAL_JEOPARDY_ANSWER') setLocalEcho(null);
   }, [gameState?.status]);
+
+  useEffect(() => {
+    if (!gameState || !playerId || localIsHost) return;
+    const frame = requestAnimationFrame(() => onBoardVisible?.());
+    return () => cancelAnimationFrame(frame);
+  }, [gameState, playerId, localIsHost, onBoardVisible]);
 
   if (!gameState || !playerId) {
     console.log('Stuck on connecting! gameState:', !!gameState, 'playerId:', playerId);

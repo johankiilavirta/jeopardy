@@ -344,7 +344,9 @@ export default function App() {
         else handleSocketLost();
       });
       transport.onPeerDisconnected(handlePeerDisconnected);
-      transport.onPeerConnected(() => setPeerDisconnected(false));
+      transport.onPeerConnected(() => {
+        if (!isLocal) setPeerDisconnected(false);
+      });
 
       transport.onControlMessage((msg) => {
         if (ctl.cancelled) return;
@@ -517,7 +519,7 @@ export default function App() {
     transport.onPeerDisconnected(handlePeerDisconnected);
 
     transport.onPeerConnected(() => {
-      setPeerDisconnected(false);
+      if (!isLocalSessionMode(mode)) setPeerDisconnected(false);
     });
 
     // Time out if we don't get a welcome within 7 seconds
