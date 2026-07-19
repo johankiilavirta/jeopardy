@@ -143,6 +143,11 @@ function isMissedHostLiveness(msg: Record<string, unknown>): boolean {
   return msg.type === 'host-liveness' && (msg.state === 'missed' || msg.state === 'dead');
 }
 
+function messageMatchesSessionAuthority(msg: Record<string, unknown>, session: SavedSession): boolean {
+  const authority = authorityFromMessage(msg);
+  return !authority || (authority.roomId === session.roomId && authority.epoch === session.epoch);
+}
+
 export default function App() {
   const [fontsLoaded] = useFonts({
     Anton_400Regular,
@@ -352,7 +357,9 @@ export default function App() {
         if (ctl.cancelled) return;
         switch (msg.type) {
           case 'host-liveness':
-            setPeerDisconnected(isMissedHostLiveness(msg));
+            if (messageMatchesSessionAuthority(msg, session)) {
+              setPeerDisconnected(isMissedHostLiveness(msg));
+            }
             break;
           case 'game-started': {
             const incomingAuthority = authorityFromMessage(msg);
@@ -538,7 +545,9 @@ export default function App() {
     transport.onControlMessage((msg) => {
       switch (msg.type) {
         case 'host-liveness':
-          setPeerDisconnected(isMissedHostLiveness(msg));
+          if (!sessionRef.current || messageMatchesSessionAuthority(msg, sessionRef.current)) {
+            setPeerDisconnected(isMissedHostLiveness(msg));
+          }
           break;
         case 'client-screen-ready':
           setPeerDisconnected(false);
@@ -896,7 +905,9 @@ export default function App() {
         sessionRef.current &&
         transportRef.current?.isClosed
       ) {
-        startReconnectRef.current(sessionRef.current);
+        startReconnectRef.current(sessionRef.current, {
+          keepGameMounted: canAutoRejoinAfterPeerDisconnect(sessionRef.current),
+        });
       }
     });
     return () => sub.remove();
