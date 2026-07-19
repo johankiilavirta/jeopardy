@@ -16,6 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { GameState } from '../src/types';
 import type { GameData } from '../data/gameLoader';
 import type { SessionMode } from './sessionProvider';
+import { legacyRoomId, normalizeEpoch } from './sessionAuthority';
 
 const SESSION_KEY = 'jeopardy/session';
 const SNAPSHOT_STATE_KEY = 'jeopardy/snapshot-state';
@@ -34,8 +35,11 @@ export interface SavedSession {
   playerName: string;
   relayHost: string;
   relayPort: string;
-  /** Whether this device created the room. A nearby host can't rejoin —
-   *  the authoritative server lived in its own JS process. */
+  /** Stable identity for this game instance, independent of reused room codes. */
+  roomId: string;
+  /** Monotonic leadership version. A promoted local host increments it. */
+  epoch: number;
+  /** Whether this device currently believes it is the authoritative host. */
   isHost: boolean;
   savedAt: number;
 }
@@ -74,10 +78,20 @@ export async function loadSession(): Promise<SavedSession | null> {
     const parsed = JSON.parse(raw) as Omit<SavedSession, 'mode' | 'isHost'> & {
       mode?: SavedSession['mode'];
       isHost?: boolean;
+      roomId?: string;
+      epoch?: number;
     };
     // Sessions saved before connection modes existed were all relay rooms;
-    // before isHost existed, reconnecting never depended on the role.
-    const session: SavedSession = { ...parsed, mode: parsed.mode ?? 'online', isHost: parsed.isHost ?? false };
+    // before isHost/authority existed, reconnecting never depended on role
+    // or leader version.
+    const mode = parsed.mode ?? 'online';
+    const session: SavedSession = {
+      ...parsed,
+      mode,
+      roomId: parsed.roomId ?? legacyRoomId(mode, parsed.roomCode),
+      epoch: normalizeEpoch(parsed.epoch),
+      isHost: parsed.isHost ?? false,
+    };
     if (typeof session.roomCode !== 'number' || Date.now() - session.savedAt > SESSION_TTL_MS) {
       await AsyncStorage.removeItem(SESSION_KEY);
       return null;

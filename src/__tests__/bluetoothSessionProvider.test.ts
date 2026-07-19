@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createClient, sendAction, type GameClient } from '../client.js';
+import { createInitialState } from '../reducer.js';
+import type { GameData } from '../../data/gameLoader';
 import type { SessionControlMessage } from '../../app/sessionProvider';
 
 const bus = vi.hoisted(() => {
@@ -48,6 +51,7 @@ const bus = vi.hoisted(() => {
     },
     send(peerId: string, message: string) {
       const sender = state.current!;
+      if (sender.dead) return;
       state.sent.push({ from: sender.peerId, to: peerId, message });
       const target = find(peerId);
       if (!target || target.dead) return;
@@ -71,6 +75,13 @@ const bus = vi.hoisted(() => {
       const prev = state.current;
       state.current = device;
       try { return fn(); } finally { state.current = prev; }
+    },
+    killSilently(peerId: string) {
+      const device = find(peerId);
+      if (!device) return;
+      device.dead = true;
+      state.current = device;
+      if (state.hosting?.device === device) state.hosting = null;
     },
     reset() {
       state.devices = [];
@@ -102,12 +113,27 @@ vi.mock('../../data/gameLoader', () => ({
 
 import { BluetoothSessionProvider } from '../../app/bluetoothSessionProvider';
 
-function createPeer(role: 'host' | 'guest', peerId: string) {
+interface TestPeer {
+  provider: BluetoothSessionProvider;
+  controls: SessionControlMessage[];
+  client: GameClient | null;
+  run<T>(fn: () => T): T;
+}
+
+function createPeer(role: 'host' | 'guest', peerId: string): TestPeer {
   const device = bus.begin(peerId);
   const provider = bus.run(device, () => new BluetoothSessionProvider(role));
-  const controls: SessionControlMessage[] = [];
-  provider.onControlMessage(msg => controls.push(msg));
-  return { provider, controls, run: <T>(fn: () => T) => bus.run(device, fn) };
+  const peer: TestPeer = {
+    provider,
+    controls: [],
+    client: null,
+    run: fn => bus.run(device, fn),
+  };
+  provider.onControlMessage(msg => {
+    peer.controls.push(msg);
+    if (msg.type === 'game-started' && !peer.client) peer.client = createClient(provider);
+  });
+  return peer;
 }
 
 function lastOfType(controls: SessionControlMessage[], type: string): SessionControlMessage | undefined {
@@ -123,6 +149,7 @@ function sentControls(from: string, to: string): SessionControlMessage[] {
 
 describe('BluetoothSessionProvider', () => {
   beforeEach(() => bus.reset());
+  afterEach(() => vi.useRealTimers());
 
   it('uses bluetooth mode and settles a lobby over the native module boundary', () => {
     const host = createPeer('host', 'HOST');
@@ -136,6 +163,8 @@ describe('BluetoothSessionProvider', () => {
     const guestLobby = lastOfType(guest.controls, 'lobby-update');
     const names = (m: SessionControlMessage | undefined) =>
       (m?.players as { name: string }[] | undefined)?.map(p => p.name);
+    expect(typeof lastOfType(host.controls, 'room-created')?.roomId).toBe('string');
+    expect(lastOfType(host.controls, 'room-created')?.epoch).toBe(1);
     expect(names(hostLobby)).toEqual(['Alice', 'Bob']);
     expect(names(guestLobby)).toEqual(['Alice', 'Bob']);
   });
@@ -154,5 +183,82 @@ describe('BluetoothSessionProvider', () => {
     expect((startMessages[0]?.board as { gameNumber?: number } | undefined)?.gameNumber).toBe(42);
     expect(startMessages[1]?.board).toBeUndefined();
     expect(lastOfType(guest.controls, 'game-started')?.board).toEqual(fixtures.game);
+  });
+
+  it('lets a surviving guest promote a saved Bluetooth game and the old host rejoin', () => {
+    const promoted = createPeer('host', 'GUEST-PROMOTED');
+    const saved = createInitialState(['Alice', 'Bob'], 1, null);
+    saved.players['alice']!.score = 400;
+    saved.burnedClueIds = [0];
+
+    promoted.run(() => promoted.provider.createRoom('Bob', 142, { roomId: 'room-a', epoch: 2 }));
+    promoted.run(() => promoted.provider.startGame({ resume: { state: saved, board: fixtures.game } }));
+
+    const promotedStarted = lastOfType(promoted.controls, 'game-started');
+    expect(promotedStarted?.isResume).toBe(true);
+    expect(promotedStarted?.roomId).toBe('room-a');
+    expect(promotedStarted?.epoch).toBe(2);
+    expect((promotedStarted?.board as GameData).gameNumber).toBe(42);
+    expect(promoted.client?.playerId).toBe('bob');
+    expect(promoted.client?.state?.players['alice']?.score).toBe(400);
+    expect(promoted.client?.state?.burnedClueIds).toEqual([0]);
+
+    let promotedSawReconnect = false;
+    promoted.provider.onPeerConnected(() => { promotedSawReconnect = true; });
+
+    const formerHost = createPeer('guest', 'HOST-REJOIN');
+    formerHost.run(() => formerHost.provider.joinRoom(142, 'Alice', { roomId: 'room-a', epoch: 1 }));
+
+    const rejoinStarted = lastOfType(formerHost.controls, 'game-started');
+    expect(rejoinStarted?.isResume).toBe(true);
+    expect(rejoinStarted?.roomId).toBe('room-a');
+    expect(rejoinStarted?.epoch).toBe(2);
+    expect((rejoinStarted?.board as GameData).gameNumber).toBe(42);
+    expect(formerHost.client?.playerId).toBe('alice');
+    expect(formerHost.client?.state?.players['alice']?.score).toBe(400);
+    expect(promotedSawReconnect).toBe(false);
+
+    formerHost.run(() => sendAction(formerHost.provider, 'server', { type: 'CLIENT_SCREEN_READY' }));
+    expect(promotedSawReconnect).toBe(true);
+
+    formerHost.run(() => sendAction(formerHost.provider, 'server', { type: 'SKIP_CLUE', clueId: 1 }));
+    expect(promoted.client?.state?.burnedClueIds).toContain(1);
+    expect(formerHost.client?.state?.burnedClueIds).toContain(1);
+  });
+
+  it('surfaces a newer epoch so a stale Bluetooth host can demote', () => {
+    const staleHost = createPeer('host', 'HOST');
+    const newerAuthority = createPeer('guest', 'GUEST-PROMOTED');
+
+    staleHost.run(() => staleHost.provider.createRoom('Alice', 142, { roomId: 'room-a', epoch: 1 }));
+    newerAuthority.run(() => newerAuthority.provider.joinRoom(142, 'Bob', { roomId: 'room-a', epoch: 2 }));
+
+    const superseded = lastOfType(staleHost.controls, 'superseded-host');
+    expect(superseded?.roomId).toBe('room-a');
+    expect(superseded?.epoch).toBe(2);
+    expect(superseded?.oldEpoch).toBe(1);
+    expect(lastOfType(newerAuthority.controls, 'room-error')?.message).toBe('A newer Bluetooth host is active');
+  });
+
+  it('detects a silent host death with the heartbeat watchdog', async () => {
+    vi.useFakeTimers();
+    const host = createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+    const disconnected: string[] = [];
+
+    host.run(() => host.provider.createRoom('Alice', 142));
+    guest.provider.onPeerDisconnected(peerId => disconnected.push(peerId));
+    guest.run(() => guest.provider.joinRoom(142, 'Bob'));
+
+    bus.killSilently('HOST');
+    await vi.advanceTimersByTimeAsync(1200);
+
+    expect(lastOfType(guest.controls, 'host-liveness')?.state).toBe('missed');
+    expect(disconnected).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(6500);
+
+    expect(disconnected).toEqual(['server']);
+    expect(lastOfType(guest.controls, 'host-liveness')?.state).toBe('dead');
   });
 });

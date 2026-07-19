@@ -31,17 +31,29 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
         <Text style={styles.title}>JEOPARDY</Text>
         <View style={styles.buttons}>
           {props.onResumeGame && (
-            <Pressable style={[styles.button, styles.resumeButton]} onPress={props.onResumeGame}>
+            <Pressable
+              style={({ pressed }) => [styles.button, styles.resumeButton, pressed && styles.buttonPressed]}
+              onPress={props.onResumeGame}
+            >
               <Text style={styles.buttonText}>RESUME GAME</Text>
             </Pressable>
           )}
-          <Pressable style={styles.button} onPress={props.onNewGame}>
+          <Pressable
+            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+            onPress={props.onNewGame}
+          >
             <Text style={styles.buttonText}>NEW GAME</Text>
           </Pressable>
-          <Pressable style={styles.button} onPress={props.onJoinGame}>
+          <Pressable
+            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+            onPress={props.onJoinGame}
+          >
             <Text style={styles.buttonText}>JOIN GAME</Text>
           </Pressable>
-          <Pressable style={styles.button} onPress={props.onSettings}>
+          <Pressable
+            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+            onPress={props.onSettings}
+          >
             <Text style={styles.buttonText}>SETTINGS</Text>
           </Pressable>
         </View>
@@ -81,6 +93,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 6,
     alignItems: 'center',
+  },
+  buttonPressed: {
+    backgroundColor: colors.activeOutline,
   },
   resumeButton: {
     borderWidth: 1,

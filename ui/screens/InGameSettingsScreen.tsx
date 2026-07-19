@@ -22,6 +22,7 @@ const SHEET_RADIUS = 18;
 const DISMISS_THRESHOLD = 80;
 const DISMISS_VELOCITY = 0.5;
 const SCREEN_SIDE_PADDING = 24;
+const BUILD_TAG = 'board recovery-2026-07-18';
 
 type SettingsField = 'playerName' | 'relayHost' | 'relayPort';
 
@@ -70,6 +71,7 @@ interface InGameSettingsScreenProps {
   onRelayHostChange: (host: string) => void;
   relayPort: string;
   onRelayPortChange: (port: string) => void;
+  roomCode?: number | undefined;
 }
 
 export function InGameSettingsScreen(props: InGameSettingsScreenProps) {
@@ -278,7 +280,12 @@ export function InGameSettingsScreen(props: InGameSettingsScreenProps) {
       >
         <Text style={styles.sectionHeading}>Game</Text>
 
-        <Text style={styles.label}>Animations</Text>
+        <Text style={styles.label}>Connection</Text>
+        <Text style={styles.detailText}>
+          {`${props.relayHost || 'localhost'}:${props.relayPort || '8787'} @ ${props.roomCode ?? '???'}`}
+        </Text>
+
+        <Text style={[styles.label, styles.stackedLabel]}>Animations</Text>
         <Pressable
           style={styles.toggleBox}
           onPress={() => props.onAnimationsChange(!props.animationsEnabled)}
@@ -379,6 +386,7 @@ export function InGameSettingsScreen(props: InGameSettingsScreenProps) {
                 {props.relayPort || '8787'}
               </Text>
             </Pressable>
+            <Text style={styles.buildTag}>{BUILD_TAG}</Text>
           </View>
         )}
       </ScrollView>
@@ -525,6 +533,17 @@ const styles = StyleSheet.create({
   },
   inputPlaceholder: {
     color: '#666',
+  },
+  detailText: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 13,
+    color: '#555',
+  },
+  buildTag: {
+    marginTop: 8,
+    fontFamily: typeTokens.ui500,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.16)',
   },
   advancedToggle: {
     marginTop: 24,

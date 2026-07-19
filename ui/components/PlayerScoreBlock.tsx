@@ -9,6 +9,8 @@ interface PlayerScoreBlockProps {
   activeTurn: boolean;
   /** Whether this player has disconnected. */
   disconnected?: boolean;
+  /** Small role marker rendered in the lower-left corner. */
+  roleMarker?: 'host' | 'promoting' | undefined;
   /** Whether to animate score changes. */
   animationsEnabled?: boolean;
   /** Whether to hide the score and display '?' instead. */
@@ -22,7 +24,7 @@ function formatScore(score: number): string {
   return score < 0 ? `-$${abs}` : `$${abs}`;
 }
 
-export function PlayerScoreBlock({ name, score, activeTurn, disconnected, animationsEnabled = true, hideScore = false, finalJeopardy = false }: PlayerScoreBlockProps) {
+export function PlayerScoreBlock({ name, score, activeTurn, disconnected, roleMarker, animationsEnabled = true, hideScore = false, finalJeopardy = false }: PlayerScoreBlockProps) {
   const [displayedScore, setDisplayedScore] = useState(score);
   const [animDiff, setAnimDiff] = useState<number | null>(null);
   
@@ -146,6 +148,11 @@ export function PlayerScoreBlock({ name, score, activeTurn, disconnected, animat
       <Text style={styles.name} numberOfLines={1} allowFontScaling={false}>
         {name.toUpperCase()}
       </Text>
+      {roleMarker && (
+        <Text style={styles.roleMarker} allowFontScaling={false}>
+          {roleMarker === 'promoting' ? 'P' : 'H'}
+        </Text>
+      )}
       
       <View style={styles.scoreContainer}>
         <Animated.Text
@@ -220,6 +227,15 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     color: colors.categoryText,
     opacity: 0.85,
+  },
+  roleMarker: {
+    position: 'absolute',
+    left: 5,
+    bottom: 2,
+    fontFamily: typeTokens.ui700,
+    fontSize: 10,
+    color: colors.goldBright,
+    opacity: 0.28,
   },
   scoreContainer: {
     position: 'relative',

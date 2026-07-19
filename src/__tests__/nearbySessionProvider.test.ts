@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createClient, sendAction, type GameClient } from '../client.js';
 import { createInitialState } from '../reducer.js';
 import type { GameData } from '../../data/gameLoader';
@@ -64,6 +64,7 @@ const bus = vi.hoisted(() => {
     },
     send(peerId: string, message: string) {
       const sender = state.current!;
+      if (sender.dead) return;
       const target = find(peerId);
       if (!target || target.dead) return;
       emit(target, 'onMessage', { peerId: sender.peerId, message });
@@ -89,6 +90,13 @@ const bus = vi.hoisted(() => {
       const prev = state.current;
       state.current = device;
       try { return fn(); } finally { state.current = prev; }
+    },
+    killSilently(peerId: string) {
+      const device = find(peerId);
+      if (!device) return;
+      device.dead = true;
+      state.current = device;
+      if (state.hosting?.device === device) state.hosting = null;
     },
     reset() {
       state.devices = [];
@@ -170,6 +178,7 @@ const clue = { id: 0, category: 'R1A', text: 'R1A Q0', answer: 'A0', value: 200 
 
 describe('NearbySessionProvider', () => {
   beforeEach(() => bus.reset());
+  afterEach(() => vi.useRealTimers());
 
   it('runs the lobby handshake over the fake native link', () => {
     const { host, guest } = setupLobby();
@@ -177,8 +186,14 @@ describe('NearbySessionProvider', () => {
     const guestLobby = lastOfType(guest, 'lobby-update');
     const names = (m: SessionControlMessage | undefined) =>
       (m?.players as { name: string }[] | undefined)?.map(p => p.name);
+    expect(typeof lastOfType(host, 'room-created')?.roomId).toBe('string');
+    expect(lastOfType(host, 'room-created')?.epoch).toBe(1);
     expect(names(hostLobby)).toEqual(['Alice', 'Bob']);
     expect(names(guestLobby)).toEqual(['Alice', 'Bob']);
+
+    guest.run(() => guest.provider.stop());
+
+    expect(names(lastOfType(host, 'lobby-update'))).toEqual(['Alice']);
   });
 
   it('starts a game with a real board on both sides (gameId)', () => {
@@ -267,6 +282,11 @@ describe('NearbySessionProvider', () => {
     // game-ready reattached the seat by name and pushed the live state.
     expect(rejoined.client?.playerId).toBe('bob');
     expect(rejoined.client?.state?.burnedClueIds).toContain(5);
+    expect(hostSawReconnect).toBe(false);
+
+    // The host UI clears its disconnected state only once the rejoining
+    // app confirms the game screen has mounted.
+    rejoined.run(() => sendAction(rejoined.provider, 'server', { type: 'CLIENT_SCREEN_READY' }));
     expect(hostSawReconnect).toBe(true);
 
     // The re-linked connection carries gameplay both ways again.
@@ -298,6 +318,76 @@ describe('NearbySessionProvider', () => {
     expect(guest.client?.state?.totalClues).toBe(6);
 
     host.run(() => host.provider.stop());
+  });
+
+  it('lets a surviving guest promote a saved nearby game and the old host rejoin', () => {
+    const promoted = createPeer('host', 'GUEST-PROMOTED');
+    const saved = {
+      ...createInitialState(['Alice', 'Bob'], 6, { category: 'FJ', text: 'FJ Q', answer: 'FJ A' }),
+      burnedClueIds: [0, 5],
+    };
+    saved.players['alice']!.score = 400;
+
+    promoted.run(() => promoted.provider.createRoom('Bob', 423, { roomId: 'room-a', epoch: 2 }));
+    promoted.run(() => promoted.provider.startGame({ resume: { state: saved, board: fixtures.game(3) } }));
+
+    const promotedStarted = lastOfType(promoted, 'game-started');
+    expect(promotedStarted?.isResume).toBe(true);
+    expect(promotedStarted?.roomId).toBe('room-a');
+    expect(promotedStarted?.epoch).toBe(2);
+    expect((promotedStarted?.board as GameData).gameNumber).toBe(3);
+    expect(promoted.client?.playerId).toBe('bob');
+    expect(promoted.client?.state?.players['alice']?.score).toBe(400);
+    expect(promoted.client?.state?.burnedClueIds).toEqual([0, 5]);
+
+    const formerHost = createPeer('guest', 'HOST-REJOIN');
+    formerHost.run(() => formerHost.provider.joinRoom(423, 'Alice', { roomId: 'room-a', epoch: 1 }));
+
+    const rejoinStarted = lastOfType(formerHost, 'game-started');
+    expect(rejoinStarted?.isResume).toBe(true);
+    expect(rejoinStarted?.roomId).toBe('room-a');
+    expect(rejoinStarted?.epoch).toBe(2);
+    expect((rejoinStarted?.board as GameData).gameNumber).toBe(3);
+    expect(formerHost.client?.playerId).toBe('alice');
+    expect(formerHost.client?.state?.players['alice']?.score).toBe(400);
+
+    formerHost.run(() => sendAction(formerHost.provider, 'server', { type: 'SKIP_CLUE', clueId: 6 }));
+    expect(promoted.client?.state?.burnedClueIds).toContain(6);
+    expect(formerHost.client?.state?.burnedClueIds).toContain(6);
+
+    promoted.run(() => promoted.provider.stop());
+  });
+
+  it('surfaces a newer epoch so a stale nearby host can demote', () => {
+    const staleHost = createPeer('host', 'HOST');
+    const newerAuthority = createPeer('guest', 'GUEST-PROMOTED');
+
+    staleHost.run(() => staleHost.provider.createRoom('Alice', 423, { roomId: 'room-a', epoch: 1 }));
+    newerAuthority.run(() => newerAuthority.provider.joinRoom(423, 'Bob', { roomId: 'room-a', epoch: 2 }));
+
+    const superseded = lastOfType(staleHost, 'superseded-host');
+    expect(superseded?.roomId).toBe('room-a');
+    expect(superseded?.epoch).toBe(2);
+    expect(superseded?.oldEpoch).toBe(1);
+    expect(lastOfType(newerAuthority, 'room-error')?.message).toBe('A newer nearby host is active');
+  });
+
+  it('detects a silent host death with the heartbeat watchdog', async () => {
+    vi.useFakeTimers();
+    const { guest } = setupLobby();
+    const disconnected: string[] = [];
+    guest.provider.onPeerDisconnected(peerId => disconnected.push(peerId));
+
+    bus.killSilently('HOST');
+    await vi.advanceTimersByTimeAsync(1200);
+
+    expect(lastOfType(guest, 'host-liveness')?.state).toBe('missed');
+    expect(disconnected).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(6500);
+
+    expect(disconnected).toEqual(['server']);
+    expect(lastOfType(guest, 'host-liveness')?.state).toBe('dead');
   });
 
   it('rejects an invalid resume state without starting a server', () => {

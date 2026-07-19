@@ -26,17 +26,26 @@ export function NewGameScreen({ onBluetooth, onNearby, onOnline, onBack }: NewGa
       >
         <Text style={styles.title}>NEW GAME</Text>
         <View style={styles.options}>
-          <Pressable style={styles.option} onPress={onBluetooth}>
+          <Pressable
+            style={({ pressed }) => [styles.option, pressed && styles.optionPressed]}
+            onPress={onBluetooth}
+          >
             <Text style={styles.optionTitle}>BLUETOOTH</Text>
-            <Text style={styles.optionDetail}>ROOMS 100-399</Text>
+            <Text style={styles.optionDetail}>PLAY IN THE SAME ROOM</Text>
           </Pressable>
-          <Pressable style={styles.option} onPress={onNearby}>
+          <Pressable
+            style={({ pressed }) => [styles.option, pressed && styles.optionPressed]}
+            onPress={onNearby}
+          >
             <Text style={styles.optionTitle}>NEARBY</Text>
-            <Text style={styles.optionDetail}>ROOMS 400-499</Text>
+            <Text style={styles.optionDetail}>PLAY ON THE SAME NETWORK</Text>
           </Pressable>
-          <Pressable style={styles.option} onPress={onOnline}>
+          <Pressable
+            style={({ pressed }) => [styles.option, pressed && styles.optionPressed]}
+            onPress={onOnline}
+          >
             <Text style={styles.optionTitle}>ONLINE</Text>
-            <Text style={styles.optionDetail}>ROOMS 500-999</Text>
+            <Text style={styles.optionDetail}>PLAY FROM ANYWHERE</Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -58,6 +67,7 @@ const styles = StyleSheet.create({
   title: { fontFamily: typeTokens.board, fontSize: 36, color: colors.gold, marginBottom: TITLE_TO_CONTENT_GAP },
   options: { width: '100%', alignItems: 'center', gap: 16 },
   option: { width: '100%', maxWidth: 360, padding: 22, backgroundColor: colors.cell, borderRadius: 8, alignItems: 'center' },
+  optionPressed: { backgroundColor: colors.activeOutline },
   optionTitle: { fontFamily: typeTokens.ui700, fontSize: 22, color: colors.gold },
   optionDetail: { fontFamily: typeTokens.ui500, fontSize: 12, color: '#aaa', marginTop: 4, letterSpacing: 1 },
 });
