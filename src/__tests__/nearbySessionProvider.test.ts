@@ -372,6 +372,28 @@ describe('NearbySessionProvider', () => {
     expect(lastOfType(newerAuthority, 'room-error')?.message).toBe('A newer nearby host is active');
   });
 
+  it('does not mark a stale lower-epoch host connected while recovering', async () => {
+    vi.useFakeTimers();
+    const host = createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+
+    host.run(() => host.provider.createRoom('Alice', 423, { roomId: 'room-a', epoch: 2 }));
+    guest.run(() => guest.provider.joinRoom(423, 'Bob', { roomId: 'room-a', epoch: 2 }));
+    bus.killSilently('HOST');
+    await vi.advanceTimersByTimeAsync(1200);
+
+    expect(lastOfType(guest, 'host-liveness')?.state).toBe('missed');
+    const controlsAfterMissed = guest.controls.length;
+
+    const staleHost = createPeer('host', 'STALE-HOST');
+    staleHost.run(() => staleHost.provider.createRoom('Alice', 423, { roomId: 'room-a', epoch: 1 }));
+    guest.run(() => guest.provider.joinRoom(423, 'Bob', { roomId: 'room-a', epoch: 2 }));
+
+    const emittedAfterMissed = guest.controls.slice(controlsAfterMissed);
+    expect(emittedAfterMissed.some(m => m.type === 'host-liveness' && m.state === 'connected')).toBe(false);
+    expect(lastOfType(guest, 'room-error')?.message).toBe('A newer nearby host is active');
+  });
+
   it('detects a silent host death with the heartbeat watchdog', async () => {
     vi.useFakeTimers();
     const { guest } = setupLobby();

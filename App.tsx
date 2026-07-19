@@ -518,7 +518,26 @@ export default function App() {
     );
     transportRef.current = transport;
 
+    const abandonKeptMountedRecovery = (message: string): boolean => {
+      if (!keepGameMounted) return false;
+      sessionRef.current = null;
+      pendingResumeRef.current = null;
+      pendingGameScreenRef.current = null;
+      setLobbyFadingOut(false);
+      setLocalRecovery('none');
+      setPeerConnectionStatus('connected');
+      setLobbyError(message);
+      if (PERSISTENCE_ENABLED) void clearSession();
+      refreshResumeAvailable();
+      setScreen({ type: 'menu' });
+      if (transportRef.current === transport) transportRef.current = null;
+      myPeerIdRef.current = null;
+      transport.stop();
+      return true;
+    };
+
     transport.onError((err) => {
+      if (abandonKeptMountedRecovery(err)) return;
       // Mid-game socket loss is handled by the rejoin loop, not an error label.
       if (screenRef.current.type === 'game') {
         handleSocketLost();
@@ -541,6 +560,7 @@ export default function App() {
     const timeout = setTimeout(() => {
       if (!myPeerIdRef.current) {
         const err = connectionTimeoutMessage(mode);
+        if (abandonKeptMountedRecovery(err)) return;
         if (action !== 'create') {
           setJoinError(err);
         } else {
@@ -659,6 +679,7 @@ export default function App() {
           break;
         }
         case 'room-error':
+          if (abandonKeptMountedRecovery(msg.message as string)) return;
           if (action !== 'create') {
             setJoinError(msg.message as string);
           } else {
@@ -678,10 +699,11 @@ export default function App() {
       }
     }).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : 'Could not start session';
+      if (abandonKeptMountedRecovery(message)) return;
       if (action === 'create') setLobbyError(message);
       else setJoinError(message);
     });
-  }, [relayHost, relayPort, playerName, disconnect, cancelReconnect, handleStateUpdate, handleSocketLost, handlePeerDisconnected]);
+  }, [relayHost, relayPort, playerName, disconnect, cancelReconnect, refreshResumeAvailable, handleStateUpdate, handleSocketLost, handlePeerDisconnected]);
 
   const promoteLocalSessionToHost = useCallback((session: SavedSession) => {
     const inMemorySnapshot = initialGameState?.state
@@ -709,7 +731,11 @@ export default function App() {
 
     void loadSnapshot().then((snapshot) => {
       if (!snapshot || snapshot.mode !== session.mode) {
+        disconnect();
         sessionRef.current = null;
+        pendingResumeRef.current = null;
+        pendingGameScreenRef.current = null;
+        setLobbyFadingOut(false);
         void clearSession();
         refreshResumeAvailable();
         setScreen({ type: 'menu' });
@@ -726,7 +752,7 @@ export default function App() {
         keepGameMounted: true,
       });
     });
-  }, [boardData, connectAndDo, initialGameState, refreshResumeAvailable]);
+  }, [boardData, connectAndDo, disconnect, initialGameState, refreshResumeAvailable]);
   promoteLocalSessionRef.current = promoteLocalSessionToHost;
 
   // Dev shortcut: auto-create or join room
