@@ -28,7 +28,7 @@ interface NetworkedGameProps {
   serverPeerId: string;
   initialState?: { state: GameState; playerId: string | null; canUndo?: boolean; canRedo?: boolean } | null;
   boardData?: GameData | null;
-  peerDisconnected?: boolean;
+  remotePeerConnectionStatus?: 'connected' | 'remote-disconnected';
   localIsHost?: boolean;
   localRecovery?: 'none' | 'reconnecting' | 'promoting';
   roomCode?: number;
@@ -61,7 +61,7 @@ const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
 
 
 
-export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerDisconnected, localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, onBoardVisible, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume }: NetworkedGameProps) {
+export function NetworkedGame({ transport, serverPeerId, initialState, boardData, remotePeerConnectionStatus = 'connected', localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, onBoardVisible, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume }: NetworkedGameProps) {
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
@@ -350,7 +350,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           : []
       : [];
 
-  const disconnectedPlayerId = peerDisconnected
+  const disconnectedPlayerId = remotePeerConnectionStatus === 'remote-disconnected'
     ? Object.keys(gameState.players).find(id => id !== playerId) ?? null
     : null;
   const remotePlayerId = Object.keys(gameState.players).find(id => id !== playerId) ?? null;
