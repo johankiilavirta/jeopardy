@@ -319,12 +319,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     if (gameState?.status === 'FINAL_JEOPARDY_ANSWER') setLocalEcho(null);
   }, [gameState?.status]);
 
-  useEffect(() => {
-    if (!gameState || !playerId || localIsHost) return;
-    const frame = requestAnimationFrame(() => onBoardVisible?.());
-    return () => cancelAnimationFrame(frame);
-  }, [gameState, playerId, localIsHost, onBoardVisible]);
-
   if (!gameState || !playerId) {
     console.log('Stuck on connecting! gameState:', !!gameState, 'playerId:', playerId);
     return (
@@ -439,6 +433,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
             promotingPlayerId={promotingPlayerId}
             recovering={recoveringLocally}
             boardAnimKey={animationsEnabled ? boardAnimKeyRef.current : 0}
+            onBoardVisible={!localIsHost ? onBoardVisible : undefined}
             animationsEnabled={animationsEnabled}
             judgingPlayerId={gameState.status === 'REVEAL' && !isFinalClue ? onStand : null}
             onSelectClue={handleSelectClue}
