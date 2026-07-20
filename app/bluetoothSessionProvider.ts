@@ -16,7 +16,7 @@ const BOARD_PRELOAD_CAPABILITY = 'board-preload-v1';
 const SERVER_PEER_ID = 'server';
 const HEARTBEAT_MS = 500;
 const HEARTBEAT_MISSED_MS = 1000;
-const HEARTBEAT_TIMEOUT_MS = 1000;
+const HEARTBEAT_TIMEOUT_MS = 5000;
 const AUTHORITY_SCAN_MS = 1000;
 type Role = 'host' | 'guest';
 
