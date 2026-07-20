@@ -354,7 +354,11 @@ export default function App() {
         else handleSocketLost();
       });
       transport.onPeerDisconnected(() => {
-        if (isActiveReconnect()) handlePeerDisconnected();
+        if (isActiveReconnect()) {
+          retry();
+          return;
+        }
+        handlePeerDisconnected();
       });
       transport.onPeerConnected(() => {
         if (!isActiveReconnect()) return;

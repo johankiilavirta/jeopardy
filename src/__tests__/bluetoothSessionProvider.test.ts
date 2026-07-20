@@ -83,6 +83,10 @@ const bus = vi.hoisted(() => {
       state.current = device;
       if (state.hosting?.device === device) state.hosting = null;
     },
+    emitTo(peerId: string, event: string, payload: unknown) {
+      const device = find(peerId);
+      if (device) emit(device, event, payload);
+    },
     reset() {
       state.devices = [];
       state.current = null;
@@ -273,6 +277,28 @@ describe('BluetoothSessionProvider', () => {
     guest.run(() => guest.provider.joinRoom(142, 'Bob'));
 
     bus.killSilently('HOST');
+    await vi.advanceTimersByTimeAsync(1200);
+
+    expect(lastOfType(guest.controls, 'host-liveness')?.state).toBe('missed');
+    expect(disconnected).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(6500);
+
+    expect(disconnected).toEqual(['server']);
+    expect(lastOfType(guest.controls, 'host-liveness')?.state).toBe('dead');
+  });
+
+  it('detects silent host death after native connect even before authority arrives', async () => {
+    vi.useFakeTimers();
+    createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+    const disconnected: string[] = [];
+
+    guest.provider.onPeerDisconnected(peerId => disconnected.push(peerId));
+    guest.run(() => guest.provider.joinRoom(142, 'Bob', { roomId: 'room-a', epoch: 2 }));
+    bus.emitTo('GUEST', 'onPeerConnected', { peerId: 'HOST' });
+    bus.killSilently('HOST');
+
     await vi.advanceTimersByTimeAsync(1200);
 
     expect(lastOfType(guest.controls, 'host-liveness')?.state).toBe('missed');

@@ -254,6 +254,7 @@ export class NearbySessionProvider implements SessionProvider {
   private handleNativeConnected(peerId: string): void {
     this.remotePeerId = peerId;
     if (this.role === 'guest') {
+      this.notePotentialHostSeen();
       this.connectCbs.forEach(cb => cb(SERVER_PEER_ID));
     }
     if (this.role === 'guest') {
@@ -433,6 +434,15 @@ export class NearbySessionProvider implements SessionProvider {
       this.hostLivenessState = 'connected';
       this.emitControl({ type: 'host-liveness', state: 'connected', ...this.authorityFields() });
     }
+    this.ensureHeartbeatWatchdog();
+  }
+
+  private notePotentialHostSeen(): void {
+    this.lastHostSeenAt = Date.now();
+    this.ensureHeartbeatWatchdog();
+  }
+
+  private ensureHeartbeatWatchdog(): void {
     if (this.heartbeatWatchdogTimer != null) return;
     this.heartbeatWatchdogTimer = setInterval(() => {
       if (this.closed || this.role !== 'guest' || this.hostDisconnectEmitted) return;
