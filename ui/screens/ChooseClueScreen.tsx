@@ -25,6 +25,8 @@ interface ChooseClueScreenProps {
   recovering?: boolean;
   /** Passed through to Board to trigger the DJ board-intro flash. */
   boardAnimKey?: number | undefined;
+  /** Fired after the board has reported ready and the screen reveal completes. */
+  onBoardVisible?: (() => void) | undefined;
   /** Highlights the player whose answer is being judged. */
   judgingPlayerId?: string | null | undefined;
   animationsEnabled?: boolean;
@@ -41,6 +43,7 @@ export function ChooseClueScreen({
   promotingPlayerId,
   recovering = false,
   boardAnimKey,
+  onBoardVisible,
   judgingPlayerId,
   animationsEnabled = true,
 }: ChooseClueScreenProps) {
@@ -83,8 +86,10 @@ export function ChooseClueScreen({
   const handleBoardReady = useCallback(() => {
     if (revealedRef.current) return;
     revealedRef.current = true;
-    Animated.timing(revealOpacity, { toValue: 1, duration: 220, useNativeDriver: true }).start();
-  }, [revealOpacity]);
+    Animated.timing(revealOpacity, { toValue: 1, duration: 220, useNativeDriver: true }).start(({ finished }) => {
+      if (finished) onBoardVisible?.();
+    });
+  }, [onBoardVisible, revealOpacity]);
 
   return (
     <Animated.View style={[styles.screen, { opacity: revealOpacity }]}>

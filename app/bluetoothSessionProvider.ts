@@ -119,6 +119,7 @@ export class BluetoothSessionProvider implements SessionProvider {
   private playerName = '';
   private remotePeerId: string | null = null;
   private remotePlayerName: string | null = null;
+  private hostAuthorityAccepted = false;
   private targetRoomCode: number | null = null;
   private localEndpoint: InProcessTransport | null = null;
   private localServer: InProcessTransport | null = null;
@@ -182,6 +183,7 @@ export class BluetoothSessionProvider implements SessionProvider {
     this.playerName = playerName;
     this.roomId = authority?.roomId ?? '';
     this.epoch = normalizeEpoch(authority?.epoch, 0);
+    this.hostAuthorityAccepted = false;
     this.targetRoomCode = roomCode;
     BluetoothNetwork.browse();
   }
@@ -308,7 +310,6 @@ export class BluetoothSessionProvider implements SessionProvider {
   private handleNativeConnected(peerId: string): void {
     this.remotePeerId = peerId;
     if (this.role === 'guest') {
-      this.markHostSeen();
       this.connectCbs.forEach(cb => cb(SERVER_PEER_ID));
     }
     if (this.role === 'guest') {
@@ -327,6 +328,7 @@ export class BluetoothSessionProvider implements SessionProvider {
       this.remotePeerId = null;
       this.remotePlayerName = null;
       this.remoteSupportsBoardPreload = false;
+      this.hostAuthorityAccepted = false;
     }
     if (this.pendingStart) {
       clearTimeout(this.pendingStart.timeout);
@@ -338,7 +340,6 @@ export class BluetoothSessionProvider implements SessionProvider {
   }
 
   private handleNativeMessage(peerId: string, message: string): void {
-    if (this.role === 'guest') this.markHostSeen();
     const control = isControl(message);
     if (!control) {
       if (this.role === 'host' && isClientScreenReady(message)) {
@@ -348,7 +349,10 @@ export class BluetoothSessionProvider implements SessionProvider {
         return;
       }
       if (this.role === 'host') this.serverTransport?.deliverRemote(peerId, message);
-      else this.messageCbs.forEach(cb => cb(SERVER_PEER_ID, message));
+      else {
+        if (this.hostAuthorityAccepted) this.markHostSeen();
+        this.messageCbs.forEach(cb => cb(SERVER_PEER_ID, message));
+      }
       return;
     }
 
@@ -432,6 +436,12 @@ export class BluetoothSessionProvider implements SessionProvider {
       this.markHostSeen();
       return;
     }
+    if (this.role === 'guest' && control.type === 'lobby-update') {
+      if (!this.acceptHostAuthority(control)) return;
+      this.markHostSeen();
+      this.emitControl(control as SessionControlMessage);
+      return;
+    }
     this.emitControl(control as SessionControlMessage);
   }
 
@@ -475,11 +485,15 @@ export class BluetoothSessionProvider implements SessionProvider {
       this.emitError('Different Bluetooth game is using this room code');
       return false;
     }
-    if (!control.roomId) return true;
+    if (!control.roomId) {
+      this.hostAuthorityAccepted = true;
+      return true;
+    }
     if (control.roomId) this.roomId = control.roomId;
     const incomingEpoch = normalizeEpoch(control.epoch, 0);
     if (this.roomId && incomingEpoch < this.epoch) return false;
     if (incomingEpoch > this.epoch) this.epoch = incomingEpoch;
+    this.hostAuthorityAccepted = true;
     return true;
   }
 
