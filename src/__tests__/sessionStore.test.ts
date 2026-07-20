@@ -53,10 +53,11 @@ describe('sessionStore', () => {
       relayPort: '8787',
       roomId: 'room-a',
       epoch: 2,
+      leaderId: 'leader-a',
       isHost: true,
     });
     const session = await loadSession();
-    expect(session).toMatchObject({ mode: 'nearby', roomCode: 423, playerName: 'Alice', roomId: 'room-a', epoch: 2, isHost: true });
+    expect(session).toMatchObject({ mode: 'nearby', roomCode: 423, playerName: 'Alice', roomId: 'room-a', epoch: 2, leaderId: 'leader-a', isHost: true });
   });
 
   it('defaults legacy sessions (no mode/isHost/authority) to an online guest', async () => {
@@ -69,6 +70,7 @@ describe('sessionStore', () => {
     expect(session?.isHost).toBe(false);
     expect(session?.roomId).toBe('legacy-online-512');
     expect(session?.epoch).toBe(1);
+    expect(session?.leaderId).toBe('');
   });
 
   it('round-trips a snapshot with board and mode', async () => {

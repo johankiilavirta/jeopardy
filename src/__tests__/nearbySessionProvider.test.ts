@@ -179,6 +179,7 @@ function setupLobby(): { host: TestPeer; guest: TestPeer } {
 }
 
 const clue = { id: 0, category: 'R1A', text: 'R1A Q0', answer: 'A0', value: 200 };
+const auth = (epoch: number, leaderId = `leader-${epoch}`) => ({ roomId: 'room-a', epoch, leaderId });
 
 describe('NearbySessionProvider', () => {
   beforeEach(() => bus.reset());
@@ -332,7 +333,7 @@ describe('NearbySessionProvider', () => {
     };
     saved.players['alice']!.score = 400;
 
-    promoted.run(() => promoted.provider.createRoom('Bob', 423, { roomId: 'room-a', epoch: 2 }));
+    promoted.run(() => promoted.provider.createRoom('Bob', 423, auth(2, 'leader-bob')));
     promoted.run(() => promoted.provider.startGame({ resume: { state: saved, board: fixtures.game(3) } }));
 
     const promotedStarted = lastOfType(promoted, 'game-started');
@@ -345,7 +346,7 @@ describe('NearbySessionProvider', () => {
     expect(promoted.client?.state?.burnedClueIds).toEqual([0, 5]);
 
     const formerHost = createPeer('guest', 'HOST-REJOIN');
-    formerHost.run(() => formerHost.provider.joinRoom(423, 'Alice', { roomId: 'room-a', epoch: 1 }));
+    formerHost.run(() => formerHost.provider.joinRoom(423, 'Alice', auth(1, 'leader-alice')));
 
     const rejoinStarted = lastOfType(formerHost, 'game-started');
     expect(rejoinStarted?.isResume).toBe(true);
@@ -366,8 +367,8 @@ describe('NearbySessionProvider', () => {
     const staleHost = createPeer('host', 'HOST');
     const newerAuthority = createPeer('guest', 'GUEST-PROMOTED');
 
-    staleHost.run(() => staleHost.provider.createRoom('Alice', 423, { roomId: 'room-a', epoch: 1 }));
-    newerAuthority.run(() => newerAuthority.provider.joinRoom(423, 'Bob', { roomId: 'room-a', epoch: 2 }));
+    staleHost.run(() => staleHost.provider.createRoom('Alice', 423, auth(1, 'leader-alice')));
+    newerAuthority.run(() => newerAuthority.provider.joinRoom(423, 'Bob', auth(2, 'leader-bob')));
 
     const superseded = lastOfType(staleHost, 'superseded-host');
     expect(superseded?.roomId).toBe('room-a');
@@ -376,25 +377,70 @@ describe('NearbySessionProvider', () => {
     expect(lastOfType(newerAuthority, 'room-error')?.message).toBe('A newer nearby host is active');
   });
 
+  it('uses leader id to demote a same-epoch stale nearby host', () => {
+    const staleHost = createPeer('host', 'HOST');
+
+    staleHost.run(() => staleHost.provider.createRoom('Alice', 423, auth(2, 'leader-a')));
+    bus.emitTo('HOST', 'onMessage', {
+      peerId: 'OTHER-HOST',
+      message: JSON.stringify({
+        __nearby: true,
+        type: 'authority-hello',
+        roomCode: 423,
+        roomId: 'room-a',
+        epoch: 2,
+        leaderId: 'leader-z',
+      }),
+    });
+
+    const superseded = lastOfType(staleHost, 'superseded-host');
+    expect(superseded?.roomId).toBe('room-a');
+    expect(superseded?.epoch).toBe(2);
+    expect(superseded?.leaderId).toBe('leader-z');
+    expect(superseded?.oldLeaderId).toBe('leader-a');
+  });
+
   it('does not mark a stale lower-epoch host connected while recovering', async () => {
     vi.useFakeTimers();
     const host = createPeer('host', 'HOST');
     const guest = createPeer('guest', 'GUEST');
 
-    host.run(() => host.provider.createRoom('Alice', 423, { roomId: 'room-a', epoch: 2 }));
-    guest.run(() => guest.provider.joinRoom(423, 'Bob', { roomId: 'room-a', epoch: 2 }));
+    host.run(() => host.provider.createRoom('Alice', 423, auth(2, 'leader-bob')));
+    guest.run(() => guest.provider.joinRoom(423, 'Bob', auth(2, 'leader-bob')));
     bus.killSilently('HOST');
     await vi.advanceTimersByTimeAsync(1200);
 
-    expect(lastOfType(guest, 'host-liveness')?.state).toBe('missed');
-    const controlsAfterMissed = guest.controls.length;
+    expect(lastOfType(guest, 'host-liveness')?.state).toBe('dead');
+    const controlsAfterDead = guest.controls.length;
 
     const staleHost = createPeer('host', 'STALE-HOST');
-    staleHost.run(() => staleHost.provider.createRoom('Alice', 423, { roomId: 'room-a', epoch: 1 }));
-    guest.run(() => guest.provider.joinRoom(423, 'Bob', { roomId: 'room-a', epoch: 2 }));
+    staleHost.run(() => staleHost.provider.createRoom('Alice', 423, auth(1, 'leader-alice')));
+    guest.run(() => guest.provider.joinRoom(423, 'Bob', auth(2, 'leader-bob')));
 
-    const emittedAfterMissed = guest.controls.slice(controlsAfterMissed);
-    expect(emittedAfterMissed.some(m => m.type === 'host-liveness' && m.state === 'connected')).toBe(false);
+    const emittedAfterDead = guest.controls.slice(controlsAfterDead);
+    expect(emittedAfterDead.some(m => m.type === 'host-liveness' && m.state === 'connected')).toBe(false);
+    expect(lastOfType(guest, 'room-error')?.message).toBe('A newer nearby host is active');
+  });
+
+  it('does not mark a lower-leader same-epoch host connected while recovering', async () => {
+    vi.useFakeTimers();
+    const host = createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+
+    host.run(() => host.provider.createRoom('Alice', 423, auth(2, 'leader-z')));
+    guest.run(() => guest.provider.joinRoom(423, 'Bob', auth(2, 'leader-z')));
+    bus.killSilently('HOST');
+    await vi.advanceTimersByTimeAsync(1200);
+
+    expect(lastOfType(guest, 'host-liveness')?.state).toBe('dead');
+    const controlsAfterDead = guest.controls.length;
+
+    const lowerLeaderHost = createPeer('host', 'LOWER-HOST');
+    lowerLeaderHost.run(() => lowerLeaderHost.provider.createRoom('Alice', 423, auth(2, 'leader-a')));
+    guest.run(() => guest.provider.joinRoom(423, 'Bob', auth(2, 'leader-z')));
+
+    const emittedAfterDead = guest.controls.slice(controlsAfterDead);
+    expect(emittedAfterDead.some(m => m.type === 'host-liveness' && m.state === 'connected')).toBe(false);
     expect(lastOfType(guest, 'room-error')?.message).toBe('A newer nearby host is active');
   });
 
@@ -407,11 +453,6 @@ describe('NearbySessionProvider', () => {
     bus.killSilently('HOST');
     await vi.advanceTimersByTimeAsync(1200);
 
-    expect(lastOfType(guest, 'host-liveness')?.state).toBe('missed');
-    expect(disconnected).toEqual([]);
-
-    await vi.advanceTimersByTimeAsync(6500);
-
     expect(disconnected).toEqual(['server']);
     expect(lastOfType(guest, 'host-liveness')?.state).toBe('dead');
   });
@@ -423,16 +464,11 @@ describe('NearbySessionProvider', () => {
     const disconnected: string[] = [];
 
     guest.provider.onPeerDisconnected(peerId => disconnected.push(peerId));
-    guest.run(() => guest.provider.joinRoom(423, 'Bob', { roomId: 'room-a', epoch: 2 }));
+    guest.run(() => guest.provider.joinRoom(423, 'Bob', auth(2, 'leader-bob')));
     bus.emitTo('GUEST', 'onPeerConnected', { peerId: 'HOST' });
     bus.killSilently('HOST');
 
     await vi.advanceTimersByTimeAsync(1200);
-
-    expect(lastOfType(guest, 'host-liveness')?.state).toBe('missed');
-    expect(disconnected).toEqual([]);
-
-    await vi.advanceTimersByTimeAsync(6500);
 
     expect(disconnected).toEqual(['server']);
     expect(lastOfType(guest, 'host-liveness')?.state).toBe('dead');

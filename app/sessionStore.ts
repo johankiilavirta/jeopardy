@@ -16,7 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { GameState } from '../src/types';
 import type { GameData } from '../data/gameLoader';
 import type { SessionMode } from './sessionProvider';
-import { legacyRoomId, normalizeEpoch } from './sessionAuthority';
+import { legacyRoomId, normalizeEpoch, normalizeLeaderId } from './sessionAuthority';
 
 const SESSION_KEY = 'jeopardy/session';
 const SNAPSHOT_STATE_KEY = 'jeopardy/snapshot-state';
@@ -39,6 +39,8 @@ export interface SavedSession {
   roomId: string;
   /** Monotonic leadership version. A promoted local host increments it. */
   epoch: number;
+  /** Deterministic tie-breaker when competing hosts claim the same epoch. */
+  leaderId: string;
   /** Whether this device currently believes it is the authoritative host. */
   isHost: boolean;
   savedAt: number;
@@ -80,6 +82,7 @@ export async function loadSession(): Promise<SavedSession | null> {
       isHost?: boolean;
       roomId?: string;
       epoch?: number;
+      leaderId?: string;
     };
     // Sessions saved before connection modes existed were all relay rooms;
     // before isHost/authority existed, reconnecting never depended on role
@@ -90,6 +93,7 @@ export async function loadSession(): Promise<SavedSession | null> {
       mode,
       roomId: parsed.roomId ?? legacyRoomId(mode, parsed.roomCode),
       epoch: normalizeEpoch(parsed.epoch),
+      leaderId: normalizeLeaderId(parsed.leaderId),
       isHost: parsed.isHost ?? false,
     };
     if (typeof session.roomCode !== 'number' || Date.now() - session.savedAt > SESSION_TTL_MS) {

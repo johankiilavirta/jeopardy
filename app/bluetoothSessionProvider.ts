@@ -6,7 +6,7 @@ import { createServer, type GameServer } from '../src/server';
 import type { Transport } from '../src/transport';
 import type { GameState } from '../src/types';
 import type { SessionControlMessage, SessionProvider } from './sessionProvider';
-import { createRoomId, normalizeEpoch, type SessionAuthority } from './sessionAuthority';
+import { compareAuthority, createLeaderId, createRoomId, normalizeEpoch, normalizeLeaderId, type SessionAuthority } from './sessionAuthority';
 
 // Keep the wire version at v2 so older Bluetooth builds accept our hello.
 // Newer builds advertise board preloading as a capability.
@@ -16,7 +16,7 @@ const BOARD_PRELOAD_CAPABILITY = 'board-preload-v1';
 const SERVER_PEER_ID = 'server';
 const HEARTBEAT_MS = 500;
 const HEARTBEAT_MISSED_MS = 1000;
-const HEARTBEAT_TIMEOUT_MS = 7000;
+const HEARTBEAT_TIMEOUT_MS = 1000;
 type Role = 'host' | 'guest';
 
 type BluetoothControl = {
@@ -30,6 +30,8 @@ type BluetoothControl = {
   roomCode?: number;
   roomId?: string;
   epoch?: number;
+  leaderId?: string;
+  oldLeaderId?: string;
   board?: GameData | null;
   isResume?: boolean;
   startId?: number;
@@ -116,6 +118,7 @@ export class BluetoothSessionProvider implements SessionProvider {
   private roomCode = 0;
   private roomId = '';
   private epoch = 1;
+  private leaderId = '';
   private playerName = '';
   private remotePeerId: string | null = null;
   private remotePlayerName: string | null = null;
@@ -172,6 +175,7 @@ export class BluetoothSessionProvider implements SessionProvider {
     this.roomCode = requestedRoomCode ?? (100 + Math.floor(Math.random() * 300));
     this.roomId = authority?.roomId ?? createRoomId();
     this.epoch = normalizeEpoch(authority?.epoch);
+    this.leaderId = normalizeLeaderId(authority?.leaderId, createLeaderId());
     BluetoothNetwork.host(this.roomCode, playerName);
     this.emitControl({ type: 'room-created', ...this.authorityFields() });
     this.emitLobby();
@@ -183,6 +187,7 @@ export class BluetoothSessionProvider implements SessionProvider {
     this.playerName = playerName;
     this.roomId = authority?.roomId ?? '';
     this.epoch = normalizeEpoch(authority?.epoch, 0);
+    this.leaderId = normalizeLeaderId(authority?.leaderId);
     this.hostAuthorityAccepted = false;
     this.targetRoomCode = roomCode;
     BluetoothNetwork.browse();
@@ -389,6 +394,10 @@ export class BluetoothSessionProvider implements SessionProvider {
       this.emitLobby();
       return;
     }
+    if (this.role === 'host' && control.type === 'authority-hello') {
+      if (this.handleHostAuthorityConflict(peerId, control)) return;
+      return;
+    }
     if (this.role === 'host' && control.type === 'board-ready') {
       const pending = this.pendingStart;
       if (pending && control.startId === pending.startId) {
@@ -458,23 +467,38 @@ export class BluetoothSessionProvider implements SessionProvider {
     if (this.remotePeerId) this.sendControl(this.remotePeerId, message);
   }
 
-  private authorityFields(): { roomCode: number; roomId: string; epoch: number } {
-    return { roomCode: this.roomCode, roomId: this.roomId, epoch: this.epoch };
+  private authorityFields(): { roomCode: number; roomId: string; epoch: number; leaderId: string } {
+    return { roomCode: this.roomCode, roomId: this.roomId, epoch: this.epoch, leaderId: this.leaderId };
   }
 
   private knownAuthorityFields(): Partial<SessionAuthority> {
-    return this.roomId ? { roomId: this.roomId, epoch: this.epoch } : {};
+    return this.roomId ? { roomId: this.roomId, epoch: this.epoch, leaderId: this.leaderId } : {};
+  }
+
+  private controlAuthority(control: BluetoothControl): SessionAuthority | null {
+    return control.roomId
+      ? {
+        roomId: control.roomId,
+        epoch: normalizeEpoch(control.epoch, 0),
+        leaderId: normalizeLeaderId(control.leaderId),
+      }
+      : null;
+  }
+
+  private currentAuthority(): SessionAuthority | null {
+    return this.roomId ? { roomId: this.roomId, epoch: this.epoch, leaderId: this.leaderId } : null;
   }
 
   private handleHostAuthorityConflict(peerId: string, control: BluetoothControl): boolean {
-    if (!control.roomId) return false;
-    if (this.roomId && control.roomId !== this.roomId) {
+    const incoming = this.controlAuthority(control);
+    if (!incoming) return false;
+    if (this.roomId && incoming.roomId !== this.roomId) {
       this.sendControl(peerId, { type: 'room-error', message: 'Different Bluetooth game is using this room code' });
       return true;
     }
-    const incomingEpoch = normalizeEpoch(control.epoch, 0);
-    if (incomingEpoch > this.epoch) {
-      this.emitControl({ type: 'superseded-host', ...this.authorityFields(), epoch: incomingEpoch, oldEpoch: this.epoch });
+    const current = this.currentAuthority();
+    if (current && compareAuthority(incoming, current) > 0) {
+      this.emitControl({ type: 'superseded-host', roomCode: this.roomCode, ...incoming, oldEpoch: this.epoch, oldLeaderId: this.leaderId });
       this.sendControl(peerId, { type: 'room-error', message: 'A newer Bluetooth host is active', ...this.authorityFields() });
       return true;
     }
@@ -482,18 +506,20 @@ export class BluetoothSessionProvider implements SessionProvider {
   }
 
   private acceptHostAuthority(control: BluetoothControl): boolean {
-    if (control.roomId && this.roomId && control.roomId !== this.roomId) {
+    const incoming = this.controlAuthority(control);
+    if (incoming && this.roomId && incoming.roomId !== this.roomId) {
       this.emitError('Different Bluetooth game is using this room code');
       return false;
     }
-    if (!control.roomId) {
+    if (!incoming) {
       this.hostAuthorityAccepted = true;
       return true;
     }
-    if (control.roomId) this.roomId = control.roomId;
-    const incomingEpoch = normalizeEpoch(control.epoch, 0);
-    if (this.roomId && incomingEpoch < this.epoch) return false;
-    if (incomingEpoch > this.epoch) this.epoch = incomingEpoch;
+    const current = this.currentAuthority();
+    if (current && compareAuthority(incoming, current) < 0) return false;
+    this.roomId = incoming.roomId;
+    this.epoch = incoming.epoch;
+    this.leaderId = incoming.leaderId;
     this.hostAuthorityAccepted = true;
     return true;
   }

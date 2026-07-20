@@ -80,6 +80,17 @@ public final class NearbyNetworkModule: Module {
   }
 
   private func startBrowsing() {
+    if let peer = localPeer, let session {
+      if browser == nil {
+        let browser = MCNearbyServiceBrowser(peer: peer, serviceType: serviceType)
+        browser.delegate = delegateProxy
+        self.browser = browser
+        browser.startBrowsingForPeers()
+      }
+      sendEvent("onStateChanged", ["state": advertiser == nil ? "browsing" : "hosting+browsing"])
+      return
+    }
+
     stopAll()
 
     let peer = makePeer(displayName: "guest")
