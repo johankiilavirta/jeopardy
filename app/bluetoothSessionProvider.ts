@@ -6,7 +6,7 @@ import { createServer, type GameServer } from '../src/server';
 import type { Transport } from '../src/transport';
 import type { GameState } from '../src/types';
 import type { SessionControlMessage, SessionProvider } from './sessionProvider';
-import { createRoomId, normalizeEpoch, type SessionAuthority } from './sessionAuthority';
+import { compareAuthority, createLeaderId, createRoomId, normalizeEpoch, normalizeLeaderId, type SessionAuthority } from './sessionAuthority';
 
 // Keep the wire version at v2 so older Bluetooth builds accept our hello.
 // Newer builds advertise board preloading as a capability.
@@ -16,7 +16,8 @@ const BOARD_PRELOAD_CAPABILITY = 'board-preload-v1';
 const SERVER_PEER_ID = 'server';
 const HEARTBEAT_MS = 500;
 const HEARTBEAT_MISSED_MS = 1000;
-const HEARTBEAT_TIMEOUT_MS = 7000;
+const HEARTBEAT_TIMEOUT_MS = 1000;
+const AUTHORITY_SCAN_MS = 1000;
 type Role = 'host' | 'guest';
 
 type BluetoothControl = {
@@ -30,6 +31,8 @@ type BluetoothControl = {
   roomCode?: number;
   roomId?: string;
   epoch?: number;
+  leaderId?: string;
+  oldLeaderId?: string;
   board?: GameData | null;
   isResume?: boolean;
   startId?: number;
@@ -116,6 +119,7 @@ export class BluetoothSessionProvider implements SessionProvider {
   private roomCode = 0;
   private roomId = '';
   private epoch = 1;
+  private leaderId = '';
   private playerName = '';
   private remotePeerId: string | null = null;
   private remotePlayerName: string | null = null;
@@ -133,9 +137,15 @@ export class BluetoothSessionProvider implements SessionProvider {
   private nextStartId = 1;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatWatchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private guestHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private guestWatchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private authorityScanTimer: ReturnType<typeof setInterval> | null = null;
   private lastHostSeenAt = 0;
+  private lastGuestSeenAt = 0;
   private hostDisconnectEmitted = false;
   private hostLivenessState: 'connected' | 'missed' | 'dead' = 'connected';
+  private guestDisconnectEmitted = false;
+  private guestLivenessState: 'connected' | 'missed' | 'dead' = 'connected';
   private pendingStart: {
     startId: number;
     gameData: GameData | null;
@@ -172,6 +182,7 @@ export class BluetoothSessionProvider implements SessionProvider {
     this.roomCode = requestedRoomCode ?? (100 + Math.floor(Math.random() * 300));
     this.roomId = authority?.roomId ?? createRoomId();
     this.epoch = normalizeEpoch(authority?.epoch);
+    this.leaderId = normalizeLeaderId(authority?.leaderId, createLeaderId());
     BluetoothNetwork.host(this.roomCode, playerName);
     this.emitControl({ type: 'room-created', ...this.authorityFields() });
     this.emitLobby();
@@ -183,6 +194,7 @@ export class BluetoothSessionProvider implements SessionProvider {
     this.playerName = playerName;
     this.roomId = authority?.roomId ?? '';
     this.epoch = normalizeEpoch(authority?.epoch, 0);
+    this.leaderId = normalizeLeaderId(authority?.leaderId);
     this.hostAuthorityAccepted = false;
     this.targetRoomCode = roomCode;
     BluetoothNetwork.browse();
@@ -268,6 +280,8 @@ export class BluetoothSessionProvider implements SessionProvider {
         ...(sendBoardInStart ? { board: gameData } : {}),
         ...this.authorityFields(),
       });
+    } else {
+      this.startAuthorityScan();
     }
     InProcessTransport.link(this.localServer, this.localEndpoint);
   }
@@ -293,6 +307,9 @@ export class BluetoothSessionProvider implements SessionProvider {
     this.closed = true;
     this.stopHeartbeat();
     this.stopHeartbeatWatchdog();
+    this.stopGuestHeartbeat();
+    this.stopGuestWatchdog();
+    this.stopAuthorityScan();
     this.gameServer?.stop();
     if (this.pendingStart) clearTimeout(this.pendingStart.timeout);
     BluetoothNetwork?.stop();
@@ -301,15 +318,32 @@ export class BluetoothSessionProvider implements SessionProvider {
   }
 
   private handlePeerFound(peer: NearbyPeer): void {
-    if (this.role !== 'guest' || peer.roomCode !== this.targetRoomCode || !BluetoothNetwork) return;
-    this.targetRoomCode = null;
-    this.remotePeerId = peer.peerId;
-    BluetoothNetwork.connect(peer.peerId);
+    if (!BluetoothNetwork) return;
+    if (this.role === 'guest') {
+      if (peer.roomCode !== this.targetRoomCode) return;
+      this.targetRoomCode = null;
+      this.remotePeerId = peer.peerId;
+      BluetoothNetwork.connect(peer.peerId);
+      return;
+    }
+    if (
+      this.role === 'host' &&
+      this.phase === 'playing' &&
+      peer.roomCode === this.roomCode &&
+      peer.peerId !== this.remotePeerId
+    ) {
+      BluetoothNetwork.connect(peer.peerId);
+    }
   }
 
   private handleNativeConnected(peerId: string): void {
-    this.remotePeerId = peerId;
+    if (this.role === 'host') {
+      this.sendControl(peerId, { type: 'authority-hello', ...this.authorityFields() });
+    } else {
+      this.remotePeerId = peerId;
+    }
     if (this.role === 'guest') {
+      this.notePotentialHostSeen();
       this.connectCbs.forEach(cb => cb(SERVER_PEER_ID));
     }
     if (this.role === 'guest') {
@@ -324,19 +358,24 @@ export class BluetoothSessionProvider implements SessionProvider {
   }
 
   private handleNativeDisconnected(peerId: string): void {
+    const wasGameplayPeer = this.role === 'guest' || this.remotePeerId === peerId;
     if (this.remotePeerId === peerId) {
       this.remotePeerId = null;
       this.remotePlayerName = null;
       this.remoteSupportsBoardPreload = false;
       this.hostAuthorityAccepted = false;
+      this.stopHeartbeat();
+      this.stopGuestHeartbeat();
+      this.stopGuestWatchdog();
     }
     if (this.pendingStart) {
       clearTimeout(this.pendingStart.timeout);
       this.pendingStart = null;
     }
-    if (this.serverTransport) this.serverTransport.disconnectRemote(peerId);
-    this.disconnectCbs.forEach(cb => cb(this.role === 'guest' ? SERVER_PEER_ID : peerId));
+    if (wasGameplayPeer && this.serverTransport) this.serverTransport.disconnectRemote(peerId);
+    if (wasGameplayPeer) this.disconnectCbs.forEach(cb => cb(this.role === 'guest' ? SERVER_PEER_ID : peerId));
     if (this.role === 'host' && this.phase === 'lobby') this.emitLobby();
+    if (this.role === 'host' && this.phase === 'playing' && wasGameplayPeer) this.startAuthorityScan();
   }
 
   private handleNativeMessage(peerId: string, message: string): void {
@@ -365,6 +404,8 @@ export class BluetoothSessionProvider implements SessionProvider {
       this.remotePeerId = peerId;
       this.remotePlayerName = control.playerName;
       this.remoteSupportsBoardPreload = control.capabilities?.includes(BOARD_PRELOAD_CAPABILITY) ?? false;
+      this.markGuestSeen(peerId);
+      this.stopAuthorityScan();
       this.startHeartbeat();
       if (this.phase === 'playing') {
         if (this.remoteSupportsBoardPreload) {
@@ -386,6 +427,15 @@ export class BluetoothSessionProvider implements SessionProvider {
         return;
       }
       this.emitLobby();
+      return;
+    }
+    if (this.role === 'host' && control.type === 'authority-hello') {
+      if (this.handleHostAuthorityConflict(peerId, control)) return;
+      return;
+    }
+    if (this.role === 'host' && control.type === 'guest-heartbeat') {
+      if (this.handleHostAuthorityConflict(peerId, control)) return;
+      if (this.remotePeerId === peerId) this.markGuestSeen(peerId);
       return;
     }
     if (this.role === 'host' && control.type === 'board-ready') {
@@ -434,6 +484,7 @@ export class BluetoothSessionProvider implements SessionProvider {
     if (this.role === 'guest' && control.type === 'heartbeat') {
       if (!this.acceptHostAuthority(control)) return;
       this.markHostSeen();
+      this.startGuestHeartbeat();
       return;
     }
     if (this.role === 'guest' && control.type === 'lobby-update') {
@@ -457,23 +508,38 @@ export class BluetoothSessionProvider implements SessionProvider {
     if (this.remotePeerId) this.sendControl(this.remotePeerId, message);
   }
 
-  private authorityFields(): { roomCode: number; roomId: string; epoch: number } {
-    return { roomCode: this.roomCode, roomId: this.roomId, epoch: this.epoch };
+  private authorityFields(): { roomCode: number; roomId: string; epoch: number; leaderId: string } {
+    return { roomCode: this.roomCode, roomId: this.roomId, epoch: this.epoch, leaderId: this.leaderId };
   }
 
   private knownAuthorityFields(): Partial<SessionAuthority> {
-    return this.roomId ? { roomId: this.roomId, epoch: this.epoch } : {};
+    return this.roomId ? { roomId: this.roomId, epoch: this.epoch, leaderId: this.leaderId } : {};
+  }
+
+  private controlAuthority(control: BluetoothControl): SessionAuthority | null {
+    return control.roomId
+      ? {
+        roomId: control.roomId,
+        epoch: normalizeEpoch(control.epoch, 0),
+        leaderId: normalizeLeaderId(control.leaderId),
+      }
+      : null;
+  }
+
+  private currentAuthority(): SessionAuthority | null {
+    return this.roomId ? { roomId: this.roomId, epoch: this.epoch, leaderId: this.leaderId } : null;
   }
 
   private handleHostAuthorityConflict(peerId: string, control: BluetoothControl): boolean {
-    if (!control.roomId) return false;
-    if (this.roomId && control.roomId !== this.roomId) {
+    const incoming = this.controlAuthority(control);
+    if (!incoming) return false;
+    if (this.roomId && incoming.roomId !== this.roomId) {
       this.sendControl(peerId, { type: 'room-error', message: 'Different Bluetooth game is using this room code' });
       return true;
     }
-    const incomingEpoch = normalizeEpoch(control.epoch, 0);
-    if (incomingEpoch > this.epoch) {
-      this.emitControl({ type: 'superseded-host', ...this.authorityFields(), epoch: incomingEpoch, oldEpoch: this.epoch });
+    const current = this.currentAuthority();
+    if (current && compareAuthority(incoming, current) > 0) {
+      this.emitControl({ type: 'superseded-host', roomCode: this.roomCode, ...incoming, oldEpoch: this.epoch, oldLeaderId: this.leaderId });
       this.sendControl(peerId, { type: 'room-error', message: 'A newer Bluetooth host is active', ...this.authorityFields() });
       return true;
     }
@@ -481,18 +547,20 @@ export class BluetoothSessionProvider implements SessionProvider {
   }
 
   private acceptHostAuthority(control: BluetoothControl): boolean {
-    if (control.roomId && this.roomId && control.roomId !== this.roomId) {
+    const incoming = this.controlAuthority(control);
+    if (incoming && this.roomId && incoming.roomId !== this.roomId) {
       this.emitError('Different Bluetooth game is using this room code');
       return false;
     }
-    if (!control.roomId) {
+    if (!incoming) {
       this.hostAuthorityAccepted = true;
       return true;
     }
-    if (control.roomId) this.roomId = control.roomId;
-    const incomingEpoch = normalizeEpoch(control.epoch, 0);
-    if (this.roomId && incomingEpoch < this.epoch) return false;
-    if (incomingEpoch > this.epoch) this.epoch = incomingEpoch;
+    const current = this.currentAuthority();
+    if (current && compareAuthority(incoming, current) < 0) return false;
+    this.roomId = incoming.roomId;
+    this.epoch = incoming.epoch;
+    this.leaderId = incoming.leaderId;
     this.hostAuthorityAccepted = true;
     return true;
   }
@@ -521,6 +589,70 @@ export class BluetoothSessionProvider implements SessionProvider {
     }
   }
 
+  private startGuestHeartbeat(): void {
+    if (this.role !== 'guest' || !this.remotePeerId || this.guestHeartbeatTimer != null) return;
+    const send = () => {
+      if (this.remotePeerId) {
+        this.sendControl(this.remotePeerId, {
+          type: 'guest-heartbeat',
+          sentAt: Date.now(),
+          ...this.authorityFields(),
+        });
+      }
+    };
+    send();
+    this.guestHeartbeatTimer = setInterval(send, HEARTBEAT_MS);
+    unrefTimer(this.guestHeartbeatTimer);
+  }
+
+  private stopGuestHeartbeat(): void {
+    if (this.guestHeartbeatTimer != null) {
+      clearInterval(this.guestHeartbeatTimer);
+      this.guestHeartbeatTimer = null;
+    }
+  }
+
+  private markGuestSeen(peerId: string): void {
+    if (this.role !== 'host') return;
+    this.remotePeerId = peerId;
+    this.lastGuestSeenAt = Date.now();
+    this.guestDisconnectEmitted = false;
+    if (this.guestLivenessState !== 'connected') {
+      this.guestLivenessState = 'connected';
+    }
+    this.ensureGuestWatchdog();
+  }
+
+  private ensureGuestWatchdog(): void {
+    if (this.guestWatchdogTimer != null) return;
+    this.guestWatchdogTimer = setInterval(() => {
+      if (this.closed || this.role !== 'host' || this.guestDisconnectEmitted || !this.remotePeerId) return;
+      const silentMs = Date.now() - this.lastGuestSeenAt;
+      if (silentMs >= HEARTBEAT_MISSED_MS && this.guestLivenessState === 'connected') {
+        this.guestLivenessState = 'missed';
+      }
+      if (silentMs < HEARTBEAT_TIMEOUT_MS) return;
+      const deadPeerId = this.remotePeerId;
+      this.guestDisconnectEmitted = true;
+      this.guestLivenessState = 'dead';
+      this.remotePeerId = null;
+      this.remotePlayerName = null;
+      this.remoteSupportsBoardPreload = false;
+      this.serverTransport?.disconnectRemote(deadPeerId);
+      this.disconnectCbs.forEach(cb => cb(deadPeerId));
+      if (this.phase === 'lobby') this.emitLobby();
+      if (this.phase === 'playing') this.startAuthorityScan();
+    }, HEARTBEAT_MS);
+    unrefTimer(this.guestWatchdogTimer);
+  }
+
+  private stopGuestWatchdog(): void {
+    if (this.guestWatchdogTimer != null) {
+      clearInterval(this.guestWatchdogTimer);
+      this.guestWatchdogTimer = null;
+    }
+  }
+
   private markHostSeen(): void {
     this.lastHostSeenAt = Date.now();
     this.hostDisconnectEmitted = false;
@@ -528,6 +660,15 @@ export class BluetoothSessionProvider implements SessionProvider {
       this.hostLivenessState = 'connected';
       this.emitControl({ type: 'host-liveness', state: 'connected', ...this.authorityFields() });
     }
+    this.ensureHeartbeatWatchdog();
+  }
+
+  private notePotentialHostSeen(): void {
+    this.lastHostSeenAt = Date.now();
+    this.ensureHeartbeatWatchdog();
+  }
+
+  private ensureHeartbeatWatchdog(): void {
     if (this.heartbeatWatchdogTimer != null) return;
     this.heartbeatWatchdogTimer = setInterval(() => {
       if (this.closed || this.role !== 'guest' || this.hostDisconnectEmitted) return;
@@ -543,6 +684,7 @@ export class BluetoothSessionProvider implements SessionProvider {
       this.remotePeerId = null;
       this.remotePlayerName = null;
       this.remoteSupportsBoardPreload = false;
+      this.stopGuestHeartbeat();
       this.disconnectCbs.forEach(cb => cb(SERVER_PEER_ID));
     }, HEARTBEAT_MS);
     unrefTimer(this.heartbeatWatchdogTimer);
@@ -552,6 +694,21 @@ export class BluetoothSessionProvider implements SessionProvider {
     if (this.heartbeatWatchdogTimer != null) {
       clearInterval(this.heartbeatWatchdogTimer);
       this.heartbeatWatchdogTimer = null;
+    }
+  }
+
+  private startAuthorityScan(): void {
+    if (this.role !== 'host' || this.authorityScanTimer != null) return;
+    const browse = () => BluetoothNetwork?.browse();
+    browse();
+    this.authorityScanTimer = setInterval(browse, AUTHORITY_SCAN_MS);
+    unrefTimer(this.authorityScanTimer);
+  }
+
+  private stopAuthorityScan(): void {
+    if (this.authorityScanTimer != null) {
+      clearInterval(this.authorityScanTimer);
+      this.authorityScanTimer = null;
     }
   }
 

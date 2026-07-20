@@ -6,14 +6,15 @@ import { createServer, type GameServer } from '../src/server';
 import type { Transport } from '../src/transport';
 import type { GameState } from '../src/types';
 import type { SessionControlMessage, SessionProvider } from './sessionProvider';
-import { createRoomId, normalizeEpoch, type SessionAuthority } from './sessionAuthority';
+import { compareAuthority, createLeaderId, createRoomId, normalizeEpoch, normalizeLeaderId, type SessionAuthority } from './sessionAuthority';
 
 // v2: game-started carries real board data (board + isResume).
 const PROTOCOL_VERSION = 2;
 const SERVER_PEER_ID = 'server';
 const HEARTBEAT_MS = 500;
 const HEARTBEAT_MISSED_MS = 1000;
-const HEARTBEAT_TIMEOUT_MS = 7000;
+const HEARTBEAT_TIMEOUT_MS = 1000;
+const AUTHORITY_SCAN_MS = 1000;
 type Role = 'host' | 'guest';
 
 type NearbyControl = {
@@ -26,6 +27,8 @@ type NearbyControl = {
   roomCode?: number;
   roomId?: string;
   epoch?: number;
+  leaderId?: string;
+  oldLeaderId?: string;
   board?: GameData | null;
   isResume?: boolean;
   message?: string;
@@ -112,6 +115,7 @@ export class NearbySessionProvider implements SessionProvider {
   private roomCode = 0;
   private roomId = '';
   private epoch = 1;
+  private leaderId = '';
   private playerName = '';
   private remotePeerId: string | null = null;
   private remotePlayerName: string | null = null;
@@ -125,6 +129,7 @@ export class NearbySessionProvider implements SessionProvider {
   private gameData: GameData | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatWatchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private authorityScanTimer: ReturnType<typeof setInterval> | null = null;
   private lastHostSeenAt = 0;
   private hostDisconnectEmitted = false;
   private hostLivenessState: 'connected' | 'missed' | 'dead' = 'connected';
@@ -157,6 +162,7 @@ export class NearbySessionProvider implements SessionProvider {
     this.roomCode = requestedRoomCode ?? (400 + Math.floor(Math.random() * 100));
     this.roomId = authority?.roomId ?? createRoomId();
     this.epoch = normalizeEpoch(authority?.epoch);
+    this.leaderId = normalizeLeaderId(authority?.leaderId, createLeaderId());
     NearbyNetwork.host(this.roomCode, playerName);
     this.emitControl({ type: 'room-created', ...this.authorityFields() });
     this.emitLobby();
@@ -168,6 +174,7 @@ export class NearbySessionProvider implements SessionProvider {
     this.playerName = playerName;
     this.roomId = authority?.roomId ?? '';
     this.epoch = normalizeEpoch(authority?.epoch, 0);
+    this.leaderId = normalizeLeaderId(authority?.leaderId);
     this.hostAuthorityAccepted = false;
     this.targetRoomCode = roomCode;
     NearbyNetwork.browse();
@@ -213,6 +220,7 @@ export class NearbySessionProvider implements SessionProvider {
     const started = { type: 'game-started', serverPeerId: SERVER_PEER_ID, board: gameData, isResume: !!resumeState, ...this.authorityFields() };
     this.emitControl(started);
     if (this.remotePeerId) this.sendControl(this.remotePeerId, started);
+    else this.startAuthorityScan();
     // The local control callback synchronously installs createClient first.
     InProcessTransport.link(this.localServer, this.localEndpoint);
   }
@@ -238,6 +246,7 @@ export class NearbySessionProvider implements SessionProvider {
     this.closed = true;
     this.stopHeartbeat();
     this.stopHeartbeatWatchdog();
+    this.stopAuthorityScan();
     this.gameServer?.stop();
     NearbyNetwork?.stop();
     this.subscriptions.forEach(subscription => subscription.remove());
@@ -245,15 +254,31 @@ export class NearbySessionProvider implements SessionProvider {
   }
 
   private handlePeerFound(peer: NearbyPeer): void {
-    if (this.role !== 'guest' || peer.roomCode !== this.targetRoomCode || !NearbyNetwork) return;
-    this.targetRoomCode = null;
-    this.remotePeerId = peer.peerId;
-    NearbyNetwork.connect(peer.peerId);
+    if (!NearbyNetwork) return;
+    if (this.role === 'guest') {
+      if (peer.roomCode !== this.targetRoomCode) return;
+      this.targetRoomCode = null;
+      this.remotePeerId = peer.peerId;
+      NearbyNetwork.connect(peer.peerId);
+      return;
+    }
+    if (
+      this.role === 'host' &&
+      this.phase === 'playing' &&
+      peer.roomCode === this.roomCode &&
+      peer.peerId !== this.remotePeerId
+    ) {
+      NearbyNetwork.connect(peer.peerId);
+    }
   }
 
   private handleNativeConnected(peerId: string): void {
     this.remotePeerId = peerId;
+    if (this.role === 'host') {
+      this.sendControl(peerId, { type: 'authority-hello', ...this.authorityFields() });
+    }
     if (this.role === 'guest') {
+      this.notePotentialHostSeen();
       this.connectCbs.forEach(cb => cb(SERVER_PEER_ID));
     }
     if (this.role === 'guest') {
@@ -275,6 +300,7 @@ export class NearbySessionProvider implements SessionProvider {
     if (this.serverTransport) this.serverTransport.disconnectRemote(peerId);
     this.disconnectCbs.forEach(cb => cb(this.role === 'guest' ? SERVER_PEER_ID : peerId));
     if (this.role === 'host' && this.phase === 'lobby') this.emitLobby();
+    if (this.role === 'host' && this.phase === 'playing') this.startAuthorityScan();
   }
 
   private handleNativeMessage(peerId: string, message: string): void {
@@ -302,6 +328,7 @@ export class NearbySessionProvider implements SessionProvider {
       }
       this.remotePeerId = peerId;
       this.remotePlayerName = control.playerName;
+      this.stopAuthorityScan();
       this.startHeartbeat();
       if (this.phase === 'playing') {
         // Guest rejoining mid-game (the listener keeps advertising): skip
@@ -317,6 +344,10 @@ export class NearbySessionProvider implements SessionProvider {
         return;
       }
       this.emitLobby();
+      return;
+    }
+    if (this.role === 'host' && control.type === 'authority-hello') {
+      if (this.handleHostAuthorityConflict(peerId, control)) return;
       return;
     }
     if (this.role === 'host' && control.type === 'game-ready' && this.remotePlayerName) {
@@ -362,23 +393,38 @@ export class NearbySessionProvider implements SessionProvider {
     if (this.remotePeerId) this.sendControl(this.remotePeerId, message);
   }
 
-  private authorityFields(): { roomCode: number; roomId: string; epoch: number } {
-    return { roomCode: this.roomCode, roomId: this.roomId, epoch: this.epoch };
+  private authorityFields(): { roomCode: number; roomId: string; epoch: number; leaderId: string } {
+    return { roomCode: this.roomCode, roomId: this.roomId, epoch: this.epoch, leaderId: this.leaderId };
   }
 
   private knownAuthorityFields(): Partial<SessionAuthority> {
-    return this.roomId ? { roomId: this.roomId, epoch: this.epoch } : {};
+    return this.roomId ? { roomId: this.roomId, epoch: this.epoch, leaderId: this.leaderId } : {};
+  }
+
+  private controlAuthority(control: NearbyControl): SessionAuthority | null {
+    return control.roomId
+      ? {
+        roomId: control.roomId,
+        epoch: normalizeEpoch(control.epoch, 0),
+        leaderId: normalizeLeaderId(control.leaderId),
+      }
+      : null;
+  }
+
+  private currentAuthority(): SessionAuthority | null {
+    return this.roomId ? { roomId: this.roomId, epoch: this.epoch, leaderId: this.leaderId } : null;
   }
 
   private handleHostAuthorityConflict(peerId: string, control: NearbyControl): boolean {
-    if (!control.roomId) return false;
-    if (this.roomId && control.roomId !== this.roomId) {
+    const incoming = this.controlAuthority(control);
+    if (!incoming) return false;
+    if (this.roomId && incoming.roomId !== this.roomId) {
       this.sendControl(peerId, { type: 'room-error', message: 'Different nearby game is using this room code' });
       return true;
     }
-    const incomingEpoch = normalizeEpoch(control.epoch, 0);
-    if (incomingEpoch > this.epoch) {
-      this.emitControl({ type: 'superseded-host', ...this.authorityFields(), epoch: incomingEpoch, oldEpoch: this.epoch });
+    const current = this.currentAuthority();
+    if (current && compareAuthority(incoming, current) > 0) {
+      this.emitControl({ type: 'superseded-host', roomCode: this.roomCode, ...incoming, oldEpoch: this.epoch, oldLeaderId: this.leaderId });
       this.sendControl(peerId, { type: 'room-error', message: 'A newer nearby host is active', ...this.authorityFields() });
       return true;
     }
@@ -386,18 +432,20 @@ export class NearbySessionProvider implements SessionProvider {
   }
 
   private acceptHostAuthority(control: NearbyControl): boolean {
-    if (control.roomId && this.roomId && control.roomId !== this.roomId) {
+    const incoming = this.controlAuthority(control);
+    if (incoming && this.roomId && incoming.roomId !== this.roomId) {
       this.emitError('Different nearby game is using this room code');
       return false;
     }
-    if (!control.roomId) {
+    if (!incoming) {
       this.hostAuthorityAccepted = true;
       return true;
     }
-    if (control.roomId) this.roomId = control.roomId;
-    const incomingEpoch = normalizeEpoch(control.epoch, 0);
-    if (this.roomId && incomingEpoch < this.epoch) return false;
-    if (incomingEpoch > this.epoch) this.epoch = incomingEpoch;
+    const current = this.currentAuthority();
+    if (current && compareAuthority(incoming, current) < 0) return false;
+    this.roomId = incoming.roomId;
+    this.epoch = incoming.epoch;
+    this.leaderId = incoming.leaderId;
     this.hostAuthorityAccepted = true;
     return true;
   }
@@ -433,6 +481,15 @@ export class NearbySessionProvider implements SessionProvider {
       this.hostLivenessState = 'connected';
       this.emitControl({ type: 'host-liveness', state: 'connected', ...this.authorityFields() });
     }
+    this.ensureHeartbeatWatchdog();
+  }
+
+  private notePotentialHostSeen(): void {
+    this.lastHostSeenAt = Date.now();
+    this.ensureHeartbeatWatchdog();
+  }
+
+  private ensureHeartbeatWatchdog(): void {
     if (this.heartbeatWatchdogTimer != null) return;
     this.heartbeatWatchdogTimer = setInterval(() => {
       if (this.closed || this.role !== 'guest' || this.hostDisconnectEmitted) return;
@@ -456,6 +513,21 @@ export class NearbySessionProvider implements SessionProvider {
     if (this.heartbeatWatchdogTimer != null) {
       clearInterval(this.heartbeatWatchdogTimer);
       this.heartbeatWatchdogTimer = null;
+    }
+  }
+
+  private startAuthorityScan(): void {
+    if (this.role !== 'host' || this.authorityScanTimer != null) return;
+    const browse = () => NearbyNetwork?.browse();
+    browse();
+    this.authorityScanTimer = setInterval(browse, AUTHORITY_SCAN_MS);
+    unrefTimer(this.authorityScanTimer);
+  }
+
+  private stopAuthorityScan(): void {
+    if (this.authorityScanTimer != null) {
+      clearInterval(this.authorityScanTimer);
+      this.authorityScanTimer = null;
     }
   }
 

@@ -19,7 +19,7 @@ import { BluetoothSessionProvider } from './app/bluetoothSessionProvider';
 import { relayUrls } from './app/relayUrl';
 import { connectionModeForRoomCode } from './app/roomCodes';
 import type { SessionMode, SessionProvider } from './app/sessionProvider';
-import { createRoomId, nextEpoch, normalizeEpoch, type SessionAuthority } from './app/sessionAuthority';
+import { compareAuthority, createLeaderId, createRoomId, nextEpoch, normalizeEpoch, normalizeLeaderId, type SessionAuthority } from './app/sessionAuthority';
 import { DemoHarness } from './ui/demo/DemoHarness';
 import { NetworkedGame } from './ui/networked/NetworkedGame';
 import { MainMenuScreen } from './ui/screens/MainMenuScreen';
@@ -45,7 +45,7 @@ import { colors } from './ui/theme/tokens';
 
 const CONNECTION_TIMEOUT_MS = 7000;
 const RECONNECT_RETRY_MS = 3000;
-const LOCAL_FAILOVER_PROMOTE_MS = 12000;
+const LOCAL_FAILOVER_PROMOTE_MS = 0;
 
 const extra = Constants.expoConfig?.extra as {
   network?: boolean;
@@ -132,12 +132,12 @@ function isLocalSessionMode(mode: SessionMode): boolean {
 
 function authorityFromMessage(msg: Record<string, unknown>): SessionAuthority | null {
   return typeof msg.roomId === 'string'
-    ? { roomId: msg.roomId, epoch: normalizeEpoch(msg.epoch) }
+    ? { roomId: msg.roomId, epoch: normalizeEpoch(msg.epoch), leaderId: normalizeLeaderId(msg.leaderId) }
     : null;
 }
 
 function sessionAuthority(session: SavedSession): SessionAuthority {
-  return { roomId: session.roomId, epoch: session.epoch };
+  return { roomId: session.roomId, epoch: session.epoch, leaderId: session.leaderId };
 }
 
 function isMissedHostLiveness(msg: Record<string, unknown>): boolean {
@@ -146,7 +146,11 @@ function isMissedHostLiveness(msg: Record<string, unknown>): boolean {
 
 function messageMatchesSessionAuthority(msg: Record<string, unknown>, session: SavedSession): boolean {
   const authority = authorityFromMessage(msg);
-  return !authority || (authority.roomId === session.roomId && authority.epoch === session.epoch);
+  return !authority || compareAuthority(authority, sessionAuthority(session)) === 0;
+}
+
+function isStaleAuthorityForSession(authority: SessionAuthority, session: SavedSession): boolean {
+  return authority.roomId !== session.roomId || compareAuthority(authority, sessionAuthority(session)) < 0;
 }
 
 export default function App() {
@@ -354,7 +358,11 @@ export default function App() {
         else handleSocketLost();
       });
       transport.onPeerDisconnected(() => {
-        if (isActiveReconnect()) handlePeerDisconnected();
+        if (isActiveReconnect()) {
+          retry();
+          return;
+        }
+        handlePeerDisconnected();
       });
       transport.onPeerConnected(() => {
         if (!isActiveReconnect()) return;
@@ -373,7 +381,7 @@ export default function App() {
             const incomingAuthority = authorityFromMessage(msg);
             if (
               incomingAuthority &&
-              (incomingAuthority.roomId !== session.roomId || incomingAuthority.epoch < session.epoch)
+              isStaleAuthorityForSession(incomingAuthority, session)
             ) {
               retry();
               return;
@@ -417,7 +425,7 @@ export default function App() {
             const incomingAuthority = authorityFromMessage(msg);
             if (
               incomingAuthority &&
-              (incomingAuthority.roomId !== session.roomId || incomingAuthority.epoch < session.epoch)
+              isStaleAuthorityForSession(incomingAuthority, session)
             ) {
               retry();
               return;
@@ -643,7 +651,7 @@ export default function App() {
           const board = (msg.board as GameData) ?? null;
           setBoardData(board);
           if (PERSISTENCE_ENABLED) {
-            roomAuthority = authorityFromMessage(msg) ?? roomAuthority ?? { roomId: createRoomId(), epoch: 1 };
+            roomAuthority = authorityFromMessage(msg) ?? roomAuthority ?? { roomId: createRoomId(), epoch: 1, leaderId: createLeaderId() };
             const session = {
               mode,
               roomCode,
@@ -652,6 +660,7 @@ export default function App() {
               relayPort,
               roomId: roomAuthority.roomId,
               epoch: roomAuthority.epoch,
+              leaderId: roomAuthority.leaderId,
               isHost: action === 'create',
             };
             sessionRef.current = { ...session, savedAt: Date.now() };
@@ -672,6 +681,7 @@ export default function App() {
             relayPort,
             roomId: incomingAuthority.roomId,
             epoch: incomingAuthority.epoch,
+            leaderId: incomingAuthority.leaderId,
             isHost: false,
             savedAt: Date.now(),
           };
@@ -723,6 +733,7 @@ export default function App() {
         authority: {
           roomId: session.roomId,
           epoch: nextEpoch(session.epoch),
+          leaderId: createLeaderId(),
         },
         keepGameMounted: true,
       });
@@ -748,6 +759,7 @@ export default function App() {
         authority: {
           roomId: session.roomId,
           epoch: nextEpoch(session.epoch),
+          leaderId: createLeaderId(),
         },
         keepGameMounted: true,
       });
