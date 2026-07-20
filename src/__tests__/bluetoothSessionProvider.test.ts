@@ -280,7 +280,7 @@ describe('BluetoothSessionProvider', () => {
     host.run(() => host.provider.createRoom('Alice', 142, auth(2, 'leader-bob')));
     guest.run(() => guest.provider.joinRoom(142, 'Bob', auth(2, 'leader-bob')));
     bus.killSilently('HOST');
-    await vi.advanceTimersByTimeAsync(1200);
+    await vi.advanceTimersByTimeAsync(5200);
 
     expect(lastOfType(guest.controls, 'host-liveness')?.state).toBe('dead');
     const controlsAfterDead = guest.controls.length;
@@ -302,7 +302,7 @@ describe('BluetoothSessionProvider', () => {
     host.run(() => host.provider.createRoom('Alice', 142, auth(2, 'leader-z')));
     guest.run(() => guest.provider.joinRoom(142, 'Bob', auth(2, 'leader-z')));
     bus.killSilently('HOST');
-    await vi.advanceTimersByTimeAsync(1200);
+    await vi.advanceTimersByTimeAsync(5200);
 
     expect(lastOfType(guest.controls, 'host-liveness')?.state).toBe('dead');
     const controlsAfterDead = guest.controls.length;
@@ -327,7 +327,7 @@ describe('BluetoothSessionProvider', () => {
     guest.run(() => guest.provider.joinRoom(142, 'Bob'));
 
     bus.killSilently('HOST');
-    await vi.advanceTimersByTimeAsync(1200);
+    await vi.advanceTimersByTimeAsync(5200);
 
     expect(disconnected).toEqual(['server']);
     expect(lastOfType(guest.controls, 'host-liveness')?.state).toBe('dead');
@@ -344,10 +344,27 @@ describe('BluetoothSessionProvider', () => {
     bus.emitTo('GUEST', 'onPeerConnected', { peerId: 'HOST' });
     bus.killSilently('HOST');
 
-    await vi.advanceTimersByTimeAsync(1200);
+    await vi.advanceTimersByTimeAsync(5200);
 
     expect(disconnected).toEqual(['server']);
     expect(lastOfType(guest.controls, 'host-liveness')?.state).toBe('dead');
+  });
+
+  it('does not disconnect the guest during a brief heartbeat pause', async () => {
+    vi.useFakeTimers();
+    const host = createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+    const disconnected: string[] = [];
+
+    host.provider.onPeerDisconnected(peerId => disconnected.push(peerId));
+    host.run(() => host.provider.createRoom('Alice', 142));
+    guest.run(() => guest.provider.joinRoom(142, 'Bob'));
+
+    bus.killSilently('GUEST');
+    bus.activate('HOST');
+    await vi.advanceTimersByTimeAsync(1200);
+
+    expect(disconnected).toEqual([]);
   });
 
   it('detects a silent guest death with the guest heartbeat watchdog', async () => {
@@ -362,7 +379,7 @@ describe('BluetoothSessionProvider', () => {
 
     bus.killSilently('GUEST');
     bus.activate('HOST');
-    await vi.advanceTimersByTimeAsync(1200);
+    await vi.advanceTimersByTimeAsync(5200);
 
     expect(disconnected).toEqual(['GUEST']);
     const hostLobby = lastOfType(host.controls, 'lobby-update');
