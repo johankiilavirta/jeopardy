@@ -76,6 +76,9 @@ const bus = vi.hoisted(() => {
       state.current = device;
       try { return fn(); } finally { state.current = prev; }
     },
+    activate(peerId: string) {
+      state.current = find(peerId) ?? state.current;
+    },
     killSilently(peerId: string) {
       const device = find(peerId);
       if (!device) return;
@@ -345,5 +348,67 @@ describe('BluetoothSessionProvider', () => {
 
     expect(disconnected).toEqual(['server']);
     expect(lastOfType(guest.controls, 'host-liveness')?.state).toBe('dead');
+  });
+
+  it('detects a silent guest death with the guest heartbeat watchdog', async () => {
+    vi.useFakeTimers();
+    const host = createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+    const disconnected: string[] = [];
+
+    host.provider.onPeerDisconnected(peerId => disconnected.push(peerId));
+    host.run(() => host.provider.createRoom('Alice', 142));
+    guest.run(() => guest.provider.joinRoom(142, 'Bob'));
+
+    bus.killSilently('GUEST');
+    bus.activate('HOST');
+    await vi.advanceTimersByTimeAsync(1200);
+
+    expect(disconnected).toEqual(['GUEST']);
+    const hostLobby = lastOfType(host.controls, 'lobby-update');
+    expect((hostLobby?.players as { name: string }[] | undefined)?.map(p => p.name)).toEqual(['Alice']);
+  });
+
+  it('keeps the guest connected when guest heartbeats refresh host liveness', async () => {
+    vi.useFakeTimers();
+    const host = createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+    const disconnected: string[] = [];
+
+    host.provider.onPeerDisconnected(peerId => disconnected.push(peerId));
+    host.run(() => host.provider.createRoom('Alice', 142, auth(2, 'leader-bob')));
+    guest.run(() => guest.provider.joinRoom(142, 'Bob', auth(2, 'leader-bob')));
+
+    await vi.advanceTimersByTimeAsync(800);
+    bus.emitTo('HOST', 'onMessage', {
+      peerId: 'GUEST',
+      message: JSON.stringify({
+        __nearby: true,
+        type: 'guest-heartbeat',
+        roomCode: 142,
+        roomId: 'room-a',
+        epoch: 2,
+        leaderId: 'leader-bob',
+      }),
+    });
+    await vi.advanceTimersByTimeAsync(800);
+
+    expect(disconnected).toEqual([]);
+  });
+
+  it('does not mark the gameplay guest disconnected when an authority probe disconnects', () => {
+    const host = createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+    const disconnected: string[] = [];
+
+    host.provider.onPeerDisconnected(peerId => disconnected.push(peerId));
+    host.run(() => host.provider.createRoom('Alice', 142));
+    guest.run(() => guest.provider.joinRoom(142, 'Bob'));
+
+    bus.emitTo('HOST', 'onPeerConnected', { peerId: 'OTHER-HOST' });
+    bus.emitTo('HOST', 'onPeerDisconnected', { peerId: 'OTHER-HOST' });
+
+    expect(disconnected).toEqual([]);
+    expect((lastOfType(host.controls, 'lobby-update')?.players as { name: string }[] | undefined)?.map(p => p.name)).toEqual(['Alice', 'Bob']);
   });
 });

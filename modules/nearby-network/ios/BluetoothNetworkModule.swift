@@ -89,6 +89,15 @@ public final class BluetoothNetworkModule: Module {
   }
 
   private func startBrowsing() {
+    if role == .host {
+      if centralManager == nil {
+        centralManager = CBCentralManager(delegate: delegateProxy, queue: queue)
+      } else {
+        startScanningIfReady()
+      }
+      return
+    }
+
     stopAll()
     role = .guest
     centralManager = CBCentralManager(delegate: delegateProxy, queue: queue)
@@ -168,21 +177,20 @@ public final class BluetoothNetworkModule: Module {
   }
 
   fileprivate func startScanningIfReady() {
-    guard role == .guest, let centralManager, centralManager.state == .poweredOn else { return }
+    guard role == .guest || role == .host, let centralManager, centralManager.state == .poweredOn else { return }
     centralManager.scanForPeripherals(withServices: [serviceUUID], options: [
       CBCentralManagerScanOptionAllowDuplicatesKey: false,
     ])
-    sendEvent("onStateChanged", ["state": "browsing"])
+    sendEvent("onStateChanged", ["state": role == .host ? "hosting+browsing" : "browsing"])
   }
 
   fileprivate func drainOutgoing(to peerId: String) {
     guard var queue = outgoingChunks[peerId], !queue.isEmpty else { return }
 
-    if role == .host {
+    if role == .host, let central = subscribedCentrals[peerId] {
       guard
         let peripheralManager,
-        let txCharacteristic,
-        let central = subscribedCentrals[peerId]
+        let txCharacteristic
       else { return }
       while !queue.isEmpty {
         if !peripheralManager.updateValue(queue[0], for: txCharacteristic, onSubscribedCentrals: [central]) {
@@ -194,7 +202,7 @@ public final class BluetoothNetworkModule: Module {
       return
     }
 
-    if role == .guest {
+    if role == .guest || role == .host {
       guard
         !guestWriteInFlight,
         let peripheral = guestPeripheral,
@@ -272,7 +280,7 @@ public final class BluetoothNetworkModule: Module {
     let maxLength: Int
     if role == .host, let central = subscribedCentrals[peerId] {
       maxLength = central.maximumUpdateValueLength
-    } else if role == .guest, let peripheral = guestPeripheral {
+    } else if (role == .guest || role == .host), let peripheral = guestPeripheral, peerId == peripheral.identifier.uuidString {
       maxLength = peripheral.maximumWriteValueLength(for: .withResponse)
     } else {
       maxLength = 182
