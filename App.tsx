@@ -418,6 +418,12 @@ export default function App() {
               if (!gameMounted) {
                 gameMounted = true;
                 setScreen(gameScreen);
+                if (keepGameMounted) {
+                  // The game screen never remounted, so onBoardVisible won't
+                  // re-send the ready signal that clears this player's
+                  // disconnected marker on the host's screen.
+                  transport.send(msg.serverPeerId as string, JSON.stringify({ type: 'CLIENT_SCREEN_READY' }));
+                }
               }
             });
             const board = (msg.board as GameData) ?? null;
