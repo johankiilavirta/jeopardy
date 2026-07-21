@@ -413,6 +413,122 @@ describe('BluetoothSessionProvider', () => {
     expect(disconnected).toEqual([]);
   });
 
+  it('syncs typing over ANSWER_UPDATE deltas, stays live, and converges after undo', async () => {
+    vi.useFakeTimers();
+    const host = createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+    const disconnected: string[] = [];
+    host.provider.onPeerDisconnected(peerId => disconnected.push(peerId));
+    guest.provider.onPeerDisconnected(peerId => disconnected.push(peerId));
+
+    host.run(() => host.provider.createRoom('Alice', 142));
+    guest.run(() => guest.provider.joinRoom(142, 'Bob'));
+    host.run(() => host.provider.startGame({ gameId: 42 }));
+
+    guest.run(() => sendAction(guest.provider, 'server', {
+      type: 'SELECT_CLUE',
+      clue: { id: 1, category: 'R1', text: 'Q', answer: 'A', value: 200 },
+    }));
+    await vi.advanceTimersByTimeAsync(6000); // reading lockout (~5-5.5s)
+    expect(guest.client?.state?.status).toBe('BUZZ_OPEN');
+    guest.run(() => sendAction(guest.provider, 'server', { type: 'BUZZ' }));
+
+    // Simulated typing flood: full text every keystroke, like the UI sends.
+    const sentBefore = bus.sent.length;
+    const word = 'WHAT IS PLUTO ACTUALLY THOUGH SERIOUSLY';
+    for (let i = 1; i <= word.length; i++) {
+      guest.run(() => sendAction(guest.provider, 'server', { type: 'SET_ANSWER', text: word.slice(0, i) }));
+    }
+    await vi.advanceTimersByTimeAsync(1200);
+
+    // Both sides converge on the typed text...
+    expect(host.client?.state?.buzzes[0]?.answer).toBe(word);
+    expect(guest.client?.state?.buzzes[0]?.answer).toBe(word);
+
+    // ...the wire carried compact deltas, never snapshots, for keystrokes...
+    const typingWire = bus.sent.slice(sentBefore)
+      .filter(s => s.from === 'HOST' && s.to === 'GUEST')
+      .map(s => JSON.parse(s.message) as { type?: string });
+    expect(typingWire.filter(m => m.type === 'ANSWER_UPDATE')).toHaveLength(word.length);
+    expect(typingWire.filter(m => m.type === 'STATE_UPDATE')).toHaveLength(0);
+
+    // ...and liveness never wavered during the burst.
+    expect(disconnected).toEqual([]);
+    expect(guest.controls.some(m => m.type === 'host-liveness' && m.state !== 'connected')).toBe(false);
+
+    // Undo mid-typing lands both peers back at the board.
+    guest.run(() => sendAction(guest.provider, 'server', { type: 'UNDO' }));
+    expect(host.client?.state?.status).toBe('CHOOSE_CLUE');
+    expect(guest.client?.state?.status).toBe('CHOOSE_CLUE');
+    expect(guest.client?.state?.buzzes).toEqual([]);
+
+    // A straggler delta for the undone clue is dropped by the clue-id guard.
+    bus.emitTo('GUEST', 'onMessage', {
+      peerId: 'HOST',
+      message: JSON.stringify({ type: 'ANSWER_UPDATE', playerId: 'bob', clueId: 1, text: 'STALE' }),
+    });
+    expect(guest.client?.state?.buzzes).toEqual([]);
+    expect(guest.client?.state?.status).toBe('CHOOSE_CLUE');
+  });
+
+  it('old-host-return loop: demote via epoch, rejoin as guest, one game, deltas flow', async () => {
+    vi.useFakeTimers();
+    const promoted = createPeer('host', 'GUEST-PROMOTED');
+    const saved = createInitialState(['Alice', 'Bob'], 1, null);
+    saved.players['alice']!.score = 400;
+    saved.players['bob']!.score = 200;
+
+    // Bob promoted himself after Alice's host died and resumed from snapshot.
+    promoted.run(() => promoted.provider.createRoom('Bob', 142, auth(2, 'leader-bob')));
+    promoted.run(() => promoted.provider.startGame({ resume: { state: saved, board: fixtures.game } }));
+    expect(promoted.client?.playerId).toBe('bob');
+
+    // Alice's stale host comes back online still believing it leads (epoch 1).
+    const staleHost = createPeer('host', 'OLD-HOST');
+    staleHost.run(() => staleHost.provider.createRoom('Alice', 142, auth(1, 'leader-alice')));
+
+    // The promoted host's authority scan finds it and asserts epoch 2.
+    // (The mock bus can't route the scan interval's browse() to a device,
+    // so deliver the discovery it would produce directly.)
+    bus.emitTo('GUEST-PROMOTED', 'onPeerFound', { peerId: 'OLD-HOST', name: 'Alice', roomCode: 142 });
+    const superseded = lastOfType(staleHost.controls, 'superseded-host');
+    expect(superseded?.epoch).toBe(2);
+    expect(superseded?.oldEpoch).toBe(1);
+
+    // The app reacts by tearing the stale host down and rejoining as guest.
+    staleHost.run(() => staleHost.provider.stop());
+    const rejoin = createPeer('guest', 'OLD-HOST-REJOIN');
+    rejoin.run(() => rejoin.provider.joinRoom(142, 'Alice', auth(1, 'leader-alice')));
+    bus.emitTo('OLD-HOST-REJOIN', 'onPeerFound', { peerId: 'GUEST-PROMOTED', name: 'Bob', roomCode: 142 });
+
+    // Resync: same game, scores intact, epoch adopted from the winner.
+    const rejoinStarted = lastOfType(rejoin.controls, 'game-started');
+    expect(rejoinStarted?.isResume).toBe(true);
+    expect(rejoinStarted?.epoch).toBe(2);
+    expect(rejoin.client?.playerId).toBe('alice');
+    expect(rejoin.client?.state?.players['alice']?.score).toBe(400);
+    expect(rejoin.client?.state?.players['bob']?.score).toBe(200);
+
+    // The reunited pair plays on: Alice picks, buzzes, and types — synced
+    // to the promoted host through deltas.
+    rejoin.run(() => sendAction(rejoin.provider, 'server', {
+      type: 'SELECT_CLUE',
+      clue: { id: 1, category: 'R1', text: 'Q', answer: 'A', value: 200 },
+    }));
+    await vi.advanceTimersByTimeAsync(6000);
+    rejoin.run(() => sendAction(rejoin.provider, 'server', { type: 'BUZZ' }));
+    const sentBefore = bus.sent.length;
+    rejoin.run(() => sendAction(rejoin.provider, 'server', { type: 'SET_ANSWER', text: 'CANBERRA' }));
+
+    expect(promoted.client?.state?.buzzes[0]).toMatchObject({ playerId: 'alice', answer: 'CANBERRA' });
+    expect(rejoin.client?.state?.buzzes[0]?.answer).toBe('CANBERRA');
+    const typingWire = bus.sent.slice(sentBefore)
+      .filter(s => s.from === 'GUEST-PROMOTED' && s.to === 'OLD-HOST-REJOIN')
+      .map(s => JSON.parse(s.message) as { type?: string });
+    expect(typingWire.filter(m => m.type === 'ANSWER_UPDATE')).toHaveLength(1);
+    expect(typingWire.filter(m => m.type === 'STATE_UPDATE')).toHaveLength(0);
+  });
+
   it('does not mark the gameplay guest disconnected when an authority probe disconnects', () => {
     const host = createPeer('host', 'HOST');
     const guest = createPeer('guest', 'GUEST');
