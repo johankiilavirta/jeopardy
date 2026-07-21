@@ -220,7 +220,7 @@ export class BluetoothSessionProvider implements SessionProvider {
     this.leaderId = normalizeLeaderId(authority?.leaderId);
     this.hostAuthorityAccepted = false;
     this.targetRoomCode = roomCode;
-    BluetoothNetwork.browse();
+    BluetoothNetwork.browse(roomCode);
   }
 
   startGame(options?: { gameId?: number; resume?: object }): void {
@@ -773,7 +773,7 @@ export class BluetoothSessionProvider implements SessionProvider {
 
   private startAuthorityScan(): void {
     if (this.role !== 'host' || this.authorityScanTimer != null) return;
-    const browse = () => BluetoothNetwork?.browse();
+    const browse = () => BluetoothNetwork?.browse(this.roomCode ?? undefined);
     browse();
     this.authorityScanTimer = setInterval(browse, AUTHORITY_SCAN_MS);
     unrefTimer(this.authorityScanTimer);

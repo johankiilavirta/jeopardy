@@ -7,6 +7,11 @@ public final class BluetoothNetworkModule: Module {
   fileprivate let serviceUUID = CBUUID(string: "7D8F2E4D-4C53-4D4F-9D6E-4A7C37A1E001")
   fileprivate let txUUID = CBUUID(string: "7D8F2E4D-4C53-4D4F-9D6E-4A7C37A1E002")
   fileprivate let rxUUID = CBUUID(string: "7D8F2E4D-4C53-4D4F-9D6E-4A7C37A1E003")
+  /** The room code also rides in a derived service UUID (last 4 hex digits)
+   *  because macOS — the iOS app running on a Mac — does not reliably
+   *  broadcast a custom CBAdvertisementDataLocalNameKey, while advertised
+   *  service UUIDs are honored on every Apple platform. */
+  fileprivate let roomUUIDPrefix = "7D8F2E4D-4C53-4D4F-9D6E-4A7C37A2"
   fileprivate let maximumMessageBytes = 1_048_576
   private let headerBytes = 9
   /** Safety valve: with app-level throttling in place a peer's queue stays
@@ -18,6 +23,7 @@ public final class BluetoothNetworkModule: Module {
   fileprivate lazy var delegateProxy = BluetoothNetworkDelegate(owner: self)
   fileprivate var role: Role?
   fileprivate var roomCode: Int?
+  fileprivate var browseRoomCode: Int?
   fileprivate var displayName = ""
 
   fileprivate var peripheralManager: CBPeripheralManager?
@@ -64,8 +70,8 @@ public final class BluetoothNetworkModule: Module {
       self.queue.async { self.startHosting(roomCode: roomCode, displayName: displayName) }
     }
 
-    Function("browse") {
-      self.queue.async { self.startBrowsing() }
+    Function("browse") { (roomCode: Int?) in
+      self.queue.async { self.startBrowsing(roomCode: roomCode) }
     }
 
     Function("connect") { (peerId: String) in
@@ -93,8 +99,9 @@ public final class BluetoothNetworkModule: Module {
     peripheralManager = CBPeripheralManager(delegate: delegateProxy, queue: queue)
   }
 
-  private func startBrowsing() {
+  private func startBrowsing(roomCode: Int?) {
     if role == .host {
+      browseRoomCode = roomCode
       if centralManager == nil {
         centralManager = CBCentralManager(delegate: delegateProxy, queue: queue)
       } else {
@@ -105,7 +112,12 @@ public final class BluetoothNetworkModule: Module {
 
     stopAll()
     role = .guest
+    browseRoomCode = roomCode
     centralManager = CBCentralManager(delegate: delegateProxy, queue: queue)
+  }
+
+  fileprivate func roomUUID(_ code: Int) -> CBUUID {
+    CBUUID(string: roomUUIDPrefix + String(format: "%04X", code & 0xFFFF))
   }
 
   private func connectToPeer(_ peerId: String) {
@@ -184,14 +196,22 @@ public final class BluetoothNetworkModule: Module {
     let safeName = String(displayName.prefix(10)).replacingOccurrences(of: ":", with: "")
     let localName = "J\(String(roomCode).padLeft(to: 3)):\(safeName)"
     peripheralManager.startAdvertising([
-      CBAdvertisementDataServiceUUIDsKey: [serviceUUID],
+      CBAdvertisementDataServiceUUIDsKey: [serviceUUID, roomUUID(roomCode)],
       CBAdvertisementDataLocalNameKey: localName,
     ])
   }
 
   fileprivate func startScanningIfReady() {
     guard role == .guest || role == .host, let centralManager, centralManager.state == .poweredOn else { return }
-    centralManager.scanForPeripherals(withServices: [serviceUUID], options: [
+    // Also scan for the derived room UUID when we know which room we want:
+    // hosts advertising it in the overflow area (e.g. a Mac whose primary
+    // advertisement is full) are only reported to centrals that explicitly
+    // scan for that UUID.
+    var services = [serviceUUID]
+    if let browseRoomCode {
+      services.append(roomUUID(browseRoomCode))
+    }
+    centralManager.scanForPeripherals(withServices: services, options: [
       CBCentralManagerScanOptionAllowDuplicatesKey: false,
     ])
     sendEvent("onStateChanged", ["state": role == .host ? "hosting+browsing" : "browsing"])
@@ -342,6 +362,7 @@ public final class BluetoothNetworkModule: Module {
 
     role = nil
     roomCode = nil
+    browseRoomCode = nil
     displayName = ""
     peripheralManager = nil
     centralManager = nil
@@ -466,10 +487,27 @@ private final class BluetoothNetworkDelegate: NSObject, CBPeripheralManagerDeleg
   ) {
     guard let owner else { return }
     let name = (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? peripheral.name ?? ""
-    guard name.hasPrefix("J"), name.count >= 4 else { return }
-    let codeText = String(name.dropFirst().prefix(3))
-    guard let roomCode = Int(codeText) else { return }
-    let displayName = name.split(separator: ":", maxSplits: 1).dropFirst().first.map(String.init) ?? "Bluetooth Game"
+
+    var roomCode: Int?
+    var displayName = "Bluetooth Game"
+    if name.hasPrefix("J"), name.count >= 4, let parsed = Int(String(name.dropFirst().prefix(3))) {
+      roomCode = parsed
+      displayName = name.split(separator: ":", maxSplits: 1).dropFirst().first.map(String.init) ?? displayName
+    } else {
+      // macOS drops the custom local name, so fall back to the room code
+      // encoded in the derived service UUID (primary or overflow area).
+      let advertised = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? [])
+        + (advertisementData[CBAdvertisementDataOverflowServiceUUIDsKey] as? [CBUUID] ?? [])
+      for uuid in advertised {
+        let text = uuid.uuidString.uppercased()
+        if text.hasPrefix(owner.roomUUIDPrefix), let parsed = Int(text.suffix(4), radix: 16) {
+          roomCode = parsed
+          break
+        }
+      }
+    }
+    guard let roomCode else { return }
+
     let id = peripheral.identifier.uuidString
     owner.discoveredPeripherals[id] = peripheral
     owner.sendEvent("onPeerFound", ["peerId": id, "name": displayName, "roomCode": roomCode])

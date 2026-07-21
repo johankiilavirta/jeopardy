@@ -19,7 +19,10 @@ export interface NearbyNetworkEvents extends Record<string, (...args: any[]) => 
 export interface NearbyNetworkNativeModule extends NativeModule<NearbyNetworkEvents> {
   addListener<K extends keyof NearbyNetworkEvents>(eventName: K, listener: NearbyNetworkEvents[K]): { remove(): void };
   host(roomCode: number, displayName: string): void;
-  browse(): void;
+  /** Pass the room code when it is known: Bluetooth hosts encode it in a
+   *  derived service UUID that scanners must explicitly request to see
+   *  (macOS drops the advertised local name). */
+  browse(roomCode?: number): void;
   connect(peerId: string): void;
   send(peerId: string, message: string): void;
   stop(): void;
