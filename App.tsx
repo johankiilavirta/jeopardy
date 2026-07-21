@@ -158,8 +158,10 @@ function sessionAuthority(session: SavedSession): SessionAuthority {
   return { roomId: session.roomId, epoch: session.epoch, leaderId: session.leaderId };
 }
 
-function isMissedHostLiveness(msg: Record<string, unknown>): boolean {
-  return msg.type === 'host-liveness' && (msg.state === 'missed' || msg.state === 'dead');
+/** host-liveness (guest watching the host) and guest-liveness (host
+ *  watching the guest) both carry a missed/dead/connected state. */
+function isMissedLiveness(msg: Record<string, unknown>): boolean {
+  return msg.state === 'missed' || msg.state === 'dead';
 }
 
 function messageMatchesSessionAuthority(msg: Record<string, unknown>, session: SavedSession): boolean {
@@ -409,7 +411,7 @@ export default function App() {
         switch (msg.type) {
           case 'host-liveness':
             if (messageMatchesSessionAuthority(msg, session)) {
-              setPeerConnectionStatus(isMissedHostLiveness(msg) ? 'remote-disconnected' : 'connected');
+              setPeerConnectionStatus(isMissedLiveness(msg) ? 'remote-disconnected' : 'connected');
             }
             break;
           case 'game-started': {
@@ -538,6 +540,9 @@ export default function App() {
       setLobbyPlayers([]);
       setLobbyError(null);
       setLocalRecovery('promoting');
+      // The brand-new room has no peer attached yet: show the other player
+      // as disconnected until their rejoin lands (client-screen-ready).
+      setPeerConnectionStatus('remote-disconnected');
     } else {
       disconnect();
     }
@@ -626,8 +631,9 @@ export default function App() {
     transport.onControlMessage((msg) => {
       switch (msg.type) {
         case 'host-liveness':
+        case 'guest-liveness':
           if (!sessionRef.current || messageMatchesSessionAuthority(msg, sessionRef.current)) {
-            setPeerConnectionStatus(isMissedHostLiveness(msg) ? 'remote-disconnected' : 'connected');
+            setPeerConnectionStatus(isMissedLiveness(msg) ? 'remote-disconnected' : 'connected');
           }
           break;
         case 'client-screen-ready':

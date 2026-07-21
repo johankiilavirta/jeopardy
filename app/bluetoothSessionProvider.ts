@@ -14,8 +14,14 @@ const PROTOCOL_VERSION = 2;
 const SUPPORTED_PROTOCOL_VERSIONS = new Set([2, 3]);
 const BOARD_PRELOAD_CAPABILITY = 'board-preload-v1';
 const SERVER_PEER_ID = 'server';
-const HEARTBEAT_MS = 500;
-const HEARTBEAT_MISSED_MS = 1000;
+/** Heartbeats are tiny (~100 bytes); 250ms cadence keeps liveness signal
+ *  cheap while letting the UI mark a silent peer within well under a
+ *  second. Any gameplay traffic also refreshes liveness. */
+const HEARTBEAT_MS = 250;
+/** UI-only "peer looks gone" threshold (grays the player marker). Two
+ *  missed beats + slack — quick feedback, recovers on the next message.
+ *  Reconnect/promotion still waits for HEARTBEAT_TIMEOUT_MS. */
+const HEARTBEAT_MISSED_MS = 600;
 const HEARTBEAT_TIMEOUT_MS = 3000;
 const AUTHORITY_SCAN_MS = 1000;
 type Role = 'host' | 'guest';
@@ -624,6 +630,7 @@ export class BluetoothSessionProvider implements SessionProvider {
     this.guestDisconnectEmitted = false;
     if (this.guestLivenessState !== 'connected') {
       this.guestLivenessState = 'connected';
+      this.emitControl({ type: 'guest-liveness', state: 'connected', ...this.authorityFields() });
     }
     this.ensureGuestWatchdog();
   }
@@ -635,6 +642,9 @@ export class BluetoothSessionProvider implements SessionProvider {
       const silentMs = Date.now() - this.lastGuestSeenAt;
       if (silentMs >= HEARTBEAT_MISSED_MS && this.guestLivenessState === 'connected') {
         this.guestLivenessState = 'missed';
+        // Locally-emitted UI hint only: the host app grays the guest's
+        // marker right away, long before the 3s death watchdog acts.
+        this.emitControl({ type: 'guest-liveness', state: 'missed', ...this.authorityFields() });
       }
       if (silentMs < HEARTBEAT_TIMEOUT_MS) return;
       const deadPeerId = this.remotePeerId;

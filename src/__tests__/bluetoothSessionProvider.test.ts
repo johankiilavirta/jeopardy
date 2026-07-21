@@ -367,6 +367,41 @@ describe('BluetoothSessionProvider', () => {
     expect(disconnected).toEqual([]);
   });
 
+  it('grays the guest marker fast via guest-liveness, long before disconnecting', async () => {
+    vi.useFakeTimers();
+    const host = createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+    const disconnected: string[] = [];
+
+    host.provider.onPeerDisconnected(peerId => disconnected.push(peerId));
+    host.run(() => host.provider.createRoom('Alice', 142, auth(2, 'leader-bob')));
+    guest.run(() => guest.provider.joinRoom(142, 'Bob', auth(2, 'leader-bob')));
+
+    bus.killSilently('GUEST');
+    bus.activate('HOST');
+    await vi.advanceTimersByTimeAsync(900);
+
+    // The UI hint fires well under a second into the silence...
+    expect(lastOfType(host.controls, 'guest-liveness')?.state).toBe('missed');
+    // ...without any actual disconnect (that still needs the 3s watchdog).
+    expect(disconnected).toEqual([]);
+
+    // One resumed heartbeat clears the marker again.
+    bus.emitTo('HOST', 'onMessage', {
+      peerId: 'GUEST',
+      message: JSON.stringify({
+        __nearby: true,
+        type: 'guest-heartbeat',
+        roomCode: 142,
+        roomId: 'room-a',
+        epoch: 2,
+        leaderId: 'leader-bob',
+      }),
+    });
+    expect(lastOfType(host.controls, 'guest-liveness')?.state).toBe('connected');
+    expect(disconnected).toEqual([]);
+  });
+
   it('detects a silent guest death with the guest heartbeat watchdog', async () => {
     vi.useFakeTimers();
     const host = createPeer('host', 'HOST');
