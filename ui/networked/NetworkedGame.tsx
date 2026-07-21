@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { sendAction } from '../../src/client';
+import { createKeystrokeThrottle, type KeystrokeThrottle } from '../../src/answerThrottle';
 import { computeReadingMs } from '../../src/readingTime';
 import { getBuzz, judgedPlayerId } from '../../src/reducer';
 import type { Transport } from '../../src/transport';
@@ -303,11 +304,35 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // clue changes) the echo is ignored and the synced answer shows.
   const [localEcho, setLocalEcho] = useState<{ clueId: number; text: string } | null>(null);
   const activeClueId = gameState?.activeClue?.id ?? null;
+  // Keystrokes go out through a throttle (leading + trailing, full text
+  // each time) so slow transports aren't flooded with per-key SET_ANSWERs.
+  // The refs keep the throttle's send closure current without recreating
+  // it (which would drop pending trailing text).
+  const dispatchRef = useRef(dispatch);
+  dispatchRef.current = dispatch;
+  const playerIdRef = useRef(playerId);
+  playerIdRef.current = playerId;
+  const answerThrottleRef = useRef<KeystrokeThrottle | null>(null);
+  if (answerThrottleRef.current == null) {
+    answerThrottleRef.current = createKeystrokeThrottle(text => {
+      const pid = playerIdRef.current;
+      if (pid != null) dispatchRef.current({ type: 'SET_ANSWER', playerId: pid, text });
+    });
+  }
+  // A pending trailing send must not leak across a clue or phase boundary
+  // (e.g. Final Jeopardy wager digits landing in the answer phase, which
+  // shares the sentinel clue id). Locks are safe without a flush: a
+  // user-initiated LOCK_ANSWER carries the full text; only the server-side
+  // typing timer can drop the final <250ms of typing (see answerThrottle).
+  useEffect(() => {
+    answerThrottleRef.current?.cancel();
+  }, [activeClueId, gameState?.status]);
+  useEffect(() => () => answerThrottleRef.current?.cancel(), []);
   const handleAnswerChange = useCallback((text: string) => {
     if (playerId == null) return;
     if (activeClueId != null) setLocalEcho({ clueId: activeClueId, text });
-    dispatch({ type: 'SET_ANSWER', playerId, text });
-  }, [dispatch, playerId, activeClueId]);
+    answerThrottleRef.current?.update(text);
+  }, [playerId, activeClueId]);
   const shownAnswer =
     typing && localEcho?.clueId === activeClueId ? localEcho.text : localBuzz?.answer ?? '';
 
@@ -479,12 +504,18 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               onBuzz={() => dispatch({ type: 'BUZZ', playerId })}
               answer={shownAnswer}
               onAnswerChange={handleAnswerChange}
-              onLockAnswer={text =>
-                dispatch({ type: 'LOCK_ANSWER', playerId, answer: text })
-              }
+              onLockAnswer={text => {
+                // Lock carries the full text; a pending trailing keystroke
+                // would arrive post-lock and be ignored anyway. Drop it.
+                answerThrottleRef.current?.cancel();
+                dispatch({ type: 'LOCK_ANSWER', playerId, answer: text });
+              }}
               onUnlockAnswer={
                 localBuzz?.locked
-                  ? () => dispatch({ type: 'UNLOCK_ANSWER', playerId })
+                  ? () => {
+                      answerThrottleRef.current?.cancel();
+                      dispatch({ type: 'UNLOCK_ANSWER', playerId });
+                    }
                   : undefined
               }
               reveal={
