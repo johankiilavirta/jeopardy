@@ -45,7 +45,11 @@ import { colors } from './ui/theme/tokens';
 
 const CONNECTION_TIMEOUT_MS = 7000;
 const RECONNECT_RETRY_MS = 3000;
-const LOCAL_FAILOVER_PROMOTE_MS = 0;
+/** Reconnect-first failover: a guest that loses its host keeps retrying
+ *  for this long (~2 attempts) before promoting itself to host from the
+ *  local snapshot. Instant promotion (0) turns every transient Bluetooth
+ *  blip into a competing host mid-game. */
+const LOCAL_FAILOVER_PROMOTE_MS = 10000;
 
 const extra = Constants.expoConfig?.extra as {
   network?: boolean;
