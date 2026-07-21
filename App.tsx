@@ -66,6 +66,15 @@ const LOCAL_FAILOVER_PROMOTE_MS = 0;
  *  and epoch ping-pong forever). Give the join a real grace window; only
  *  if the newer host is truly gone does the demoted side take over. */
 const DEMOTION_PROMOTE_GRACE_MS = 6000;
+/** A guest RETURNING to a possibly-live game (app relaunch, or waking from
+ *  an iOS background freeze) holds stale state by definition — it missed
+ *  everything since it went dark. Unlike the 0ms dead-host failover above,
+ *  it must NOT insta-promote that stale snapshot: if discovering the
+ *  still-live host takes longer than the candidate lease, the stale
+ *  candidate commits, supersedes the live game, and reverts every score
+ *  earned while the player was away. Join-first for a generous window;
+ *  only a room that truly can't be found is worth resurrecting. */
+const RETURNING_GUEST_PROMOTE_MS = 8000;
 
 const extra = Constants.expoConfig?.extra as {
   network?: boolean;
@@ -1028,7 +1037,9 @@ export default function App() {
         void savePlayerName(fallbackName);
       }
       setResumeAvailable(!!snapshot);
-      if (session) startReconnectRef.current(session);
+      // Relaunch: our snapshot is stale, so join-first rather than
+      // insta-promoting a candidate that could clobber the live game.
+      if (session) startReconnectRef.current(session, { promoteDelayMs: RETURNING_GUEST_PROMOTE_MS });
     })();
     return () => { stale = true; };
   }, []);
@@ -1046,6 +1057,9 @@ export default function App() {
       ) {
         startReconnectRef.current(sessionRef.current, {
           keepGameMounted: canAutoRejoinAfterPeerDisconnect(sessionRef.current),
+          // Frozen-in-background state is stale: join the live host first
+          // instead of insta-promoting a candidate over it.
+          promoteDelayMs: RETURNING_GUEST_PROMOTE_MS,
         });
       }
     });

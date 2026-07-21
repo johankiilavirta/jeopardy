@@ -666,6 +666,52 @@ describe('BluetoothSessionProvider', () => {
     expect(rejoin.client?.state?.players['alice']?.score).toBe(400);
   });
 
+  it('hands a rejoining guest the scores earned while it was dead', async () => {
+    vi.useFakeTimers();
+    const host = createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+
+    host.run(() => host.provider.createRoom('Alice', 142));
+    guest.run(() => guest.provider.joinRoom(142, 'Bob'));
+    host.run(() => host.provider.startGame({ gameId: 42 }));
+    const started = lastOfType(host.controls, 'game-started');
+
+    // Bob's app dies silently; the host's watchdog clears his seat.
+    bus.killSilently('GUEST');
+    bus.activate('HOST');
+    await vi.advanceTimersByTimeAsync(3200);
+
+    // While Bob is gone, Alice plays a full clue: pick, buzz, let the 20s
+    // window run out, judge herself correct.
+    host.run(() => sendAction(host.provider, 'server', {
+      type: 'SELECT_CLUE',
+      clue: { id: 1, category: 'R1', text: 'Q', answer: 'A', value: 200 },
+    }));
+    await vi.advanceTimersByTimeAsync(6000); // reading lockout
+    expect(host.client?.state?.status).toBe('BUZZ_OPEN');
+    host.run(() => sendAction(host.provider, 'server', { type: 'BUZZ' }));
+    host.run(() => sendAction(host.provider, 'server', { type: 'LOCK_ANSWER', answer: 'A' }));
+    await vi.advanceTimersByTimeAsync(21000); // buzz window expires
+    expect(host.client?.state?.status).toBe('REVEAL');
+    host.run(() => sendAction(host.provider, 'server', { type: 'JUDGE_ANSWER', playerId: 'alice', correct: true }));
+    expect(host.client?.state?.players['alice']?.score).toBe(200);
+
+    // Bob relaunches and rejoins the same room: the seat reattach must hand
+    // him the judged score, not the world from before he died.
+    const rejoin = createPeer('guest', 'GUEST-REJOIN');
+    rejoin.run(() => rejoin.provider.joinRoom(142, 'Bob', {
+      roomId: started?.roomId as string,
+      epoch: started?.epoch as number,
+      leaderId: started?.leaderId as string,
+    }));
+
+    const rejoinStarted = lastOfType(rejoin.controls, 'game-started');
+    expect(rejoinStarted?.isResume).toBe(true);
+    expect(rejoin.client?.playerId).toBe('bob');
+    expect(rejoin.client?.state?.players['alice']?.score).toBe(200);
+    expect(rejoin.client?.state?.burnedClueIds).toContain(1);
+  });
+
   it('does not mark the gameplay guest disconnected when an authority probe disconnects', () => {
     const host = createPeer('host', 'HOST');
     const guest = createPeer('guest', 'GUEST');
