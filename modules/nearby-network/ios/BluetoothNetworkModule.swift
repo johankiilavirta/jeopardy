@@ -9,6 +9,11 @@ public final class BluetoothNetworkModule: Module {
   fileprivate let rxUUID = CBUUID(string: "7D8F2E4D-4C53-4D4F-9D6E-4A7C37A1E003")
   fileprivate let maximumMessageBytes = 1_048_576
   private let headerBytes = 9
+  /** Safety valve: with app-level throttling in place a peer's queue stays
+   *  tiny; if a future regression floods it again, drop the backlog instead
+   *  of growing without bound (which starves heartbeats and, eventually,
+   *  memory). */
+  private let maximumQueuedChunks = 2_048
 
   fileprivate lazy var delegateProxy = BluetoothNetworkDelegate(owner: self)
   fileprivate var role: Role?
@@ -128,13 +133,21 @@ public final class BluetoothNetworkModule: Module {
     if chunks.isEmpty { return }
     if peerId == "*" {
       for id in subscribedCentrals.keys {
-        outgoingChunks[id, default: []].append(contentsOf: chunks)
-        drainOutgoing(to: id)
+        enqueueChunks(chunks, for: id)
       }
     } else {
-      outgoingChunks[peerId, default: []].append(contentsOf: chunks)
-      drainOutgoing(to: peerId)
+      enqueueChunks(chunks, for: peerId)
     }
+  }
+
+  private func enqueueChunks(_ chunks: [Data], for peerId: String) {
+    if outgoingChunks[peerId, default: []].count + chunks.count > maximumQueuedChunks {
+      outgoingChunks[peerId] = nil
+      emitError("Bluetooth send queue overflowed; dropped queued messages")
+      return
+    }
+    outgoingChunks[peerId, default: []].append(contentsOf: chunks)
+    drainOutgoing(to: peerId)
   }
 
   fileprivate func configureHostIfReady() {
@@ -285,7 +298,26 @@ public final class BluetoothNetworkModule: Module {
     } else {
       maxLength = 182
     }
-    return max(1, min(160, maxLength - headerBytes))
+    // Use the full negotiated MTU (typically ~512 bytes): a game snapshot
+    // then fits in a handful of chunks instead of dozens.
+    return max(1, maxLength - headerBytes)
+  }
+
+  /** Drop all buffered traffic for a peer that just disconnected: queued
+   *  outgoing chunks would be replayed onto a future connection, and
+   *  half-reassembled incoming messages can never complete (message ids
+   *  restart on the peer's side too). */
+  fileprivate func clearPeerBuffers(_ peerId: String) {
+    outgoingChunks.removeValue(forKey: peerId)
+    let prefix = "\(peerId):"
+    for key in incomingChunks.keys where key.hasPrefix(prefix) {
+      incomingChunks.removeValue(forKey: key)
+    }
+    if let guestPeripheral, peerId == guestPeripheral.identifier.uuidString {
+      // A write that will never be confirmed must not block the next
+      // connection's sends.
+      guestWriteInFlight = false
+    }
   }
 
   private func stopAll() {
@@ -390,6 +422,7 @@ private final class BluetoothNetworkDelegate: NSObject, CBPeripheralManagerDeleg
     guard let owner else { return }
     let id = central.identifier.uuidString
     owner.subscribedCentrals.removeValue(forKey: id)
+    owner.clearPeerBuffers(id)
     owner.sendEvent("onPeerDisconnected", ["peerId": id])
   }
 
@@ -459,6 +492,7 @@ private final class BluetoothNetworkDelegate: NSObject, CBPeripheralManagerDeleg
     guard let owner else { return }
     let id = peripheral.identifier.uuidString
     owner.connectedPeripherals.removeValue(forKey: id)
+    owner.clearPeerBuffers(id)
     owner.sendEvent("onPeerDisconnected", ["peerId": id])
   }
 
