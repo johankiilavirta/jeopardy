@@ -6,7 +6,7 @@ import { createServer, type GameServer } from '../src/server';
 import type { Transport } from '../src/transport';
 import type { GameState } from '../src/types';
 import type { SessionControlMessage, SessionProvider } from './sessionProvider';
-import { compareAuthority, createLeaderId, createRoomId, normalizeEpoch, normalizeLeaderId, type SessionAuthority } from './sessionAuthority';
+import { compareAuthority, compareAuthorityClaims, createLeaderId, createRoomId, nextEpoch, normalizeAuthorityStatus, normalizeEpoch, normalizeLeaderId, type AuthorityClaim, type AuthorityStatus, type SessionAuthority } from './sessionAuthority';
 
 // v2: game-started carries real board data (board + isResume).
 const PROTOCOL_VERSION = 2;
@@ -15,6 +15,11 @@ const HEARTBEAT_MS = 500;
 const HEARTBEAT_MISSED_MS = 1000;
 const HEARTBEAT_TIMEOUT_MS = 1000;
 const AUTHORITY_SCAN_MS = 1000;
+/** How long a candidate host serves under the dead host's authority
+ *  before committing it (epoch bump + fresh leaderId). Within the lease
+ *  the original committed host wins on reappearance and the candidate
+ *  silently demotes; a guest joining the candidate commits it early. */
+const CANDIDATE_COMMIT_MS = 3000;
 type Role = 'host' | 'guest';
 
 type NearbyControl = {
@@ -29,6 +34,7 @@ type NearbyControl = {
   epoch?: number;
   leaderId?: string;
   oldLeaderId?: string;
+  authorityStatus?: string;
   board?: GameData | null;
   isResume?: boolean;
   message?: string;
@@ -116,6 +122,8 @@ export class NearbySessionProvider implements SessionProvider {
   private roomId = '';
   private epoch = 1;
   private leaderId = '';
+  private authorityStatus: AuthorityStatus = 'active';
+  private candidateCommitTimer: ReturnType<typeof setTimeout> | null = null;
   private playerName = '';
   private remotePeerId: string | null = null;
   private remotePlayerName: string | null = null;
@@ -156,13 +164,22 @@ export class NearbySessionProvider implements SessionProvider {
 
   get isClosed(): boolean { return this.closed; }
 
-  createRoom(playerName: string, requestedRoomCode?: number, authority?: SessionAuthority): void {
+  createRoom(playerName: string, requestedRoomCode?: number, authority?: SessionAuthority, options?: { candidate?: boolean }): void {
     if (this.role !== 'host' || !NearbyNetwork) return this.emitError('Nearby hosting is unavailable');
     this.playerName = playerName;
     this.roomCode = requestedRoomCode ?? (400 + Math.floor(Math.random() * 100));
     this.roomId = authority?.roomId ?? createRoomId();
     this.epoch = normalizeEpoch(authority?.epoch);
+    // A candidate serves under the dead host's EXACT triple — including its
+    // leaderId. Guests validate hosts with a lexicographic leaderId
+    // tiebreak, so a fresh leaderId at the same epoch would be rejected as
+    // stale about half the time. The fresh leaderId comes at commit.
     this.leaderId = normalizeLeaderId(authority?.leaderId, createLeaderId());
+    if (options?.candidate && authority) {
+      this.authorityStatus = 'candidate';
+      this.candidateCommitTimer = setTimeout(() => this.commitAuthority(), CANDIDATE_COMMIT_MS);
+      unrefTimer(this.candidateCommitTimer);
+    }
     NearbyNetwork.host(this.roomCode, playerName);
     this.emitControl({ type: 'room-created', ...this.authorityFields() });
     this.emitLobby();
@@ -247,6 +264,7 @@ export class NearbySessionProvider implements SessionProvider {
     this.stopHeartbeat();
     this.stopHeartbeatWatchdog();
     this.stopAuthorityScan();
+    this.cancelCandidateCommit();
     this.gameServer?.stop();
     NearbyNetwork?.stop();
     this.subscriptions.forEach(subscription => subscription.remove());
@@ -328,6 +346,9 @@ export class NearbySessionProvider implements SessionProvider {
       }
       this.remotePeerId = peerId;
       this.remotePlayerName = control.playerName;
+      // A joining guest ends the candidate lease early: the room now has a
+      // player relying on this host, so commit before sending it the game.
+      this.commitAuthority();
       this.stopAuthorityScan();
       this.startHeartbeat();
       if (this.phase === 'playing') {
@@ -378,6 +399,14 @@ export class NearbySessionProvider implements SessionProvider {
       this.emitControl(control as SessionControlMessage);
       return;
     }
+    if (this.role === 'guest' && control.type === 'authority-committed') {
+      // Our candidate host committed: adopt its bumped authority so future
+      // hellos/rejoins carry the new triple, and let the app re-save it.
+      if (!this.acceptHostAuthority(control)) return;
+      this.markHostSeen();
+      this.emitControl(control as SessionControlMessage);
+      return;
+    }
     this.emitControl(control as SessionControlMessage);
   }
 
@@ -393,20 +422,21 @@ export class NearbySessionProvider implements SessionProvider {
     if (this.remotePeerId) this.sendControl(this.remotePeerId, message);
   }
 
-  private authorityFields(): { roomCode: number; roomId: string; epoch: number; leaderId: string } {
-    return { roomCode: this.roomCode, roomId: this.roomId, epoch: this.epoch, leaderId: this.leaderId };
+  private authorityFields(): { roomCode: number; roomId: string; epoch: number; leaderId: string; authorityStatus: AuthorityStatus } {
+    return { roomCode: this.roomCode, roomId: this.roomId, epoch: this.epoch, leaderId: this.leaderId, authorityStatus: this.authorityStatus };
   }
 
   private knownAuthorityFields(): Partial<SessionAuthority> {
     return this.roomId ? { roomId: this.roomId, epoch: this.epoch, leaderId: this.leaderId } : {};
   }
 
-  private controlAuthority(control: NearbyControl): SessionAuthority | null {
+  private controlAuthority(control: NearbyControl): AuthorityClaim | null {
     return control.roomId
       ? {
         roomId: control.roomId,
         epoch: normalizeEpoch(control.epoch, 0),
         leaderId: normalizeLeaderId(control.leaderId),
+        status: normalizeAuthorityStatus(control.authorityStatus),
       }
       : null;
   }
@@ -423,7 +453,17 @@ export class NearbySessionProvider implements SessionProvider {
       return true;
     }
     const current = this.currentAuthority();
-    if (current && compareAuthority(incoming, current) > 0) {
+    // Host-to-host (authority-hello) uses claim comparison: at an equal
+    // triple a committed host beats a candidate, so a returning original
+    // host silently reclaims the room from its lease-holding stand-in.
+    // Guest-sourced controls (hello/guest-heartbeat) keep the plain triple
+    // comparison: a rejoining guest carries the dead host's triple with no
+    // status, and must join the candidate — not supersede it.
+    const superseded = current && (control.type === 'authority-hello'
+      ? compareAuthorityClaims(incoming, { ...current, status: this.authorityStatus }) > 0
+      : compareAuthority(incoming, current) > 0);
+    if (superseded) {
+      this.cancelCandidateCommit();
       this.emitControl({ type: 'superseded-host', roomCode: this.roomCode, ...incoming, oldEpoch: this.epoch, oldLeaderId: this.leaderId });
       // Tell a searching guest to keep looking for the newer host, but never
       // send this to the newer host itself: its app treats room-error as
@@ -453,6 +493,25 @@ export class NearbySessionProvider implements SessionProvider {
     this.leaderId = incoming.leaderId;
     this.hostAuthorityAccepted = true;
     return true;
+  }
+
+  /** Candidate → committed: take a fresh epoch + leaderId and announce it.
+   *  Fires when the lease expires or a guest joins the candidate. */
+  private commitAuthority(): void {
+    this.cancelCandidateCommit();
+    if (this.closed || this.authorityStatus !== 'candidate') return;
+    this.epoch = nextEpoch(this.epoch);
+    this.leaderId = createLeaderId();
+    this.authorityStatus = 'active';
+    this.emitControl({ type: 'authority-committed', ...this.authorityFields() });
+    if (this.remotePeerId) this.sendControl(this.remotePeerId, { type: 'authority-committed', ...this.authorityFields() });
+  }
+
+  private cancelCandidateCommit(): void {
+    if (this.candidateCommitTimer != null) {
+      clearTimeout(this.candidateCommitTimer);
+      this.candidateCommitTimer = null;
+    }
   }
 
   private startHeartbeat(): void {

@@ -568,6 +568,104 @@ describe('BluetoothSessionProvider', () => {
     expect(typingWire.filter(m => m.type === 'STATE_UPDATE')).toHaveLength(0);
   });
 
+  it('candidate defers to the returning committed host within the lease and never commits', async () => {
+    vi.useFakeTimers();
+    const saved = createInitialState(['Alice', 'Bob'], 1, null);
+
+    // Alice's committed host survived a radio blip; Bob's side declared it
+    // dead and instantly re-hosted as a CANDIDATE under Alice's exact triple.
+    const committed = createPeer('host', 'ORIGINAL-HOST');
+    committed.run(() => committed.provider.createRoom('Alice', 142, auth(1, 'leader-alice')));
+    committed.run(() => committed.provider.startGame({ resume: { state: saved, board: fixtures.game } }));
+
+    const candidate = createPeer('host', 'CANDIDATE');
+    candidate.run(() => candidate.provider.createRoom('Bob', 142, auth(1, 'leader-alice'), { candidate: true }));
+    candidate.run(() => candidate.provider.startGame({ resume: { state: saved, board: fixtures.game } }));
+
+    // The candidate's authority scan finds the original host again.
+    bus.emitTo('CANDIDATE', 'onPeerFound', { peerId: 'ORIGINAL-HOST', name: 'Alice', roomCode: 142 });
+
+    // Committed beats candidate at the identical triple: the candidate
+    // demotes via the usual superseded-host path...
+    const superseded = lastOfType(candidate.controls, 'superseded-host');
+    expect(superseded?.epoch).toBe(1);
+    expect(superseded?.leaderId).toBe('leader-alice');
+    // ...while the committed host is untouched: no supersession, and no
+    // fatal room-error was sent its way.
+    expect(committed.controls.some(m => m.type === 'superseded-host')).toBe(false);
+    expect(lastOfType(committed.controls, 'room-error')).toBeUndefined();
+
+    // A superseded candidate must never commit its lease afterwards.
+    await vi.advanceTimersByTimeAsync(3200);
+    expect(candidate.controls.some(m => m.type === 'authority-committed')).toBe(false);
+  });
+
+  it('commits the candidate lease after ~3s and demotes a later-returning stale host', async () => {
+    vi.useFakeTimers();
+    const saved = createInitialState(['Alice', 'Bob'], 1, null);
+
+    const candidate = createPeer('host', 'CANDIDATE');
+    candidate.run(() => candidate.provider.createRoom('Bob', 142, auth(1, 'leader-alice'), { candidate: true }));
+    candidate.run(() => candidate.provider.startGame({ resume: { state: saved, board: fixtures.game } }));
+
+    // During the lease the candidate serves under the dead host's triple.
+    const started = lastOfType(candidate.controls, 'game-started');
+    expect(started?.epoch).toBe(1);
+    expect(started?.leaderId).toBe('leader-alice');
+    expect(candidate.controls.some(m => m.type === 'authority-committed')).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(3200);
+
+    // Lease expired: epoch bump plus a fresh leaderId, announced to the app.
+    const committed = lastOfType(candidate.controls, 'authority-committed');
+    expect(committed?.epoch).toBe(2);
+    expect(typeof committed?.leaderId).toBe('string');
+    expect(committed?.leaderId).not.toBe('leader-alice');
+
+    // Alice's host relaunches still claiming epoch 1 → the existing
+    // old-host-return supersession flow demotes it.
+    const staleHost = createPeer('host', 'OLD-HOST');
+    staleHost.run(() => staleHost.provider.createRoom('Alice', 142, auth(1, 'leader-alice')));
+    bus.emitTo('CANDIDATE', 'onPeerFound', { peerId: 'OLD-HOST', name: 'Alice', roomCode: 142 });
+
+    const superseded = lastOfType(staleHost.controls, 'superseded-host');
+    expect(superseded?.epoch).toBe(2);
+    expect(superseded?.oldEpoch).toBe(1);
+    expect(candidate.controls.some(m => m.type === 'superseded-host')).toBe(false);
+  });
+
+  it('commits early when a guest joins the candidate, and the guest adopts the new authority', () => {
+    vi.useFakeTimers();
+    const saved = createInitialState(['Alice', 'Bob'], 1, null);
+    saved.players['alice']!.score = 400;
+
+    const candidate = createPeer('host', 'CANDIDATE');
+    candidate.run(() => candidate.provider.createRoom('Bob', 142, auth(1, 'leader-alice'), { candidate: true }));
+    candidate.run(() => candidate.provider.startGame({ resume: { state: saved, board: fixtures.game } }));
+
+    // The former host's player rejoins as a guest before the lease expires,
+    // carrying the dead host's triple: it must JOIN the candidate, not
+    // supersede it, and the join commits the candidate immediately.
+    const rejoin = createPeer('guest', 'OLD-HOST-REJOIN');
+    rejoin.run(() => rejoin.provider.joinRoom(142, 'Alice', auth(1, 'leader-alice')));
+
+    expect(candidate.controls.some(m => m.type === 'superseded-host')).toBe(false);
+    const committed = lastOfType(candidate.controls, 'authority-committed');
+    expect(committed?.epoch).toBe(2);
+
+    // The guest provider adopted the committed authority and re-emitted it
+    // for the app to persist.
+    const guestCommit = lastOfType(rejoin.controls, 'authority-committed');
+    expect(guestCommit?.epoch).toBe(2);
+    expect(guestCommit?.leaderId).toBe(committed?.leaderId);
+
+    // The rejoin lands in the committed game with state intact.
+    const rejoinStarted = lastOfType(rejoin.controls, 'game-started');
+    expect(rejoinStarted?.epoch).toBe(2);
+    expect(rejoin.client?.playerId).toBe('alice');
+    expect(rejoin.client?.state?.players['alice']?.score).toBe(400);
+  });
+
   it('does not mark the gameplay guest disconnected when an authority probe disconnects', () => {
     const host = createPeer('host', 'HOST');
     const guest = createPeer('guest', 'GUEST');

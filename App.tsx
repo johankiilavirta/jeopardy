@@ -19,7 +19,7 @@ import { BluetoothSessionProvider } from './app/bluetoothSessionProvider';
 import { relayUrls } from './app/relayUrl';
 import { connectionModeForRoomCode } from './app/roomCodes';
 import type { SessionMode, SessionProvider } from './app/sessionProvider';
-import { compareAuthority, createLeaderId, createRoomId, nextEpoch, normalizeEpoch, normalizeLeaderId, type SessionAuthority } from './app/sessionAuthority';
+import { compareAuthority, createLeaderId, createRoomId, normalizeEpoch, normalizeLeaderId, type SessionAuthority } from './app/sessionAuthority';
 import { DemoHarness } from './ui/demo/DemoHarness';
 import { NetworkedGame } from './ui/networked/NetworkedGame';
 import { MainMenuScreen } from './ui/screens/MainMenuScreen';
@@ -51,12 +51,14 @@ const LOCAL_CONNECTION_TIMEOUT_MS = 3000;
 const RECONNECT_RETRY_MS = 3000;
 /** How long a guest that lost its host retries reconnecting before
  *  promoting itself to host from the local snapshot. 0 = promote as soon
- *  as the heartbeat watchdog declares the host dead: the 3s watchdog is
- *  the anti-blip debounce (only true silence trips it now that typing no
- *  longer floods the link), and if the old host returns, epoch
- *  supersession demotes it and resyncs it as a guest. Trade-off: a
- *  returning host resyncs (brief role-swap churn) instead of seamlessly
- *  reattaching, and up to ~3s of host-side actions can roll back. */
+ *  as the heartbeat watchdog declares the host dead — safe because the
+ *  promotion is a reversible CANDIDATE lease, not a committed takeover:
+ *  the survivor re-hosts under the dead host's exact authority triple and
+ *  only commits (epoch bump + fresh leaderId) once the provider's ~3s
+ *  lease expires or a guest joins it. If the original committed host
+ *  reappears within the lease, committed-beats-candidate demotes the
+ *  stand-in and the original roles restore; anything the candidate did
+ *  during the blip is discarded on resync. */
 const LOCAL_FAILOVER_PROMOTE_MS = 0;
 /** A superseded host demoting itself joins the NEWER host, whose
  *  authority-hello it heard moments ago — so unlike a dead-host failover
@@ -528,6 +530,7 @@ export default function App() {
       autoStart?: boolean;
       playerName?: string;
       authority?: SessionAuthority;
+      candidate?: boolean;
       keepGameMounted?: boolean;
     } = {},
   ) => {
@@ -721,6 +724,25 @@ export default function App() {
           }
           break;
         }
+        case 'authority-committed': {
+          // Fires locally on a candidate host whose lease expired (or that
+          // a guest joined), and on a connected guest of that candidate:
+          // the tentative authority triple is now committed with a higher
+          // epoch, so upgrade the saved session to match.
+          const incomingAuthority = authorityFromMessage(msg);
+          const session = sessionRef.current;
+          if (
+            !incomingAuthority ||
+            !session ||
+            incomingAuthority.roomId !== session.roomId ||
+            incomingAuthority.epoch <= session.epoch
+          ) break;
+          roomAuthority = incomingAuthority;
+          const committedSession = { ...session, ...incomingAuthority };
+          sessionRef.current = committedSession;
+          if (PERSISTENCE_ENABLED) void saveSession(committedSession);
+          break;
+        }
         case 'superseded-host': {
           const incomingAuthority = authorityFromMessage(msg);
           const code = typeof msg.roomCode === 'number' ? msg.roomCode : roomCode;
@@ -762,7 +784,12 @@ export default function App() {
       clearTimeout(timeout);
       myPeerIdRef.current = peerId;
       if (action === 'create') {
-        transport.createRoom(effectivePlayerName, options.requestedRoomCode, roomAuthority ?? undefined);
+        transport.createRoom(
+          effectivePlayerName,
+          options.requestedRoomCode,
+          roomAuthority ?? undefined,
+          options.candidate ? { candidate: true } : undefined,
+        );
       } else {
         transport.joinRoom(action.join, effectivePlayerName, roomAuthority ?? undefined);
       }
@@ -775,6 +802,17 @@ export default function App() {
   }, [relayHost, relayPort, playerName, disconnect, cancelReconnect, refreshResumeAvailable, handleStateUpdate, handleSocketLost, handlePeerDisconnected]);
 
   const promoteLocalSessionToHost = useCallback((session: SavedSession) => {
+    // A former GUEST takes over as a reversible CANDIDATE under the dead
+    // host's unchanged authority (the provider commits an epoch bump only
+    // once its lease expires). A HOST whose transport died re-hosts with
+    // its authority verbatim — it already IS the committed leader, so
+    // bumping the epoch would just churn supersession on reconnect.
+    const authority = {
+      roomId: session.roomId,
+      epoch: session.epoch,
+      leaderId: session.leaderId,
+    };
+    const candidate = !session.isHost;
     const inMemorySnapshot = initialGameState?.state
       ? {
         state: initialGameState.state,
@@ -789,11 +827,8 @@ export default function App() {
         requestedRoomCode: session.roomCode,
         autoStart: true,
         playerName: session.playerName,
-        authority: {
-          roomId: session.roomId,
-          epoch: nextEpoch(session.epoch),
-          leaderId: createLeaderId(),
-        },
+        authority,
+        candidate,
         keepGameMounted: true,
       });
       return;
@@ -815,11 +850,8 @@ export default function App() {
         requestedRoomCode: session.roomCode,
         autoStart: true,
         playerName: session.playerName,
-        authority: {
-          roomId: session.roomId,
-          epoch: nextEpoch(session.epoch),
-          leaderId: createLeaderId(),
-        },
+        authority,
+        candidate,
         keepGameMounted: true,
       });
     });
