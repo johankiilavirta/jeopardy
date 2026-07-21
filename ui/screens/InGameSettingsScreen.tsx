@@ -65,6 +65,8 @@ interface InGameSettingsScreenProps {
   onAnimationsChange: (enabled: boolean) => void;
   visibleCategories: number;
   onVisibleCategoriesChange: (n: number) => void;
+  showLastClueButton: boolean;
+  onShowLastClueButtonChange: (visible: boolean) => void;
   playerName: string;
   onNameChange: (name: string) => void;
   relayHost: string;
@@ -312,6 +314,18 @@ export function InGameSettingsScreen(props: InGameSettingsScreenProps) {
             );
           })}
         </View>
+
+        <Text style={[styles.label, styles.stackedLabel]}>Last Clue Test Button</Text>
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityState={{ checked: props.showLastClueButton }}
+          style={styles.toggleBox}
+          onPress={() => props.onShowLastClueButtonChange(!props.showLastClueButton)}
+        >
+          <Text style={[styles.toggleText, !props.showLastClueButton && styles.toggleTextOff]}>
+            {props.showLastClueButton ? 'Shown' : 'Hidden'}
+          </Text>
+        </Pressable>
 
         <Text style={[styles.sectionHeading, styles.stackedSection]}>Player</Text>
 
