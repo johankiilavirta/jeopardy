@@ -540,7 +540,12 @@ export class BluetoothSessionProvider implements SessionProvider {
     const current = this.currentAuthority();
     if (current && compareAuthority(incoming, current) > 0) {
       this.emitControl({ type: 'superseded-host', roomCode: this.roomCode, ...incoming, oldEpoch: this.epoch, oldLeaderId: this.leaderId });
-      this.sendControl(peerId, { type: 'room-error', message: 'A newer Bluetooth host is active', ...this.authorityFields() });
+      // Tell a searching guest to keep looking for the newer host, but never
+      // send this to the newer host itself: its app treats room-error as
+      // fatal and would abandon the very game we are about to rejoin.
+      if (control.type !== 'authority-hello') {
+        this.sendControl(peerId, { type: 'room-error', message: 'A newer Bluetooth host is active', ...this.authorityFields() });
+      }
       return true;
     }
     return false;

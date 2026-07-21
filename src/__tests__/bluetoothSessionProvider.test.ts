@@ -494,6 +494,10 @@ describe('BluetoothSessionProvider', () => {
     const superseded = lastOfType(staleHost.controls, 'superseded-host');
     expect(superseded?.epoch).toBe(2);
     expect(superseded?.oldEpoch).toBe(1);
+    // The demoting side must never tell the WINNING host "a newer host is
+    // active": the promoted app treats room-error as fatal and would quit
+    // to the menu mid-game.
+    expect(lastOfType(promoted.controls, 'room-error')).toBeUndefined();
 
     // The app reacts by tearing the stale host down and rejoining as guest.
     staleHost.run(() => staleHost.provider.stop());

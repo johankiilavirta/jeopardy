@@ -550,8 +550,12 @@ export default function App() {
     );
     transportRef.current = transport;
 
+    // Bailing to the menu is only appropriate while the promoted game is
+    // still coming up; once it has mounted, errors take the normal mid-game
+    // paths (socket-lost reconnect etc.) instead of nuking the session.
+    let keptMountedGameUp = false;
     const abandonKeptMountedRecovery = (message: string): boolean => {
-      if (!keepGameMounted) return false;
+      if (!keepGameMounted || keptMountedGameUp) return false;
       sessionRef.current = null;
       pendingResumeRef.current = null;
       pendingGameScreenRef.current = null;
@@ -663,6 +667,7 @@ export default function App() {
             // joiner get the same transition.
             if (!gameMounted) {
               gameMounted = true;
+              keptMountedGameUp = true;
               setLocalRecovery('none');
               if (screenRef.current.type === 'lobby') {
                 pendingGameScreenRef.current = gameScreen;
