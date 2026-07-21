@@ -44,12 +44,16 @@ import { SettingsScreen } from './ui/screens/SettingsScreen';
 import { colors } from './ui/theme/tokens';
 
 const CONNECTION_TIMEOUT_MS = 7000;
+/** Local (Bluetooth/nearby) join attempts fail fast: discovery + connect
+ *  normally completes in 1-3s, so waiting the full online-relay timeout
+ *  just slows down the rejoin retry loop. */
+const LOCAL_CONNECTION_TIMEOUT_MS = 3000;
 const RECONNECT_RETRY_MS = 3000;
 /** Reconnect-first failover: a guest that loses its host keeps retrying
  *  for this long (~2 attempts) before promoting itself to host from the
  *  local snapshot. Instant promotion (0) turns every transient Bluetooth
  *  blip into a competing host mid-game. */
-const LOCAL_FAILOVER_PROMOTE_MS = 10000;
+const LOCAL_FAILOVER_PROMOTE_MS = 6000;
 
 const extra = Constants.expoConfig?.extra as {
   network?: boolean;
@@ -355,7 +359,7 @@ export default function App() {
         ctl.timer = setTimeout(attempt, RECONNECT_RETRY_MS);
       };
 
-      const welcomeTimeout = setTimeout(retry, CONNECTION_TIMEOUT_MS);
+      const welcomeTimeout = setTimeout(retry, isLocal ? LOCAL_CONNECTION_TIMEOUT_MS : CONNECTION_TIMEOUT_MS);
       transport.onError(() => {
         if (!isActiveReconnect()) return;
         if (!settled) retry();
