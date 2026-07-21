@@ -13,7 +13,7 @@ export interface SessionProvider extends Transport {
   readonly ready: Promise<string>;
   readonly isClosed: boolean;
 
-  createRoom(playerName: string, requestedRoomCode?: number, authority?: SessionAuthority): void;
+  createRoom(playerName: string, requestedRoomCode?: number, authority?: SessionAuthority, options?: { candidate?: boolean }): void;
   joinRoom(roomCode: number, playerName: string, authority?: SessionAuthority): void;
   startGame(options?: { gameId?: number; resume?: object }): void;
   stop(): void;

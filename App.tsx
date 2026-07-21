@@ -19,7 +19,7 @@ import { BluetoothSessionProvider } from './app/bluetoothSessionProvider';
 import { relayUrls } from './app/relayUrl';
 import { connectionModeForRoomCode } from './app/roomCodes';
 import type { SessionMode, SessionProvider } from './app/sessionProvider';
-import { compareAuthority, createLeaderId, createRoomId, nextEpoch, normalizeEpoch, normalizeLeaderId, type SessionAuthority } from './app/sessionAuthority';
+import { compareAuthority, createLeaderId, createRoomId, normalizeEpoch, normalizeLeaderId, type SessionAuthority } from './app/sessionAuthority';
 import { DemoHarness } from './ui/demo/DemoHarness';
 import { NetworkedGame } from './ui/networked/NetworkedGame';
 import { MainMenuScreen } from './ui/screens/MainMenuScreen';
@@ -44,8 +44,37 @@ import { SettingsScreen } from './ui/screens/SettingsScreen';
 import { colors } from './ui/theme/tokens';
 
 const CONNECTION_TIMEOUT_MS = 7000;
+/** Local (Bluetooth/nearby) join attempts fail fast: discovery + connect
+ *  normally completes in 1-3s, so waiting the full online-relay timeout
+ *  just slows down the rejoin retry loop. */
+const LOCAL_CONNECTION_TIMEOUT_MS = 3000;
 const RECONNECT_RETRY_MS = 3000;
+/** How long a guest that lost its host retries reconnecting before
+ *  promoting itself to host from the local snapshot. 0 = promote as soon
+ *  as the heartbeat watchdog declares the host dead — safe because the
+ *  promotion is a reversible CANDIDATE lease, not a committed takeover:
+ *  the survivor re-hosts under the dead host's exact authority triple and
+ *  only commits (epoch bump + fresh leaderId) once the provider's ~3s
+ *  lease expires or a guest joins it. If the original committed host
+ *  reappears within the lease, committed-beats-candidate demotes the
+ *  stand-in and the original roles restore; anything the candidate did
+ *  during the blip is discarded on resync. */
 const LOCAL_FAILOVER_PROMOTE_MS = 0;
+/** A superseded host demoting itself joins the NEWER host, whose
+ *  authority-hello it heard moments ago — so unlike a dead-host failover
+ *  it must NOT promote instantly (that would steal hostship right back
+ *  and epoch ping-pong forever). Give the join a real grace window; only
+ *  if the newer host is truly gone does the demoted side take over. */
+const DEMOTION_PROMOTE_GRACE_MS = 6000;
+/** A guest RETURNING to a possibly-live game (app relaunch, or waking from
+ *  an iOS background freeze) holds stale state by definition — it missed
+ *  everything since it went dark. Unlike the 0ms dead-host failover above,
+ *  it must NOT insta-promote that stale snapshot: if discovering the
+ *  still-live host takes longer than the candidate lease, the stale
+ *  candidate commits, supersedes the live game, and reverts every score
+ *  earned while the player was away. Join-first for a generous window;
+ *  only a room that truly can't be found is worth resurrecting. */
+const RETURNING_GUEST_PROMOTE_MS = 8000;
 
 const extra = Constants.expoConfig?.extra as {
   network?: boolean;
@@ -140,8 +169,10 @@ function sessionAuthority(session: SavedSession): SessionAuthority {
   return { roomId: session.roomId, epoch: session.epoch, leaderId: session.leaderId };
 }
 
-function isMissedHostLiveness(msg: Record<string, unknown>): boolean {
-  return msg.type === 'host-liveness' && (msg.state === 'missed' || msg.state === 'dead');
+/** host-liveness (guest watching the host) and guest-liveness (host
+ *  watching the guest) both carry a missed/dead/connected state. */
+function isMissedLiveness(msg: Record<string, unknown>): boolean {
+  return msg.state === 'missed' || msg.state === 'dead';
 }
 
 function messageMatchesSessionAuthority(msg: Record<string, unknown>, session: SavedSession): boolean {
@@ -195,7 +226,7 @@ export default function App() {
     timer: ReturnType<typeof setTimeout> | null;
     promoteTimer: ReturnType<typeof setTimeout> | null;
   } | null>(null);
-  const startReconnectRef = useRef<(session: SavedSession, options?: { keepGameMounted?: boolean }) => void>(() => {});
+  const startReconnectRef = useRef<(session: SavedSession, options?: { keepGameMounted?: boolean; promoteDelayMs?: number }) => void>(() => {});
   const promoteLocalSessionRef = useRef<(session: SavedSession) => void>(() => {});
 
   const disconnect = useCallback(() => {
@@ -264,9 +295,19 @@ export default function App() {
 
   /** Rejoin a live room, retrying until it works, the relay says the room
    *  is gone, or the player cancels from the Reconnecting screen. */
-  const startReconnect = useCallback((session: SavedSession, options: { keepGameMounted?: boolean } = {}) => {
+  const startReconnect = useCallback((session: SavedSession, options: { keepGameMounted?: boolean; promoteDelayMs?: number } = {}) => {
     cancelReconnect();
     const isLocal = isLocalSessionMode(session.mode);
+    // A local HOST session must never enter the guest-join loop below:
+    // there is no other host to join, so it would sit on RECONNECTING
+    // forever and strand the guest too. Re-host from the in-memory
+    // snapshot instead — the guest's auto-rejoin finds the new room.
+    // (Off the game screen — e.g. relaunch after a kill — joining as a
+    // guest is right: the surviving player has already promoted.)
+    if (isLocal && session.isHost && screenRef.current.type === 'game') {
+      promoteLocalSessionRef.current(session);
+      return;
+    }
     const keepGameMounted = !!options.keepGameMounted && isLocal && !session.isHost && screenRef.current.type === 'game';
     transportRef.current?.stop();
     transportRef.current = null;
@@ -277,7 +318,8 @@ export default function App() {
     setLocalRecovery(keepGameMounted ? 'reconnecting' : 'none');
 
     const shouldPromote = isLocal && !session.isHost;
-    const promoteAfter = shouldPromote ? Date.now() + LOCAL_FAILOVER_PROMOTE_MS : null;
+    const promoteDelayMs = options.promoteDelayMs ?? LOCAL_FAILOVER_PROMOTE_MS;
+    const promoteAfter = shouldPromote ? Date.now() + promoteDelayMs : null;
 
     const ctl = {
       cancelled: false,
@@ -311,8 +353,14 @@ export default function App() {
       promoteLocalSessionRef.current(session);
     };
 
+    // Immediate promotion: skip the reconnect loop entirely rather than
+    // starting a guest BLE session that a 0ms timer would tear right down.
+    if (shouldPromote && promoteDelayMs === 0) {
+      promote();
+      return;
+    }
     if (shouldPromote) {
-      ctl.promoteTimer = setTimeout(promote, LOCAL_FAILOVER_PROMOTE_MS);
+      ctl.promoteTimer = setTimeout(promote, promoteDelayMs);
     }
 
     const giveUp = () => {
@@ -351,7 +399,7 @@ export default function App() {
         ctl.timer = setTimeout(attempt, RECONNECT_RETRY_MS);
       };
 
-      const welcomeTimeout = setTimeout(retry, CONNECTION_TIMEOUT_MS);
+      const welcomeTimeout = setTimeout(retry, isLocal ? LOCAL_CONNECTION_TIMEOUT_MS : CONNECTION_TIMEOUT_MS);
       transport.onError(() => {
         if (!isActiveReconnect()) return;
         if (!settled) retry();
@@ -374,7 +422,7 @@ export default function App() {
         switch (msg.type) {
           case 'host-liveness':
             if (messageMatchesSessionAuthority(msg, session)) {
-              setPeerConnectionStatus(isMissedHostLiveness(msg) ? 'remote-disconnected' : 'connected');
+              setPeerConnectionStatus(isMissedLiveness(msg) ? 'remote-disconnected' : 'connected');
             }
             break;
           case 'game-started': {
@@ -410,6 +458,12 @@ export default function App() {
               if (!gameMounted) {
                 gameMounted = true;
                 setScreen(gameScreen);
+                if (keepGameMounted) {
+                  // The game screen never remounted, so onBoardVisible won't
+                  // re-send the ready signal that clears this player's
+                  // disconnected marker on the host's screen.
+                  transport.send(msg.serverPeerId as string, JSON.stringify({ type: 'CLIENT_SCREEN_READY' }));
+                }
               }
             });
             const board = (msg.board as GameData) ?? null;
@@ -485,6 +539,7 @@ export default function App() {
       autoStart?: boolean;
       playerName?: string;
       authority?: SessionAuthority;
+      candidate?: boolean;
       keepGameMounted?: boolean;
     } = {},
   ) => {
@@ -497,6 +552,9 @@ export default function App() {
       setLobbyPlayers([]);
       setLobbyError(null);
       setLocalRecovery('promoting');
+      // The brand-new room has no peer attached yet: show the other player
+      // as disconnected until their rejoin lands (client-screen-ready).
+      setPeerConnectionStatus('remote-disconnected');
     } else {
       disconnect();
     }
@@ -526,8 +584,12 @@ export default function App() {
     );
     transportRef.current = transport;
 
+    // Bailing to the menu is only appropriate while the promoted game is
+    // still coming up; once it has mounted, errors take the normal mid-game
+    // paths (socket-lost reconnect etc.) instead of nuking the session.
+    let keptMountedGameUp = false;
     const abandonKeptMountedRecovery = (message: string): boolean => {
-      if (!keepGameMounted) return false;
+      if (!keepGameMounted || keptMountedGameUp) return false;
       sessionRef.current = null;
       pendingResumeRef.current = null;
       pendingGameScreenRef.current = null;
@@ -581,8 +643,9 @@ export default function App() {
     transport.onControlMessage((msg) => {
       switch (msg.type) {
         case 'host-liveness':
+        case 'guest-liveness':
           if (!sessionRef.current || messageMatchesSessionAuthority(msg, sessionRef.current)) {
-            setPeerConnectionStatus(isMissedHostLiveness(msg) ? 'remote-disconnected' : 'connected');
+            setPeerConnectionStatus(isMissedLiveness(msg) ? 'remote-disconnected' : 'connected');
           }
           break;
         case 'client-screen-ready':
@@ -639,6 +702,7 @@ export default function App() {
             // joiner get the same transition.
             if (!gameMounted) {
               gameMounted = true;
+              keptMountedGameUp = true;
               setLocalRecovery('none');
               if (screenRef.current.type === 'lobby') {
                 pendingGameScreenRef.current = gameScreen;
@@ -669,6 +733,25 @@ export default function App() {
           }
           break;
         }
+        case 'authority-committed': {
+          // Fires locally on a candidate host whose lease expired (or that
+          // a guest joined), and on a connected guest of that candidate:
+          // the tentative authority triple is now committed with a higher
+          // epoch, so upgrade the saved session to match.
+          const incomingAuthority = authorityFromMessage(msg);
+          const session = sessionRef.current;
+          if (
+            !incomingAuthority ||
+            !session ||
+            incomingAuthority.roomId !== session.roomId ||
+            incomingAuthority.epoch <= session.epoch
+          ) break;
+          roomAuthority = incomingAuthority;
+          const committedSession = { ...session, ...incomingAuthority };
+          sessionRef.current = committedSession;
+          if (PERSISTENCE_ENABLED) void saveSession(committedSession);
+          break;
+        }
         case 'superseded-host': {
           const incomingAuthority = authorityFromMessage(msg);
           const code = typeof msg.roomCode === 'number' ? msg.roomCode : roomCode;
@@ -685,7 +768,14 @@ export default function App() {
             isHost: false,
             savedAt: Date.now(),
           };
-          startReconnectRef.current(reconnectSession);
+          // Keep the game mounted while demoting: rejoining the newer host
+          // is a dimmed blip, not a trip through the RECONNECTING screen.
+          // The grace window stops the demoted side from instantly
+          // re-promoting (0ms failover) and ping-ponging hostship forever.
+          startReconnectRef.current(reconnectSession, {
+            keepGameMounted: true,
+            promoteDelayMs: DEMOTION_PROMOTE_GRACE_MS,
+          });
           break;
         }
         case 'room-error':
@@ -703,7 +793,12 @@ export default function App() {
       clearTimeout(timeout);
       myPeerIdRef.current = peerId;
       if (action === 'create') {
-        transport.createRoom(effectivePlayerName, options.requestedRoomCode, roomAuthority ?? undefined);
+        transport.createRoom(
+          effectivePlayerName,
+          options.requestedRoomCode,
+          roomAuthority ?? undefined,
+          options.candidate ? { candidate: true } : undefined,
+        );
       } else {
         transport.joinRoom(action.join, effectivePlayerName, roomAuthority ?? undefined);
       }
@@ -716,6 +811,17 @@ export default function App() {
   }, [relayHost, relayPort, playerName, disconnect, cancelReconnect, refreshResumeAvailable, handleStateUpdate, handleSocketLost, handlePeerDisconnected]);
 
   const promoteLocalSessionToHost = useCallback((session: SavedSession) => {
+    // A former GUEST takes over as a reversible CANDIDATE under the dead
+    // host's unchanged authority (the provider commits an epoch bump only
+    // once its lease expires). A HOST whose transport died re-hosts with
+    // its authority verbatim — it already IS the committed leader, so
+    // bumping the epoch would just churn supersession on reconnect.
+    const authority = {
+      roomId: session.roomId,
+      epoch: session.epoch,
+      leaderId: session.leaderId,
+    };
+    const candidate = !session.isHost;
     const inMemorySnapshot = initialGameState?.state
       ? {
         state: initialGameState.state,
@@ -730,11 +836,8 @@ export default function App() {
         requestedRoomCode: session.roomCode,
         autoStart: true,
         playerName: session.playerName,
-        authority: {
-          roomId: session.roomId,
-          epoch: nextEpoch(session.epoch),
-          leaderId: createLeaderId(),
-        },
+        authority,
+        candidate,
         keepGameMounted: true,
       });
       return;
@@ -756,11 +859,8 @@ export default function App() {
         requestedRoomCode: session.roomCode,
         autoStart: true,
         playerName: session.playerName,
-        authority: {
-          roomId: session.roomId,
-          epoch: nextEpoch(session.epoch),
-          leaderId: createLeaderId(),
-        },
+        authority,
+        candidate,
         keepGameMounted: true,
       });
     });
@@ -937,7 +1037,9 @@ export default function App() {
         void savePlayerName(fallbackName);
       }
       setResumeAvailable(!!snapshot);
-      if (session) startReconnectRef.current(session);
+      // Relaunch: our snapshot is stale, so join-first rather than
+      // insta-promoting a candidate that could clobber the live game.
+      if (session) startReconnectRef.current(session, { promoteDelayMs: RETURNING_GUEST_PROMOTE_MS });
     })();
     return () => { stale = true; };
   }, []);
@@ -955,6 +1057,9 @@ export default function App() {
       ) {
         startReconnectRef.current(sessionRef.current, {
           keepGameMounted: canAutoRejoinAfterPeerDisconnect(sessionRef.current),
+          // Frozen-in-background state is stale: join the live host first
+          // instead of insta-promoting a candidate over it.
+          promoteDelayMs: RETURNING_GUEST_PROMOTE_MS,
         });
       }
     });

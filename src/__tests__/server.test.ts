@@ -686,3 +686,94 @@ describe('GameServer Final Jeopardy undo/redo', () => {
     expect(server.history.current.buzzes.every(b => !b.locked)).toBe(true);
   });
 });
+
+describe('ANSWER_UPDATE delta', () => {
+  function setupBuzzed() {
+    const { timer, fire } = createMockTimer();
+    const host = new MockTransport('host');
+    const server = createServer(host, ['Alice', 'Bob'], { timer });
+
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    p1.send('host', selectClueMsg);
+    fire(); // reading ends, window opens
+    p2.send('host', JSON.stringify({ type: 'BUZZ' }));
+    return { server, p1, p2 };
+  }
+
+  it('SET_ANSWER broadcasts a small delta to every peer instead of a snapshot', () => {
+    const { server, p1, p2 } = setupBuzzed();
+    const p1Messages = captureMessages(p1);
+    const p2Messages = captureMessages(p2);
+
+    p2.send('host', JSON.stringify({ type: 'SET_ANSWER', text: 'PLU' }));
+
+    // Server state is updated as before...
+    expect(server.history.current.buzzes[0]!.answer).toBe('PLU');
+
+    // ...but the wire carries only the delta, on both legs (typer included).
+    for (const messages of [p1Messages, p2Messages]) {
+      expect(messages).toHaveLength(1);
+      expect(JSON.parse(messages[0]![1])).toEqual({
+        type: 'ANSWER_UPDATE',
+        playerId: 'bob',
+        clueId: 1,
+        text: 'PLU',
+      });
+    }
+  });
+
+  it('rejected SET_ANSWER (no buzz) broadcasts nothing', () => {
+    const { p1, p2 } = setupBuzzed();
+    const p1Messages = captureMessages(p1);
+
+    // Alice never buzzed — the reducer rejects her keystroke.
+    p1.send('host', JSON.stringify({ type: 'SET_ANSWER', text: 'SNEAKY' }));
+    expect(p1Messages).toHaveLength(0);
+
+    // Post-lock keystrokes are rejected too.
+    p2.send('host', JSON.stringify({ type: 'LOCK_ANSWER', answer: 'PLUTO' }));
+    const afterLock = captureMessages(p2);
+    p2.send('host', JSON.stringify({ type: 'SET_ANSWER', text: 'PLUTO X' }));
+    expect(afterLock).toHaveLength(0);
+  });
+
+  it('LOCK_ANSWER still broadcasts a full snapshot carrying the final text', () => {
+    const { p1, p2 } = setupBuzzed();
+    p2.send('host', JSON.stringify({ type: 'SET_ANSWER', text: 'PLU' }));
+
+    const p1Messages = captureMessages(p1);
+    p2.send('host', JSON.stringify({ type: 'LOCK_ANSWER', answer: 'PLUTO' }));
+
+    const last = lastStateFrom(p1Messages);
+    expect(last.state.buzzes[0]).toMatchObject({ playerId: 'bob', answer: 'PLUTO', locked: true });
+  });
+
+  it('Final Jeopardy typing uses the sentinel clue id', () => {
+    const { timer } = createMockTimer();
+    const host = new MockTransport('host');
+    const initial = createInitialState(['Alice', 'Bob'], 1, {
+      category: 'WORLD CAPITALS',
+      text: 'Australia moved its capital to this purpose-built city in 1927',
+      answer: 'What is Canberra',
+    });
+    initial.players['alice']!.score = 1500;
+    const server = createServer(host, [], { timer, initialState: initial });
+    const p1 = new MockTransport('player1');
+    MockTransport.link(host, p1);
+
+    // Skipping the only clue drops into the Final Jeopardy wager phase.
+    p1.send('host', JSON.stringify({ type: 'SKIP_CLUE', clueId: 1 }));
+    expect(server.history.current.status).toBe('FINAL_JEOPARDY_WAGER');
+
+    const p1Messages = captureMessages(p1);
+    p1.send('host', JSON.stringify({ type: 'SET_ANSWER', text: '500' }));
+
+    expect(server.history.current.buzzes.find(b => b.playerId === 'alice')!.answer).toBe('500');
+    const delta = JSON.parse(p1Messages[p1Messages.length - 1]![1]);
+    expect(delta).toMatchObject({ type: 'ANSWER_UPDATE', playerId: 'alice', clueId: -1, text: '500' });
+  });
+});

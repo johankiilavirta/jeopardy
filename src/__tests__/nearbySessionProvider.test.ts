@@ -474,6 +474,71 @@ describe('NearbySessionProvider', () => {
     expect(lastOfType(guest, 'host-liveness')?.state).toBe('dead');
   });
 
+  it('candidate defers to the returning committed host within the lease and never commits', async () => {
+    vi.useFakeTimers();
+    const saved = createInitialState(['Alice', 'Bob'], 6, null);
+
+    // Alice's committed host survived a blip; Bob's side declared it dead
+    // and instantly re-hosted as a CANDIDATE under Alice's exact triple.
+    const committed = createPeer('host', 'ORIGINAL-HOST');
+    committed.run(() => committed.provider.createRoom('Alice', 423, auth(1, 'leader-alice')));
+    committed.run(() => committed.provider.startGame({ resume: { state: saved, board: fixtures.game(1) } }));
+
+    const candidate = createPeer('host', 'CANDIDATE');
+    candidate.run(() => candidate.provider.createRoom('Bob', 423, auth(1, 'leader-alice'), { candidate: true }));
+    candidate.run(() => candidate.provider.startGame({ resume: { state: saved, board: fixtures.game(1) } }));
+
+    // The candidate's authority scan finds the original host again.
+    bus.emitTo('CANDIDATE', 'onPeerFound', { peerId: 'ORIGINAL-HOST', name: 'Alice', roomCode: 423 });
+
+    // Committed beats candidate at the identical triple: the candidate
+    // demotes via the usual superseded-host path...
+    const superseded = lastOfType(candidate, 'superseded-host');
+    expect(superseded?.epoch).toBe(1);
+    expect(superseded?.leaderId).toBe('leader-alice');
+    // ...while the committed host is untouched.
+    expect(committed.controls.some(m => m.type === 'superseded-host')).toBe(false);
+    expect(lastOfType(committed, 'room-error')).toBeUndefined();
+
+    // A superseded candidate must never commit its lease afterwards.
+    await vi.advanceTimersByTimeAsync(3200);
+    expect(candidate.controls.some(m => m.type === 'authority-committed')).toBe(false);
+  });
+
+  it('commits the candidate lease after ~3s and demotes a later-returning stale host', async () => {
+    vi.useFakeTimers();
+    const saved = createInitialState(['Alice', 'Bob'], 6, null);
+
+    const candidate = createPeer('host', 'CANDIDATE');
+    candidate.run(() => candidate.provider.createRoom('Bob', 423, auth(1, 'leader-alice'), { candidate: true }));
+    candidate.run(() => candidate.provider.startGame({ resume: { state: saved, board: fixtures.game(1) } }));
+
+    // During the lease the candidate serves under the dead host's triple.
+    const started = lastOfType(candidate, 'game-started');
+    expect(started?.epoch).toBe(1);
+    expect(started?.leaderId).toBe('leader-alice');
+    expect(candidate.controls.some(m => m.type === 'authority-committed')).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(3200);
+
+    // Lease expired: epoch bump plus a fresh leaderId, announced to the app.
+    const committed = lastOfType(candidate, 'authority-committed');
+    expect(committed?.epoch).toBe(2);
+    expect(typeof committed?.leaderId).toBe('string');
+    expect(committed?.leaderId).not.toBe('leader-alice');
+
+    // Alice's host relaunches still claiming epoch 1 → the existing
+    // old-host-return supersession flow demotes it.
+    const staleHost = createPeer('host', 'OLD-HOST');
+    staleHost.run(() => staleHost.provider.createRoom('Alice', 423, auth(1, 'leader-alice')));
+    bus.emitTo('CANDIDATE', 'onPeerFound', { peerId: 'OLD-HOST', name: 'Alice', roomCode: 423 });
+
+    const superseded = lastOfType(staleHost, 'superseded-host');
+    expect(superseded?.epoch).toBe(2);
+    expect(superseded?.oldEpoch).toBe(1);
+    expect(candidate.controls.some(m => m.type === 'superseded-host')).toBe(false);
+  });
+
   it('rejects an invalid resume state without starting a server', () => {
     const { host, guest } = setupLobby();
     const errors: string[] = [];

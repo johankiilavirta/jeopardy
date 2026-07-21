@@ -280,7 +280,7 @@ describe('BluetoothSessionProvider', () => {
     host.run(() => host.provider.createRoom('Alice', 142, auth(2, 'leader-bob')));
     guest.run(() => guest.provider.joinRoom(142, 'Bob', auth(2, 'leader-bob')));
     bus.killSilently('HOST');
-    await vi.advanceTimersByTimeAsync(5200);
+    await vi.advanceTimersByTimeAsync(3200);
 
     expect(lastOfType(guest.controls, 'host-liveness')?.state).toBe('dead');
     const controlsAfterDead = guest.controls.length;
@@ -302,7 +302,7 @@ describe('BluetoothSessionProvider', () => {
     host.run(() => host.provider.createRoom('Alice', 142, auth(2, 'leader-z')));
     guest.run(() => guest.provider.joinRoom(142, 'Bob', auth(2, 'leader-z')));
     bus.killSilently('HOST');
-    await vi.advanceTimersByTimeAsync(5200);
+    await vi.advanceTimersByTimeAsync(3200);
 
     expect(lastOfType(guest.controls, 'host-liveness')?.state).toBe('dead');
     const controlsAfterDead = guest.controls.length;
@@ -327,7 +327,7 @@ describe('BluetoothSessionProvider', () => {
     guest.run(() => guest.provider.joinRoom(142, 'Bob'));
 
     bus.killSilently('HOST');
-    await vi.advanceTimersByTimeAsync(5200);
+    await vi.advanceTimersByTimeAsync(3200);
 
     expect(disconnected).toEqual(['server']);
     expect(lastOfType(guest.controls, 'host-liveness')?.state).toBe('dead');
@@ -344,7 +344,7 @@ describe('BluetoothSessionProvider', () => {
     bus.emitTo('GUEST', 'onPeerConnected', { peerId: 'HOST' });
     bus.killSilently('HOST');
 
-    await vi.advanceTimersByTimeAsync(5200);
+    await vi.advanceTimersByTimeAsync(3200);
 
     expect(disconnected).toEqual(['server']);
     expect(lastOfType(guest.controls, 'host-liveness')?.state).toBe('dead');
@@ -367,6 +367,41 @@ describe('BluetoothSessionProvider', () => {
     expect(disconnected).toEqual([]);
   });
 
+  it('grays the guest marker fast via guest-liveness, long before disconnecting', async () => {
+    vi.useFakeTimers();
+    const host = createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+    const disconnected: string[] = [];
+
+    host.provider.onPeerDisconnected(peerId => disconnected.push(peerId));
+    host.run(() => host.provider.createRoom('Alice', 142, auth(2, 'leader-bob')));
+    guest.run(() => guest.provider.joinRoom(142, 'Bob', auth(2, 'leader-bob')));
+
+    bus.killSilently('GUEST');
+    bus.activate('HOST');
+    await vi.advanceTimersByTimeAsync(900);
+
+    // The UI hint fires well under a second into the silence...
+    expect(lastOfType(host.controls, 'guest-liveness')?.state).toBe('missed');
+    // ...without any actual disconnect (that still needs the 3s watchdog).
+    expect(disconnected).toEqual([]);
+
+    // One resumed heartbeat clears the marker again.
+    bus.emitTo('HOST', 'onMessage', {
+      peerId: 'GUEST',
+      message: JSON.stringify({
+        __nearby: true,
+        type: 'guest-heartbeat',
+        roomCode: 142,
+        roomId: 'room-a',
+        epoch: 2,
+        leaderId: 'leader-bob',
+      }),
+    });
+    expect(lastOfType(host.controls, 'guest-liveness')?.state).toBe('connected');
+    expect(disconnected).toEqual([]);
+  });
+
   it('detects a silent guest death with the guest heartbeat watchdog', async () => {
     vi.useFakeTimers();
     const host = createPeer('host', 'HOST');
@@ -379,7 +414,7 @@ describe('BluetoothSessionProvider', () => {
 
     bus.killSilently('GUEST');
     bus.activate('HOST');
-    await vi.advanceTimersByTimeAsync(5200);
+    await vi.advanceTimersByTimeAsync(3200);
 
     expect(disconnected).toEqual(['GUEST']);
     const hostLobby = lastOfType(host.controls, 'lobby-update');
@@ -411,6 +446,270 @@ describe('BluetoothSessionProvider', () => {
     await vi.advanceTimersByTimeAsync(800);
 
     expect(disconnected).toEqual([]);
+  });
+
+  it('syncs typing over ANSWER_UPDATE deltas, stays live, and converges after undo', async () => {
+    vi.useFakeTimers();
+    const host = createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+    const disconnected: string[] = [];
+    host.provider.onPeerDisconnected(peerId => disconnected.push(peerId));
+    guest.provider.onPeerDisconnected(peerId => disconnected.push(peerId));
+
+    host.run(() => host.provider.createRoom('Alice', 142));
+    guest.run(() => guest.provider.joinRoom(142, 'Bob'));
+    host.run(() => host.provider.startGame({ gameId: 42 }));
+
+    guest.run(() => sendAction(guest.provider, 'server', {
+      type: 'SELECT_CLUE',
+      clue: { id: 1, category: 'R1', text: 'Q', answer: 'A', value: 200 },
+    }));
+    await vi.advanceTimersByTimeAsync(6000); // reading lockout (~5-5.5s)
+    expect(guest.client?.state?.status).toBe('BUZZ_OPEN');
+    guest.run(() => sendAction(guest.provider, 'server', { type: 'BUZZ' }));
+
+    // Simulated typing flood: full text every keystroke, like the UI sends.
+    const sentBefore = bus.sent.length;
+    const word = 'WHAT IS PLUTO ACTUALLY THOUGH SERIOUSLY';
+    for (let i = 1; i <= word.length; i++) {
+      guest.run(() => sendAction(guest.provider, 'server', { type: 'SET_ANSWER', text: word.slice(0, i) }));
+    }
+    await vi.advanceTimersByTimeAsync(1200);
+
+    // Both sides converge on the typed text...
+    expect(host.client?.state?.buzzes[0]?.answer).toBe(word);
+    expect(guest.client?.state?.buzzes[0]?.answer).toBe(word);
+
+    // ...the wire carried compact deltas, never snapshots, for keystrokes...
+    const typingWire = bus.sent.slice(sentBefore)
+      .filter(s => s.from === 'HOST' && s.to === 'GUEST')
+      .map(s => JSON.parse(s.message) as { type?: string });
+    expect(typingWire.filter(m => m.type === 'ANSWER_UPDATE')).toHaveLength(word.length);
+    expect(typingWire.filter(m => m.type === 'STATE_UPDATE')).toHaveLength(0);
+
+    // ...and liveness never wavered during the burst.
+    expect(disconnected).toEqual([]);
+    expect(guest.controls.some(m => m.type === 'host-liveness' && m.state !== 'connected')).toBe(false);
+
+    // Undo mid-typing lands both peers back at the board.
+    guest.run(() => sendAction(guest.provider, 'server', { type: 'UNDO' }));
+    expect(host.client?.state?.status).toBe('CHOOSE_CLUE');
+    expect(guest.client?.state?.status).toBe('CHOOSE_CLUE');
+    expect(guest.client?.state?.buzzes).toEqual([]);
+
+    // A straggler delta for the undone clue is dropped by the clue-id guard.
+    bus.emitTo('GUEST', 'onMessage', {
+      peerId: 'HOST',
+      message: JSON.stringify({ type: 'ANSWER_UPDATE', playerId: 'bob', clueId: 1, text: 'STALE' }),
+    });
+    expect(guest.client?.state?.buzzes).toEqual([]);
+    expect(guest.client?.state?.status).toBe('CHOOSE_CLUE');
+  });
+
+  it('old-host-return loop: demote via epoch, rejoin as guest, one game, deltas flow', async () => {
+    vi.useFakeTimers();
+    const promoted = createPeer('host', 'GUEST-PROMOTED');
+    const saved = createInitialState(['Alice', 'Bob'], 1, null);
+    saved.players['alice']!.score = 400;
+    saved.players['bob']!.score = 200;
+
+    // Bob promoted himself after Alice's host died and resumed from snapshot.
+    promoted.run(() => promoted.provider.createRoom('Bob', 142, auth(2, 'leader-bob')));
+    promoted.run(() => promoted.provider.startGame({ resume: { state: saved, board: fixtures.game } }));
+    expect(promoted.client?.playerId).toBe('bob');
+
+    // Alice's stale host comes back online still believing it leads (epoch 1).
+    const staleHost = createPeer('host', 'OLD-HOST');
+    staleHost.run(() => staleHost.provider.createRoom('Alice', 142, auth(1, 'leader-alice')));
+
+    // The promoted host's authority scan finds it and asserts epoch 2.
+    // (The mock bus can't route the scan interval's browse() to a device,
+    // so deliver the discovery it would produce directly.)
+    bus.emitTo('GUEST-PROMOTED', 'onPeerFound', { peerId: 'OLD-HOST', name: 'Alice', roomCode: 142 });
+    const superseded = lastOfType(staleHost.controls, 'superseded-host');
+    expect(superseded?.epoch).toBe(2);
+    expect(superseded?.oldEpoch).toBe(1);
+    // The demoting side must never tell the WINNING host "a newer host is
+    // active": the promoted app treats room-error as fatal and would quit
+    // to the menu mid-game.
+    expect(lastOfType(promoted.controls, 'room-error')).toBeUndefined();
+
+    // The app reacts by tearing the stale host down and rejoining as guest.
+    staleHost.run(() => staleHost.provider.stop());
+    const rejoin = createPeer('guest', 'OLD-HOST-REJOIN');
+    rejoin.run(() => rejoin.provider.joinRoom(142, 'Alice', auth(1, 'leader-alice')));
+    bus.emitTo('OLD-HOST-REJOIN', 'onPeerFound', { peerId: 'GUEST-PROMOTED', name: 'Bob', roomCode: 142 });
+
+    // Resync: same game, scores intact, epoch adopted from the winner.
+    const rejoinStarted = lastOfType(rejoin.controls, 'game-started');
+    expect(rejoinStarted?.isResume).toBe(true);
+    expect(rejoinStarted?.epoch).toBe(2);
+    expect(rejoin.client?.playerId).toBe('alice');
+    expect(rejoin.client?.state?.players['alice']?.score).toBe(400);
+    expect(rejoin.client?.state?.players['bob']?.score).toBe(200);
+
+    // The reunited pair plays on: Alice picks, buzzes, and types — synced
+    // to the promoted host through deltas.
+    rejoin.run(() => sendAction(rejoin.provider, 'server', {
+      type: 'SELECT_CLUE',
+      clue: { id: 1, category: 'R1', text: 'Q', answer: 'A', value: 200 },
+    }));
+    await vi.advanceTimersByTimeAsync(6000);
+    rejoin.run(() => sendAction(rejoin.provider, 'server', { type: 'BUZZ' }));
+    const sentBefore = bus.sent.length;
+    rejoin.run(() => sendAction(rejoin.provider, 'server', { type: 'SET_ANSWER', text: 'CANBERRA' }));
+
+    expect(promoted.client?.state?.buzzes[0]).toMatchObject({ playerId: 'alice', answer: 'CANBERRA' });
+    expect(rejoin.client?.state?.buzzes[0]?.answer).toBe('CANBERRA');
+    const typingWire = bus.sent.slice(sentBefore)
+      .filter(s => s.from === 'GUEST-PROMOTED' && s.to === 'OLD-HOST-REJOIN')
+      .map(s => JSON.parse(s.message) as { type?: string });
+    expect(typingWire.filter(m => m.type === 'ANSWER_UPDATE')).toHaveLength(1);
+    expect(typingWire.filter(m => m.type === 'STATE_UPDATE')).toHaveLength(0);
+  });
+
+  it('candidate defers to the returning committed host within the lease and never commits', async () => {
+    vi.useFakeTimers();
+    const saved = createInitialState(['Alice', 'Bob'], 1, null);
+
+    // Alice's committed host survived a radio blip; Bob's side declared it
+    // dead and instantly re-hosted as a CANDIDATE under Alice's exact triple.
+    const committed = createPeer('host', 'ORIGINAL-HOST');
+    committed.run(() => committed.provider.createRoom('Alice', 142, auth(1, 'leader-alice')));
+    committed.run(() => committed.provider.startGame({ resume: { state: saved, board: fixtures.game } }));
+
+    const candidate = createPeer('host', 'CANDIDATE');
+    candidate.run(() => candidate.provider.createRoom('Bob', 142, auth(1, 'leader-alice'), { candidate: true }));
+    candidate.run(() => candidate.provider.startGame({ resume: { state: saved, board: fixtures.game } }));
+
+    // The candidate's authority scan finds the original host again.
+    bus.emitTo('CANDIDATE', 'onPeerFound', { peerId: 'ORIGINAL-HOST', name: 'Alice', roomCode: 142 });
+
+    // Committed beats candidate at the identical triple: the candidate
+    // demotes via the usual superseded-host path...
+    const superseded = lastOfType(candidate.controls, 'superseded-host');
+    expect(superseded?.epoch).toBe(1);
+    expect(superseded?.leaderId).toBe('leader-alice');
+    // ...while the committed host is untouched: no supersession, and no
+    // fatal room-error was sent its way.
+    expect(committed.controls.some(m => m.type === 'superseded-host')).toBe(false);
+    expect(lastOfType(committed.controls, 'room-error')).toBeUndefined();
+
+    // A superseded candidate must never commit its lease afterwards.
+    await vi.advanceTimersByTimeAsync(3200);
+    expect(candidate.controls.some(m => m.type === 'authority-committed')).toBe(false);
+  });
+
+  it('commits the candidate lease after ~3s and demotes a later-returning stale host', async () => {
+    vi.useFakeTimers();
+    const saved = createInitialState(['Alice', 'Bob'], 1, null);
+
+    const candidate = createPeer('host', 'CANDIDATE');
+    candidate.run(() => candidate.provider.createRoom('Bob', 142, auth(1, 'leader-alice'), { candidate: true }));
+    candidate.run(() => candidate.provider.startGame({ resume: { state: saved, board: fixtures.game } }));
+
+    // During the lease the candidate serves under the dead host's triple.
+    const started = lastOfType(candidate.controls, 'game-started');
+    expect(started?.epoch).toBe(1);
+    expect(started?.leaderId).toBe('leader-alice');
+    expect(candidate.controls.some(m => m.type === 'authority-committed')).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(3200);
+
+    // Lease expired: epoch bump plus a fresh leaderId, announced to the app.
+    const committed = lastOfType(candidate.controls, 'authority-committed');
+    expect(committed?.epoch).toBe(2);
+    expect(typeof committed?.leaderId).toBe('string');
+    expect(committed?.leaderId).not.toBe('leader-alice');
+
+    // Alice's host relaunches still claiming epoch 1 → the existing
+    // old-host-return supersession flow demotes it.
+    const staleHost = createPeer('host', 'OLD-HOST');
+    staleHost.run(() => staleHost.provider.createRoom('Alice', 142, auth(1, 'leader-alice')));
+    bus.emitTo('CANDIDATE', 'onPeerFound', { peerId: 'OLD-HOST', name: 'Alice', roomCode: 142 });
+
+    const superseded = lastOfType(staleHost.controls, 'superseded-host');
+    expect(superseded?.epoch).toBe(2);
+    expect(superseded?.oldEpoch).toBe(1);
+    expect(candidate.controls.some(m => m.type === 'superseded-host')).toBe(false);
+  });
+
+  it('commits early when a guest joins the candidate, and the guest adopts the new authority', () => {
+    vi.useFakeTimers();
+    const saved = createInitialState(['Alice', 'Bob'], 1, null);
+    saved.players['alice']!.score = 400;
+
+    const candidate = createPeer('host', 'CANDIDATE');
+    candidate.run(() => candidate.provider.createRoom('Bob', 142, auth(1, 'leader-alice'), { candidate: true }));
+    candidate.run(() => candidate.provider.startGame({ resume: { state: saved, board: fixtures.game } }));
+
+    // The former host's player rejoins as a guest before the lease expires,
+    // carrying the dead host's triple: it must JOIN the candidate, not
+    // supersede it, and the join commits the candidate immediately.
+    const rejoin = createPeer('guest', 'OLD-HOST-REJOIN');
+    rejoin.run(() => rejoin.provider.joinRoom(142, 'Alice', auth(1, 'leader-alice')));
+
+    expect(candidate.controls.some(m => m.type === 'superseded-host')).toBe(false);
+    const committed = lastOfType(candidate.controls, 'authority-committed');
+    expect(committed?.epoch).toBe(2);
+
+    // The guest provider adopted the committed authority and re-emitted it
+    // for the app to persist.
+    const guestCommit = lastOfType(rejoin.controls, 'authority-committed');
+    expect(guestCommit?.epoch).toBe(2);
+    expect(guestCommit?.leaderId).toBe(committed?.leaderId);
+
+    // The rejoin lands in the committed game with state intact.
+    const rejoinStarted = lastOfType(rejoin.controls, 'game-started');
+    expect(rejoinStarted?.epoch).toBe(2);
+    expect(rejoin.client?.playerId).toBe('alice');
+    expect(rejoin.client?.state?.players['alice']?.score).toBe(400);
+  });
+
+  it('hands a rejoining guest the scores earned while it was dead', async () => {
+    vi.useFakeTimers();
+    const host = createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+
+    host.run(() => host.provider.createRoom('Alice', 142));
+    guest.run(() => guest.provider.joinRoom(142, 'Bob'));
+    host.run(() => host.provider.startGame({ gameId: 42 }));
+    const started = lastOfType(host.controls, 'game-started');
+
+    // Bob's app dies silently; the host's watchdog clears his seat.
+    bus.killSilently('GUEST');
+    bus.activate('HOST');
+    await vi.advanceTimersByTimeAsync(3200);
+
+    // While Bob is gone, Alice plays a full clue: pick, buzz, let the 20s
+    // window run out, judge herself correct.
+    host.run(() => sendAction(host.provider, 'server', {
+      type: 'SELECT_CLUE',
+      clue: { id: 1, category: 'R1', text: 'Q', answer: 'A', value: 200 },
+    }));
+    await vi.advanceTimersByTimeAsync(6000); // reading lockout
+    expect(host.client?.state?.status).toBe('BUZZ_OPEN');
+    host.run(() => sendAction(host.provider, 'server', { type: 'BUZZ' }));
+    host.run(() => sendAction(host.provider, 'server', { type: 'LOCK_ANSWER', answer: 'A' }));
+    await vi.advanceTimersByTimeAsync(21000); // buzz window expires
+    expect(host.client?.state?.status).toBe('REVEAL');
+    host.run(() => sendAction(host.provider, 'server', { type: 'JUDGE_ANSWER', playerId: 'alice', correct: true }));
+    expect(host.client?.state?.players['alice']?.score).toBe(200);
+
+    // Bob relaunches and rejoins the same room: the seat reattach must hand
+    // him the judged score, not the world from before he died.
+    const rejoin = createPeer('guest', 'GUEST-REJOIN');
+    rejoin.run(() => rejoin.provider.joinRoom(142, 'Bob', {
+      roomId: started?.roomId as string,
+      epoch: started?.epoch as number,
+      leaderId: started?.leaderId as string,
+    }));
+
+    const rejoinStarted = lastOfType(rejoin.controls, 'game-started');
+    expect(rejoinStarted?.isResume).toBe(true);
+    expect(rejoin.client?.playerId).toBe('bob');
+    expect(rejoin.client?.state?.players['alice']?.score).toBe(200);
+    expect(rejoin.client?.state?.burnedClueIds).toContain(1);
   });
 
   it('does not mark the gameplay guest disconnected when an authority probe disconnects', () => {
