@@ -165,7 +165,31 @@ export function createServer(
     server.history = next;
     if (server.history.current.status !== prevStatus) armPhaseTimer();
     syncAnswerTimers();
-    broadcastState(transport, server);
+    // Typing is the wire's hot path: a SET_ANSWER only rewrites one buzz's
+    // answer text, so broadcast a small delta instead of the full snapshot
+    // (~100 bytes vs several KB — on Bluetooth that's 1 chunk vs dozens).
+    // Clients apply it through the same reducer; peers that don't know the
+    // type ignore it and self-heal at the next full snapshot (every other
+    // action, including LOCK_ANSWER which carries the final text).
+    if (action.type === 'SET_ANSWER') {
+      broadcastAnswerUpdate(action.playerId, action.text);
+    } else {
+      broadcastState(transport, server);
+    }
+  }
+
+  function broadcastAnswerUpdate(playerId: string, text: string): void {
+    const clueId = server.history.current.activeClue?.id;
+    if (clueId == null) {
+      // SET_ANSWER only applies with an active clue, so this can't happen;
+      // fall back to the always-correct full snapshot if it somehow does.
+      broadcastState(transport, server);
+      return;
+    }
+    const message = JSON.stringify({ type: 'ANSWER_UPDATE', playerId, clueId, text });
+    for (const peerId of server.playerPeers.keys()) {
+      transport.send(peerId, message);
+    }
   }
 
   function fireTimerAction(action: Action): void {
