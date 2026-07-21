@@ -5,15 +5,16 @@
  *   npm run ui                    # board fixture
  *   npm run ui -- --screen=clue   # a clue already on screen
  *   npm run ui -- --screen=judge  # answer-reveal / judging fixture
+ *   npm run ui -- --screen=final-wager  # Final Jeopardy wager fixture
  */
 import { spawn } from 'child_process';
 
 const screenArg = process.argv.find(arg => arg.startsWith('--screen='));
 const screen = screenArg?.slice('--screen='.length) ?? 'board';
-const allowedScreens = new Set(['board', 'clue', 'judge']);
+const allowedScreens = new Set(['board', 'clue', 'judge', 'final-wager']);
 
 if (!allowedScreens.has(screen)) {
-  throw new Error(`Unknown UI lab screen "${screen}". Use board, clue, or judge.`);
+  throw new Error(`Unknown UI lab screen "${screen}". Use board, clue, judge, or final-wager.`);
 }
 
 console.log(`\n  UI lab: ${screen} fixture (web, hot reload enabled)\n`);
