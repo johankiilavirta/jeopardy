@@ -239,45 +239,59 @@ export function ClueScreen({
     inputRange: [0, 1],
     outputRange: [panelHeight, 0],
   });
+  // The sheet's true offset from fully-raised: the phase-driven slide plus
+  // any live finger drag. 0 = sheet all the way up, panelHeight = offscreen.
+  // Everything that reacts to the keyboard (clue rise/scale, header fade,
+  // lights) keys off this instead of `kb` alone, so it tracks the sheet
+  // through a swipe-down too — including the drag-to-dismiss slide-out,
+  // after which finishDismiss's kb/kbDrag resets are visually no-ops. This
+  // matters most on the final-wager screen, where dismissing the keyboard
+  // leaves you on the same card instead of changing phase.
+  const sheetOffset = Animated.add(panelRise, kbDrag);
   // The clue glides up in lockstep so it re-centers in the visible card
   // area left above the sheet, shrinking a touch. The card's bottom edge
   // sits CARD_BOTTOM_MARGIN + PLAYER_BAR_HEIGHT above the screen bottom;
   // the sheet's top sits panelHeight above it — half the difference
   // recenters the text, plus half the header strip that fades out while
   // typing (category and value give their space to the clue).
-  const clueRise = kb.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -(panelHeight - CARD_BOTTOM_MARGIN - PLAYER_BAR_HEIGHT) / 2 - 14],
+  const clueRise = sheetOffset.interpolate({
+    inputRange: [0, panelHeight],
+    outputRange: [-(panelHeight - CARD_BOTTOM_MARGIN - PLAYER_BAR_HEIGHT) / 2 - 14, 0],
+    extrapolate: 'clamp',
   });
-  const clueScale = kb.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 0.9],
+  const clueScale = sheetOffset.interpolate({
+    inputRange: [0, panelHeight],
+    outputRange: [0.9, 1],
+    extrapolate: 'clamp',
   });
   // Category and value fade away while the keyboard is up — every visible
   // pixel of the card belongs to the clue while answering.
-  const headerFade = kb.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 0],
+  const headerFade = sheetOffset.interpolate({
+    inputRange: [0, panelHeight],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
   });
   // The activation lights ride along: from their resting band just under
   // the card (LIGHTS_REST_BOTTOM above the player-bar strip) up onto the
   // sheet, landing right under the typed answer. One instance the whole
   // time, so the drain animation never restarts mid-flight.
-  const lightsRise = kb.interpolate({
-    inputRange: [0, 1],
+  const lightsRise = sheetOffset.interpolate({
+    inputRange: [0, panelHeight],
     outputRange: [
-      0,
       -(panelHeight - PLAYER_BAR_HEIGHT - LIGHTS_REST_BOTTOM - LIGHTS_SHEET_OFFSET),
+      0,
     ],
+    extrapolate: 'clamp',
   });
   // At rest the strip spans 96% of the clue card (see ActivationLights);
   // the sheet is narrower, so the strip compresses horizontally in flight
   // to land just inside the sheet's edges.
   const stripWidth = Math.min(width * LIGHTS_WIDTH_PCT, 1460);
   const sheetWidth = width * SHEET_WIDTH_PCT;
-  const lightsSqueeze = kb.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, (sheetWidth - 44) / stripWidth],
+  const lightsSqueeze = sheetOffset.interpolate({
+    inputRange: [0, panelHeight],
+    outputRange: [(sheetWidth - 44) / stripWidth, 1],
+    extrapolate: 'clamp',
   });
 
   // Hard on/off caret blink next to the typed answer, broadcast style.
@@ -538,16 +552,13 @@ export function ClueScreen({
           ]}
           onPress={handleTap}
         >
-          {/* The wager screen keeps the corner indicator ("FINAL JEOPARDY",
-              the sentinel clue's category) at full opacity — the keyboard
-              is up for most of the wager, and the header would otherwise
-              fade with it. The FJ card zeroes its horizontal padding, so
-              the header carries its own. */}
+          {/* The FJ card zeroes its horizontal padding, so its header carries
+              its own during the wager phase. */}
           <Animated.View
             style={[
               styles.header,
               isFinalJeopardyWager && styles.headerFinalWager,
-              { opacity: isFinalJeopardyWager ? 1 : headerFade },
+              { opacity: headerFade },
             ]}
           >
             <Text style={styles.category} numberOfLines={1} allowFontScaling={false}>
@@ -558,7 +569,6 @@ export function ClueScreen({
             </Text>
           </Animated.View>
 
-          {!isFinalJeopardyWager && (
           <View style={styles.body}>
             <Animated.View
               style={{
@@ -567,7 +577,10 @@ export function ClueScreen({
                 position: 'relative',
               }}
             >
-              <Text style={styles.clueText} allowFontScaling={false}>
+              <Text
+                style={[styles.clueText, isFinalJeopardyWager && styles.wagerCategoryText]}
+                allowFontScaling={false}
+              >
                 {clue.text.toUpperCase()}
               </Text>
 
@@ -593,25 +606,9 @@ export function ClueScreen({
               )}
             </Animated.View>
           </View>
-          )}
         </Pressable>
 
       </Animated.View>
-
-      {/* The final wager's category: dead-center between the top of the
-          screen and the keyboard's raised top edge. It anchors to the
-          sheet's height — a plain number, not the slide driver — so it
-          holds perfectly still while the keyboard comes and goes. */}
-      {isFinalJeopardyWager && (
-        <View
-          pointerEvents="none"
-          style={[styles.wagerCategoryLayer, { bottom: panelHeight }]}
-        >
-          <Text style={[styles.clueText, styles.wagerCategoryText]} allowFontScaling={false}>
-            {clue.text.toUpperCase()}
-          </Text>
-        </View>
-      )}
 
       {/* The answer sheet: a floating console docked to the true screen
           bottom — centered, at least half the screen tall — sliding up
@@ -664,14 +661,15 @@ export function ClueScreen({
       {/* The activation lights live in their own layer, above the sheet,
           inset by the player-bar strip so their resting spot stays glued
           under the card. The sheet's rise (and any live lock-drag) carries
-          them up onto it, squeezing to the sheet's width, and back. */}
+          them up onto it, squeezing to the sheet's width, and back —
+          kbDrag is already folded into lightsRise via sheetOffset. */}
       <Animated.View
         pointerEvents="none"
         style={[
           styles.lightsLayer,
           {
             transform: [
-              { translateY: Animated.add(lightsRise, kbDrag) },
+              { translateY: lightsRise },
               { scaleX: lightsSqueeze },
             ],
           },
@@ -769,14 +767,6 @@ const styles = StyleSheet.create({
     textShadowColor: shadow.valueText.textShadowColor,
     textShadowOffset: shadow.valueText.textShadowOffset,
     textShadowRadius: shadow.valueText.textShadowRadius,
-  },
-  wagerCategoryLayer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   wagerCategoryText: {
     fontSize: 40,
