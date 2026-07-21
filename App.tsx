@@ -49,11 +49,15 @@ const CONNECTION_TIMEOUT_MS = 7000;
  *  just slows down the rejoin retry loop. */
 const LOCAL_CONNECTION_TIMEOUT_MS = 3000;
 const RECONNECT_RETRY_MS = 3000;
-/** Reconnect-first failover: a guest that loses its host keeps retrying
- *  for this long (~2 attempts) before promoting itself to host from the
- *  local snapshot. Instant promotion (0) turns every transient Bluetooth
- *  blip into a competing host mid-game. */
-const LOCAL_FAILOVER_PROMOTE_MS = 6000;
+/** How long a guest that lost its host retries reconnecting before
+ *  promoting itself to host from the local snapshot. 0 = promote as soon
+ *  as the heartbeat watchdog declares the host dead: the 3s watchdog is
+ *  the anti-blip debounce (only true silence trips it now that typing no
+ *  longer floods the link), and if the old host returns, epoch
+ *  supersession demotes it and resyncs it as a guest. Trade-off: a
+ *  returning host resyncs (brief role-swap churn) instead of seamlessly
+ *  reattaching, and up to ~3s of host-side actions can roll back. */
+const LOCAL_FAILOVER_PROMOTE_MS = 0;
 
 const extra = Constants.expoConfig?.extra as {
   network?: boolean;
@@ -319,6 +323,12 @@ export default function App() {
       promoteLocalSessionRef.current(session);
     };
 
+    // Immediate promotion: skip the reconnect loop entirely rather than
+    // starting a guest BLE session that a 0ms timer would tear right down.
+    if (shouldPromote && LOCAL_FAILOVER_PROMOTE_MS === 0) {
+      promote();
+      return;
+    }
     if (shouldPromote) {
       ctl.promoteTimer = setTimeout(promote, LOCAL_FAILOVER_PROMOTE_MS);
     }
