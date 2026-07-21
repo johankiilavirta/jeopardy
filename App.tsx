@@ -58,6 +58,12 @@ const RECONNECT_RETRY_MS = 3000;
  *  returning host resyncs (brief role-swap churn) instead of seamlessly
  *  reattaching, and up to ~3s of host-side actions can roll back. */
 const LOCAL_FAILOVER_PROMOTE_MS = 0;
+/** A superseded host demoting itself joins the NEWER host, whose
+ *  authority-hello it heard moments ago — so unlike a dead-host failover
+ *  it must NOT promote instantly (that would steal hostship right back
+ *  and epoch ping-pong forever). Give the join a real grace window; only
+ *  if the newer host is truly gone does the demoted side take over. */
+const DEMOTION_PROMOTE_GRACE_MS = 6000;
 
 const extra = Constants.expoConfig?.extra as {
   network?: boolean;
@@ -207,7 +213,7 @@ export default function App() {
     timer: ReturnType<typeof setTimeout> | null;
     promoteTimer: ReturnType<typeof setTimeout> | null;
   } | null>(null);
-  const startReconnectRef = useRef<(session: SavedSession, options?: { keepGameMounted?: boolean }) => void>(() => {});
+  const startReconnectRef = useRef<(session: SavedSession, options?: { keepGameMounted?: boolean; promoteDelayMs?: number }) => void>(() => {});
   const promoteLocalSessionRef = useRef<(session: SavedSession) => void>(() => {});
 
   const disconnect = useCallback(() => {
@@ -276,9 +282,19 @@ export default function App() {
 
   /** Rejoin a live room, retrying until it works, the relay says the room
    *  is gone, or the player cancels from the Reconnecting screen. */
-  const startReconnect = useCallback((session: SavedSession, options: { keepGameMounted?: boolean } = {}) => {
+  const startReconnect = useCallback((session: SavedSession, options: { keepGameMounted?: boolean; promoteDelayMs?: number } = {}) => {
     cancelReconnect();
     const isLocal = isLocalSessionMode(session.mode);
+    // A local HOST session must never enter the guest-join loop below:
+    // there is no other host to join, so it would sit on RECONNECTING
+    // forever and strand the guest too. Re-host from the in-memory
+    // snapshot instead — the guest's auto-rejoin finds the new room.
+    // (Off the game screen — e.g. relaunch after a kill — joining as a
+    // guest is right: the surviving player has already promoted.)
+    if (isLocal && session.isHost && screenRef.current.type === 'game') {
+      promoteLocalSessionRef.current(session);
+      return;
+    }
     const keepGameMounted = !!options.keepGameMounted && isLocal && !session.isHost && screenRef.current.type === 'game';
     transportRef.current?.stop();
     transportRef.current = null;
@@ -289,7 +305,8 @@ export default function App() {
     setLocalRecovery(keepGameMounted ? 'reconnecting' : 'none');
 
     const shouldPromote = isLocal && !session.isHost;
-    const promoteAfter = shouldPromote ? Date.now() + LOCAL_FAILOVER_PROMOTE_MS : null;
+    const promoteDelayMs = options.promoteDelayMs ?? LOCAL_FAILOVER_PROMOTE_MS;
+    const promoteAfter = shouldPromote ? Date.now() + promoteDelayMs : null;
 
     const ctl = {
       cancelled: false,
@@ -325,12 +342,12 @@ export default function App() {
 
     // Immediate promotion: skip the reconnect loop entirely rather than
     // starting a guest BLE session that a 0ms timer would tear right down.
-    if (shouldPromote && LOCAL_FAILOVER_PROMOTE_MS === 0) {
+    if (shouldPromote && promoteDelayMs === 0) {
       promote();
       return;
     }
     if (shouldPromote) {
-      ctl.promoteTimer = setTimeout(promote, LOCAL_FAILOVER_PROMOTE_MS);
+      ctl.promoteTimer = setTimeout(promote, promoteDelayMs);
     }
 
     const giveUp = () => {
@@ -714,7 +731,14 @@ export default function App() {
             isHost: false,
             savedAt: Date.now(),
           };
-          startReconnectRef.current(reconnectSession);
+          // Keep the game mounted while demoting: rejoining the newer host
+          // is a dimmed blip, not a trip through the RECONNECTING screen.
+          // The grace window stops the demoted side from instantly
+          // re-promoting (0ms failover) and ping-ponging hostship forever.
+          startReconnectRef.current(reconnectSession, {
+            keepGameMounted: true,
+            promoteDelayMs: DEMOTION_PROMOTE_GRACE_MS,
+          });
           break;
         }
         case 'room-error':
