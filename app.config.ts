@@ -1,5 +1,6 @@
 import type { ExpoConfig } from 'expo/config';
 import appJson from './app.json';
+import { DEFAULT_RELAY_HOST } from './app/relayDefaults';
 
 const config: ExpoConfig = {
   ...appJson.expo,
@@ -13,7 +14,7 @@ const config: ExpoConfig = {
   },
   extra: {
     network: !!process.env.EXPO_PUBLIC_NETWORK,
-    relayHost: process.env.EXPO_PUBLIC_RELAY_HOST ?? 'localhost',
+    relayHost: process.env.EXPO_PUBLIC_RELAY_HOST ?? DEFAULT_RELAY_HOST,
     room: process.env.EXPO_PUBLIC_ROOM,
     // Dev solo/auto-start: how many players to wait for before auto-starting
     // (default 1 = drop straight in), and which J!Archive game to load.
