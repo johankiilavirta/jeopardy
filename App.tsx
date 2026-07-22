@@ -41,8 +41,9 @@ import {
   type SavedSession,
   type SavedSnapshot,
 } from './app/sessionStore';
-import { computeWinnerNames, recordMatch, type MatchResult } from './app/matchHistory';
+import { computeWinnerNames, loadMatchHistory, recordMatch, type MatchResult } from './app/matchHistory';
 import { SettingsScreen } from './ui/screens/SettingsScreen';
+import { MatchHistoryScreen } from './ui/screens/MatchHistoryScreen';
 import { colors } from './ui/theme/tokens';
 
 const CONNECTION_TIMEOUT_MS = 7000;
@@ -118,6 +119,7 @@ type AppScreen =
   | { type: 'game'; serverPeerId: string; roomCode: number; isResume?: boolean }
   | { type: 'reconnecting'; roomCode: number }
   | { type: 'settings' }
+  | { type: 'history' }
   | { type: 'demo' };
 
 type LocalRecoveryState = 'none' | 'reconnecting' | 'promoting';
@@ -222,6 +224,10 @@ export default function App() {
   const gameNumberRef = useRef<number | null>(null);
   const [recentMatches, setRecentMatches] = useState<MatchResult[]>([]);
 
+  useEffect(() => {
+    void loadMatchHistory().then(setRecentMatches);
+  }, []);
+
   // RESUME GAME is offered when an unfinished snapshot is saved on device.
   const [resumeAvailable, setResumeAvailable] = useState(false);
   const screenRef = useRef(screen);
@@ -282,6 +288,11 @@ export default function App() {
           score: p.score,
           correct: p.correct,
           incorrect: p.incorrect,
+          buzzCount: p.buzzCount,
+          firstBuzzCount: p.firstBuzzCount,
+          reactionMsTotal: p.reactionMsTotal,
+          scoreHistory: p.scoreHistory,
+          finalWager: state.finalWagers?.[p.id],
         }));
         void recordMatch({
           id: matchIdRef.current,
@@ -289,7 +300,7 @@ export default function App() {
           gameNumber: gameNumberRef.current,
           players,
           winnerNames: computeWinnerNames(players),
-        }).then(list => setRecentMatches(list.slice(0, 5)));
+        }).then(setRecentMatches);
       }
     } else {
       saveSnapshotState(state);
@@ -1214,6 +1225,15 @@ export default function App() {
             relayPort={relayPort}
             onRelayPortChange={setRelayPort}
             onBack={() => setScreen({ type: 'menu' })}
+            onHistory={() => setScreen({ type: 'history' })}
+          />
+        );
+      case 'history':
+        return (
+          <MatchHistoryScreen
+            matches={recentMatches}
+            playerName={playerName}
+            onBack={() => setScreen({ type: 'settings' })}
           />
         );
       case 'demo':

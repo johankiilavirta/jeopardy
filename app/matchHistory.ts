@@ -5,7 +5,7 @@
  * joiners alike — newest first, capped. Records are upserted by id so
  * undoing out of GAME_OVER and re-finishing replaces the entry instead
  * of duplicating it. Powers the last-5 chips on the GAME OVER screen;
- * lifetime stats / a match-history UI can build on it later.
+ * history screens use the saved stats to recreate the GAME OVER summary.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -18,6 +18,12 @@ export interface MatchPlayerResult {
   score: number;
   correct: number;
   incorrect: number;
+  /** Optional so records written by older app versions remain readable. */
+  buzzCount?: number | undefined;
+  firstBuzzCount?: number | undefined;
+  reactionMsTotal?: number | undefined;
+  scoreHistory?: number[] | undefined;
+  finalWager?: number | undefined;
 }
 
 export interface MatchResult {
