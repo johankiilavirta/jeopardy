@@ -1,11 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { relayUrls } from '../../app/relayUrl';
+import { DEFAULT_RELAY_HOST } from '../../app/relayDefaults';
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe('relayUrls', () => {
+  it('uses the hosted relay as the installed-app default', () => {
+    expect(relayUrls(DEFAULT_RELAY_HOST, '8787')).toEqual({
+      ws: 'wss://jeopardy-relay-johan.fly.dev',
+      http: 'https://jeopardy-relay-johan.fly.dev',
+    });
+  });
+
   it('builds ws/http URLs from a bare host and port', () => {
     expect(relayUrls('localhost', '8787')).toEqual({
       ws: 'ws://localhost:8787',

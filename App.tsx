@@ -17,6 +17,7 @@ import { OnlineSessionProvider } from './app/onlineSessionProvider';
 import { NearbySessionProvider } from './app/nearbySessionProvider';
 import { BluetoothSessionProvider } from './app/bluetoothSessionProvider';
 import { relayUrls } from './app/relayUrl';
+import { DEFAULT_RELAY_HOST } from './app/relayDefaults';
 import { connectionModeForRoomCode } from './app/roomCodes';
 import type { SessionMode, SessionProvider } from './app/sessionProvider';
 import { compareAuthority, createLeaderId, createRoomId, normalizeEpoch, normalizeLeaderId, type SessionAuthority } from './app/sessionAuthority';
@@ -103,7 +104,7 @@ const DEV_ROOM = DEV_ROOM_RAW ? Number(DEV_ROOM_RAW) : null;
 const DEV_PLAYERS = DEV_PLAYERS_RAW ? Math.max(1, Number(DEV_PLAYERS_RAW)) : 1;
 // Optional J!Archive game number to load for the dev session.
 const DEV_GAME = DEV_GAME_RAW ? Number(DEV_GAME_RAW) : null;
-const DEFAULT_RELAY_HOST = process.env.EXPO_PUBLIC_RELAY_HOST ?? extra?.relayHost ?? 'localhost';
+const relayHostFromConfig = process.env.EXPO_PUBLIC_RELAY_HOST ?? extra?.relayHost ?? DEFAULT_RELAY_HOST;
 
 // Session/snapshot persistence and auto-rejoin are disabled in dev
 // auto-start mode — the fixed DEV_ROOM flow owns the lifecycle there.
@@ -198,7 +199,7 @@ export default function App() {
 
   const [screen, setScreen] = useState<AppScreen>(() => (UI_LAB ? { type: 'demo' } : { type: 'menu' }));
   const [playerName, setPlayerName] = useState('');
-  const [relayHost, setRelayHost] = useState(DEFAULT_RELAY_HOST);
+  const [relayHost, setRelayHost] = useState(relayHostFromConfig);
   const [relayPort, setRelayPort] = useState('8787');
   const [gameId, setGameId] = useState('');
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
@@ -1156,6 +1157,7 @@ export default function App() {
             onRelayHostChange={setRelayHost}
             relayPort={relayPort}
             onRelayPortChange={setRelayPort}
+            sessionMode={transportRef.current?.mode}
             gameId={gameId}
             onGameIdChange={setGameId}
             animationsEnabled={animationsEnabled}

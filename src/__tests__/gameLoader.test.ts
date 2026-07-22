@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getVisibleBoard, toBoardDefinition, makeClueGetter } from '../../data/gameLoader.js';
+import { getVisibleBoard, loadGameInfo, toBoardDefinition, makeClueGetter } from '../../data/gameLoader.js';
 import type { GameData } from '../../data/gameLoader.js';
 import type { BoardDefinition } from '../../ui/fixtures/board.js';
 
@@ -87,5 +87,17 @@ describe('round-aware board + clue mapping', () => {
     expect(get(29).category).toBe('R1C5');
     expect(get(30).category).toBe('R2C0');
     expect(get(59).category).toBe('R2C5');
+  });
+});
+
+describe('loadGameInfo', () => {
+  it('reads a bundled game preview without a relay', () => {
+    const info = loadGameInfo(1);
+    expect(info).toMatchObject({
+      season: 1,
+      airDate: '1984-09-10',
+    });
+    expect(info?.round1.length).toBeGreaterThan(0);
+    expect(info?.round2.length).toBeGreaterThan(0);
   });
 });
