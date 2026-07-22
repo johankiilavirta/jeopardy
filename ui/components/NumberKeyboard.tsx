@@ -14,6 +14,8 @@ interface NumberKeyboardProps {
   onInsert: (char: string) => void;
   onBackspace: () => void;
   onMaxWager?: () => void;
+  /** Returns to the letter deck for a text answer. */
+  onLetters?: () => void;
   /** Final Jeopardy: the keys swap cell navy for the round's charcoal. */
   final?: boolean;
   /** Use the neutral charcoal keys outside of the blue game board. */
@@ -43,7 +45,7 @@ function Key({
   );
 }
 
-export const NumberKeyboard = memo(function NumberKeyboard({ onInsert, onBackspace, onMaxWager, final = false, dark = false }: NumberKeyboardProps) {
+export const NumberKeyboard = memo(function NumberKeyboard({ onInsert, onBackspace, onMaxWager, onLetters, final = false, dark = false }: NumberKeyboardProps) {
   return (
     <View style={styles.keyboard}>
       {NUMBER_ROWS.map((row, i) => (
@@ -56,6 +58,8 @@ export const NumberKeyboard = memo(function NumberKeyboard({ onInsert, onBackspa
       <View style={styles.row}>
         {onMaxWager ? (
           <Key label="MAX" final={final || dark} onPress={onMaxWager} />
+        ) : onLetters ? (
+          <Key label="ABC" final={final || dark} onPress={onLetters} />
         ) : (
           <View style={styles.spacer} />
         )}

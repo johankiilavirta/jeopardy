@@ -15,6 +15,7 @@ interface MainMenuScreenProps {
   onNewGame: () => void;
   onJoinGame: () => void;
   onSettings: () => void;
+  onHistory?: (() => void) | undefined;
   /** Present when an unfinished game snapshot is saved on this device. */
   onResumeGame?: (() => void) | undefined;
 }
@@ -50,6 +51,14 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
           >
             <Text style={styles.buttonText}>JOIN GAME</Text>
           </Pressable>
+          {props.onHistory && (
+            <Pressable
+              style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+              onPress={props.onHistory}
+            >
+              <Text style={styles.buttonText}>MATCH HISTORY</Text>
+            </Pressable>
+          )}
           <Pressable
             style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
             onPress={props.onSettings}
