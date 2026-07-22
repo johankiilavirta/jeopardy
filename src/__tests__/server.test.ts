@@ -292,6 +292,32 @@ describe('GameServer', () => {
     expect(pendingMs()).toEqual([20000]);
   });
 
+  it('judges a typed answer when the other player passes', () => {
+    const { timer, fire, pendingMs } = createMockTimer();
+    const host = new MockTransport('host');
+    const server = createServer(host, ['Alice', 'Bob'], { timer });
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    p1.send('host', selectClueMsg);
+    fire(); // reading ends → BUZZ_OPEN
+    p2.send('host', JSON.stringify({ type: 'BUZZ' }));
+    p2.send('host', JSON.stringify({ type: 'SET_ANSWER', text: 'PLUTO' }));
+    p1.send('host', JSON.stringify({ type: 'PASS_CLUE' }));
+
+    // Passing closes the buzz window but leaves Bob's answer timer alive.
+    expect(server.history.current.status).toBe('ANSWERING');
+    expect(pendingMs()).toEqual([20000]);
+
+    fire(); // Bob's shared-deadline timer locks his typed answer
+    expect(server.history.current.status).toBe('REVEAL');
+    expect(server.history.current.buzzes).toEqual([
+      { playerId: 'bob', answer: 'PLUTO', locked: true },
+    ]);
+  });
+
   it('handles undo', () => {
     const host = new MockTransport('host');
     createServer(host, ['Alice', 'Bob']);

@@ -153,24 +153,38 @@ describe('PASS_CLUE', () => {
     expect(state.activeClue?.answer).toBe('What is the answer');
   });
 
-  it('counts a locked answer plus the other player pass as everybody done', () => {
+  it('sends a locked answer to judging when the other player passes', () => {
     let state = openClue(createInitialState(['Alice', 'Bob']), 'alice');
     state = reducer(state, { type: 'BUZZ', playerId: 'alice' });
     state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice', answer: 'GUESS' });
     state = reducer(state, { type: 'PASS_CLUE', playerId: 'bob' });
 
-    expect(state.status).toBe('CLUE_EXPIRED');
+    expect(state.status).toBe('REVEAL');
     expect(getBuzz(state, 'alice')).toMatchObject({ answer: 'GUESS', locked: true });
   });
 
-  it('resolves when the remaining player locks after the first player passes', () => {
+  it('reveals when the remaining player locks after the first player passes', () => {
     let state = openClue(createInitialState(['Alice', 'Bob']), 'alice');
     state = reducer(state, { type: 'PASS_CLUE', playerId: 'bob' });
     state = reducer(state, { type: 'BUZZ', playerId: 'alice' });
     expect(state.status).toBe('ANSWERING');
     state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice', answer: 'GUESS' });
 
-    expect(state.status).toBe('CLUE_EXPIRED');
+    expect(state.status).toBe('REVEAL');
+  });
+
+  it('keeps a typing answer alive when the other player passes', () => {
+    let state = openClue(createInitialState(['Alice', 'Bob']), 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    state = reducer(state, { type: 'SET_ANSWER', playerId: 'bob', text: 'THE ANSWER' });
+    state = reducer(state, { type: 'PASS_CLUE', playerId: 'alice' });
+
+    expect(state.status).toBe('ANSWERING');
+    expect(getBuzz(state, 'bob')).toMatchObject({ answer: 'THE ANSWER', locked: false });
+
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob' });
+    expect(state.status).toBe('REVEAL');
+    expect(getBuzz(state, 'bob')).toMatchObject({ answer: 'THE ANSWER', locked: true });
   });
 
   it('removes an unlocked empty buzz when that player passes afterward', () => {

@@ -187,21 +187,20 @@ function handleLockAnswer(state: GameState, action: Extract<Action, { type: 'LOC
   const activePlayers = Object.keys(state.players).filter(id => id !== 'opponent');
   const isSolo = activePlayers.length === 1;
   const allBuzzersNowLocked = buzzes.every(b => b.locked);
-  const reveal = (state.status === 'ANSWERING' || state.status === 'FINAL_JEOPARDY_WAGER' || state.status === 'FINAL_JEOPARDY_ANSWER' || isSolo) && allBuzzersNowLocked;
-
-  // A locked answer counts as this player's response to the clue. If any
-  // other player passed, resolve as a shared skip once everybody has acted:
-  // show the correct answer, award no points, and return to the board after
-  // the short expired-clue linger.
   const passed = state.passedPlayerIds ?? [];
-  if (passed.length > 0 && allBuzzersNowLocked) {
-    const allActed = activePlayers.every(
-      id => passed.includes(id) || buzzes.some(b => b.playerId === id && b.locked),
-    );
-    if (allActed) {
-      return { ...state, status: 'CLUE_EXPIRED', buzzes };
-    }
-  }
+  // A pass opts that player out; it never discards another player's answer.
+  // Once every player has either passed or locked, there can be no further
+  // buzzes, so go straight to judging the locked answer(s).
+  const allPlayersActed = activePlayers.every(
+    id => passed.includes(id) || buzzes.some(b => b.playerId === id && b.locked),
+  );
+  const reveal = (
+    state.status === 'ANSWERING' ||
+    state.status === 'FINAL_JEOPARDY_WAGER' ||
+    state.status === 'FINAL_JEOPARDY_ANSWER' ||
+    isSolo ||
+    allPlayersActed
+  ) && allBuzzersNowLocked;
 
   if (reveal && state.status === 'FINAL_JEOPARDY_WAGER') {
     const finalWagers: Record<string, number> = {};
@@ -402,15 +401,6 @@ function handleTimeout(state: GameState): GameState {
     };
   }
 
-  // A pass means no further player can change the outcome once the buzz
-  // window closes. Show the correct answer without judging.
-  if ((state.passedPlayerIds?.length ?? 0) > 0) {
-    return {
-      ...state,
-      status: 'CLUE_EXPIRED',
-    };
-  }
-
   // Window closed. Everyone done typing → reveal; otherwise let the
   // remaining buzzers reach that same window's answer deadline.
   return {
@@ -490,12 +480,18 @@ function handlePassClue(state: GameState, action: Extract<Action, { type: 'PASS_
   const buzzes = state.buzzes.filter(b => b.playerId !== action.playerId);
   const activePlayers = Object.keys(state.players).filter(id => id !== 'opponent');
   const allActed = activePlayers.every(
-    id => nextPassed.includes(id) || buzzes.some(b => b.playerId === id && b.locked),
+    id => nextPassed.includes(id) || buzzes.some(b => b.playerId === id),
   );
+  const everyonePassed = activePlayers.every(id => nextPassed.includes(id));
+  const nextStatus = everyonePassed
+    ? 'CLUE_EXPIRED'
+    : allActed
+      ? allBuzzersLocked({ ...state, buzzes }) ? 'REVEAL' : 'ANSWERING'
+      : state.status;
 
   return {
     ...state,
-    status: allActed ? 'CLUE_EXPIRED' : state.status,
+    status: nextStatus,
     buzzes,
     passedPlayerIds: nextPassed,
   };
