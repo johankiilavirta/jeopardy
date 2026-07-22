@@ -19,7 +19,7 @@ export const LIGHTS_REST_BOTTOM = 38;
  *  Total duration = 2 * 600ms + 120ms = 1320ms. */
 export const FLASH_MS = 1320;
 
-/** Fully-lit hold before the drain starts (for the personal typing window). */
+/** Fully-lit hold before the drain starts for the shared answer window. */
 export const HOLD_MS = 1000;
 
 /** Extinguished lamps stay faintly visible, like the real board's dark LEDs. */

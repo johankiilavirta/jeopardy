@@ -21,6 +21,7 @@ export function createInitialState(playerNames: string[], totalClues = 30, final
     clueSelectPlayerId: null,
     activeClue: null,
     buzzes: [],
+    passedPlayerIds: [],
     burnedClueIds: [],
     totalClues,
     finalClue: finalClue ?? null,
@@ -38,6 +39,7 @@ export function normalizeForResume(state: GameState): GameState {
     status: 'CHOOSE_CLUE',
     activeClue: null,
     buzzes: [],
+    passedPlayerIds: [],
     clueSelectPlayerId: null,
   };
 }
@@ -85,6 +87,8 @@ export function reducer(state: GameState, action: Action): GameState {
       return handleUnlockAnswer(state, action);
     case 'SKIP_CLUE':
       return handleSkipClue(state, action);
+    case 'PASS_CLUE':
+      return handlePassClue(state, action);
     default:
       return state;
   }
@@ -108,6 +112,7 @@ function handleSelectClue(state: GameState, action: Extract<Action, { type: 'SEL
       failedPlayerIds: [],
     },
     buzzes: [],
+    passedPlayerIds: [],
   };
 }
 
@@ -129,18 +134,24 @@ function handleBuzz(state: GameState, action: Extract<Action, { type: 'BUZZ' }>)
   // One buzz per player — order is recorded, everyone types concurrently
   if (getBuzz(state, action.playerId)) return state;
 
+  // Opening the answer keyboard is a stronger, newer signal than passing:
+  // withdraw this player's pass and let them answer normally.
+  const passedPlayerIds = (state.passedPlayerIds ?? []).filter(
+    id => id !== action.playerId,
+  );
   const buzzes = [...state.buzzes, { playerId: action.playerId, answer: '', locked: false }];
 
   // Once everyone has buzzed, the window is moot — close it
   const activePlayers = Object.keys(state.players).filter(id => id !== 'opponent');
-  const everyoneBuzzed = activePlayers.every(
-    id => buzzes.some(b => b.playerId === id),
+  const everyoneActed = activePlayers.every(
+    id => passedPlayerIds.includes(id) || buzzes.some(b => b.playerId === id),
   );
 
   return {
     ...state,
-    status: everyoneBuzzed ? 'ANSWERING' : 'BUZZ_OPEN',
+    status: everyoneActed ? 'ANSWERING' : 'BUZZ_OPEN',
     buzzes,
+    passedPlayerIds,
   };
 }
 
@@ -175,7 +186,21 @@ function handleLockAnswer(state: GameState, action: Extract<Action, { type: 'LOC
   // In solo mode (only 1 active player in the game), we reveal immediately when they lock.
   const activePlayers = Object.keys(state.players).filter(id => id !== 'opponent');
   const isSolo = activePlayers.length === 1;
-  const reveal = (state.status === 'ANSWERING' || state.status === 'FINAL_JEOPARDY_WAGER' || state.status === 'FINAL_JEOPARDY_ANSWER' || isSolo) && buzzes.every(b => b.locked);
+  const allBuzzersNowLocked = buzzes.every(b => b.locked);
+  const passed = state.passedPlayerIds ?? [];
+  // A pass opts that player out; it never discards another player's answer.
+  // Once every player has either passed or locked, there can be no further
+  // buzzes, so go straight to judging the locked answer(s).
+  const allPlayersActed = activePlayers.every(
+    id => passed.includes(id) || buzzes.some(b => b.playerId === id && b.locked),
+  );
+  const reveal = (
+    state.status === 'ANSWERING' ||
+    state.status === 'FINAL_JEOPARDY_WAGER' ||
+    state.status === 'FINAL_JEOPARDY_ANSWER' ||
+    isSolo ||
+    allPlayersActed
+  ) && allBuzzersNowLocked;
 
   if (reveal && state.status === 'FINAL_JEOPARDY_WAGER') {
     const finalWagers: Record<string, number> = {};
@@ -377,7 +402,7 @@ function handleTimeout(state: GameState): GameState {
   }
 
   // Window closed. Everyone done typing → reveal; otherwise let the
-  // remaining buzzers finish out their personal timers.
+  // remaining buzzers reach that same window's answer deadline.
   return {
     ...state,
     status: allBuzzersLocked(state) ? 'REVEAL' : 'ANSWERING',
@@ -430,13 +455,55 @@ function handleSkipClue(state: GameState, action: Extract<Action, { type: 'SKIP_
   };
 }
 
+/** Record one player's pull-down pass. The gesture is intentionally distinct
+ *  from SKIP_CLUE, the host-only testing tool that burns a board cell. */
+function handlePassClue(state: GameState, action: Extract<Action, { type: 'PASS_CLUE' }>): GameState {
+  if (
+    state.status !== 'CLUE_READING' &&
+    state.status !== 'BUZZ_OPEN' &&
+    state.status !== 'ANSWERING'
+  ) return state;
+  if (!state.activeClue || state.activeClue.id === -1) return state;
+  if (!state.players[action.playerId]) return state;
+
+  const passed = state.passedPlayerIds ?? [];
+  if (passed.includes(action.playerId)) return state;
+
+  const existingBuzz = getBuzz(state, action.playerId);
+  // Once an answer is locked it is final and counts as the player's action;
+  // it cannot be replaced with a pass afterward.
+  if (existingBuzz?.locked) return state;
+
+  const nextPassed = [...passed, action.playerId];
+  // A player can dismiss an empty keyboard and then pull down again to pass.
+  // Remove that unlocked blank buzz so its answer timer cannot fire later.
+  const buzzes = state.buzzes.filter(b => b.playerId !== action.playerId);
+  const activePlayers = Object.keys(state.players).filter(id => id !== 'opponent');
+  const allActed = activePlayers.every(
+    id => nextPassed.includes(id) || buzzes.some(b => b.playerId === id),
+  );
+  const everyonePassed = activePlayers.every(id => nextPassed.includes(id));
+  const nextStatus = everyonePassed
+    ? 'CLUE_EXPIRED'
+    : allActed
+      ? allBuzzersLocked({ ...state, buzzes }) ? 'REVEAL' : 'ANSWERING'
+      : state.status;
+
+  return {
+    ...state,
+    status: nextStatus,
+    buzzes,
+    passedPlayerIds: nextPassed,
+  };
+}
+
 function transitionFromBoard(state: GameState, burningClueId?: number): Partial<GameState> {
   const isOver = burningClueId !== undefined 
     ? (state.burnedClueIds.includes(burningClueId) ? state.burnedClueIds.length >= state.totalClues : state.burnedClueIds.length + 1 >= state.totalClues)
     : state.burnedClueIds.length + 1 >= state.totalClues;
 
   if (!isOver) {
-    return { status: 'CHOOSE_CLUE', activeClue: null, buzzes: [], clueSelectPlayerId: null };
+    return { status: 'CHOOSE_CLUE', activeClue: null, buzzes: [], clueSelectPlayerId: null, passedPlayerIds: [] };
   }
   
   if (state.finalClue) {
@@ -450,8 +517,8 @@ function transitionFromBoard(state: GameState, burningClueId?: number): Partial<
       value: 0,
       failedPlayerIds: [],
     };
-    return { status: 'FINAL_JEOPARDY_WAGER', activeClue: wagerClue, buzzes, clueSelectPlayerId: null };
+    return { status: 'FINAL_JEOPARDY_WAGER', activeClue: wagerClue, buzzes, clueSelectPlayerId: null, passedPlayerIds: [] };
   }
   
-  return { status: 'GAME_OVER', activeClue: null, buzzes: [], clueSelectPlayerId: null };
+  return { status: 'GAME_OVER', activeClue: null, buzzes: [], clueSelectPlayerId: null, passedPlayerIds: [] };
 }

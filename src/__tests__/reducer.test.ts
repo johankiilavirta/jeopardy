@@ -131,6 +131,116 @@ describe('SKIP_CLUE', () => {
   });
 });
 
+describe('PASS_CLUE', () => {
+  it('records one pass without resolving while the other player has not acted', () => {
+    let state = openClue(createInitialState(['Alice', 'Bob']), 'alice');
+    state = reducer(state, { type: 'PASS_CLUE', playerId: 'alice' });
+
+    expect(state.status).toBe('BUZZ_OPEN');
+    expect(state.passedPlayerIds).toEqual(['alice']);
+  });
+
+  it('shows the correct-answer phase as soon as both players pass', () => {
+    let state = reducer(
+      createInitialState(['Alice', 'Bob']),
+      { type: 'SELECT_CLUE', playerId: 'alice', clue: clue(1) },
+    );
+    state = reducer(state, { type: 'PASS_CLUE', playerId: 'alice' });
+    state = reducer(state, { type: 'PASS_CLUE', playerId: 'bob' });
+
+    expect(state.status).toBe('CLUE_EXPIRED');
+    expect(state.passedPlayerIds).toEqual(['alice', 'bob']);
+    expect(state.activeClue?.answer).toBe('What is the answer');
+  });
+
+  it('sends a locked answer to judging when the other player passes', () => {
+    let state = openClue(createInitialState(['Alice', 'Bob']), 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'alice' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice', answer: 'GUESS' });
+    state = reducer(state, { type: 'PASS_CLUE', playerId: 'bob' });
+
+    expect(state.status).toBe('REVEAL');
+    expect(getBuzz(state, 'alice')).toMatchObject({ answer: 'GUESS', locked: true });
+  });
+
+  it('reveals when the remaining player locks after the first player passes', () => {
+    let state = openClue(createInitialState(['Alice', 'Bob']), 'alice');
+    state = reducer(state, { type: 'PASS_CLUE', playerId: 'bob' });
+    state = reducer(state, { type: 'BUZZ', playerId: 'alice' });
+    expect(state.status).toBe('ANSWERING');
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice', answer: 'GUESS' });
+
+    expect(state.status).toBe('REVEAL');
+  });
+
+  it('keeps a typing answer alive when the other player passes', () => {
+    let state = openClue(createInitialState(['Alice', 'Bob']), 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    state = reducer(state, { type: 'SET_ANSWER', playerId: 'bob', text: 'THE ANSWER' });
+    state = reducer(state, { type: 'PASS_CLUE', playerId: 'alice' });
+
+    expect(state.status).toBe('ANSWERING');
+    expect(getBuzz(state, 'bob')).toMatchObject({ answer: 'THE ANSWER', locked: false });
+
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob' });
+    expect(state.status).toBe('REVEAL');
+    expect(getBuzz(state, 'bob')).toMatchObject({ answer: 'THE ANSWER', locked: true });
+  });
+
+  it('removes an unlocked empty buzz when that player passes afterward', () => {
+    let state = openClue(createInitialState(['Alice', 'Bob']), 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'alice' });
+    expect(getBuzz(state, 'alice')).toBeDefined();
+    state = reducer(state, { type: 'PASS_CLUE', playerId: 'alice' });
+
+    expect(getBuzz(state, 'alice')).toBeUndefined();
+    expect(state.passedPlayerIds).toEqual(['alice']);
+  });
+
+  it('does not replace an already-locked answer with a pass', () => {
+    let state = openClue(createInitialState(['Alice', 'Bob']), 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'alice' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice', answer: 'FINAL' });
+    const before = state;
+
+    expect(reducer(state, { type: 'PASS_CLUE', playerId: 'alice' })).toBe(before);
+  });
+
+  it('withdraws a pass when that player buzzes to open the keyboard', () => {
+    let state = openClue(createInitialState(['Alice', 'Bob']), 'alice');
+    state = reducer(state, { type: 'PASS_CLUE', playerId: 'alice' });
+    state = reducer(state, { type: 'BUZZ', playerId: 'alice' });
+
+    expect(state.passedPlayerIds).toEqual([]);
+    expect(getBuzz(state, 'alice')).toMatchObject({ locked: false, answer: '' });
+    expect(state.status).toBe('BUZZ_OPEN');
+  });
+
+  it('is a no-op for duplicate passes and Final Jeopardy', () => {
+    let state = openClue(createInitialState(['Alice', 'Bob']), 'alice');
+    state = reducer(state, { type: 'PASS_CLUE', playerId: 'alice' });
+    expect(reducer(state, { type: 'PASS_CLUE', playerId: 'alice' })).toBe(state);
+
+    const finalState: GameState = {
+      ...state,
+      status: 'FINAL_JEOPARDY_WAGER',
+      activeClue: { id: -1, category: 'FINAL', text: 'TOPIC', answer: 'A', value: 0, failedPlayerIds: [] },
+      passedPlayerIds: [],
+    };
+    expect(reducer(finalState, { type: 'PASS_CLUE', playerId: 'bob' })).toBe(finalState);
+  });
+
+  it('clears passes when the expired clue returns to the board', () => {
+    let state = openClue(createInitialState(['Alice', 'Bob']), 'alice');
+    state = reducer(state, { type: 'PASS_CLUE', playerId: 'alice' });
+    state = reducer(state, { type: 'PASS_CLUE', playerId: 'bob' });
+    state = reducer(state, { type: 'DISMISS_CLUE' });
+
+    expect(state.status).toBe('CHOOSE_CLUE');
+    expect(state.passedPlayerIds).toEqual([]);
+  });
+});
+
 describe('BUZZER_OPEN', () => {
   it('opens the buzz window during CLUE_READING', () => {
     let state = createInitialState(['Alice', 'Bob']);

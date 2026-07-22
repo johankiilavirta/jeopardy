@@ -1,11 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { MockTransport } from '../mockTransport.js';
 import { createInitialState } from '../reducer.js';
 import { createServer, type Timer } from '../server.js';
 import type { GameState } from '../types.js';
 
-/** Multi-slot timer mock: the server keeps a window timer and one personal
- *  typing timer per buzzer pending at once. Timers are tracked in arming
+/** Multi-slot timer mock: the server keeps a window timer and one lock
+ *  timer per buzzer pending at once. Timers are tracked in arming
  *  order; fire(i) runs and removes the i-th pending timer. */
 function createMockTimer() {
   let nextId = 1;
@@ -53,6 +53,8 @@ const selectClueMsg = JSON.stringify({
   type: 'SELECT_CLUE',
   clue: { id: 1, category: 'Science', text: 'Q', answer: 'A', value: 200 },
 });
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('GameServer', () => {
   it('assigns players on connect and sends initial state', () => {
@@ -204,6 +206,116 @@ describe('GameServer', () => {
     // ...nor dismiss the lingering clue early
     p1.send('host', JSON.stringify({ type: 'DISMISS_CLUE' }));
     expect(server.history.current.status).toBe('CLUE_EXPIRED');
+  });
+
+  it('resolves two player passes immediately, then dismisses after three seconds', () => {
+    const { timer, pendingMs, fire } = createMockTimer();
+    const host = new MockTransport('host');
+    const server = createServer(host, ['Alice', 'Bob'], { timer });
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    p1.send('host', selectClueMsg);
+    p1.send('host', JSON.stringify({ type: 'PASS_CLUE' }));
+    expect(server.history.current.status).toBe('CLUE_READING');
+    p2.send('host', JSON.stringify({ type: 'PASS_CLUE' }));
+
+    expect(server.history.current.status).toBe('CLUE_EXPIRED');
+    expect(server.history.current.passedPlayerIds).toEqual(['alice', 'bob']);
+    expect(pendingMs()).toEqual([3000]);
+
+    fire();
+    expect(server.history.current.status).toBe('CHOOSE_CLUE');
+    expect(server.history.current.burnedClueIds).toContain(1);
+  });
+
+  it('allows either client to tap-dismiss only the three-second pass reveal', () => {
+    const { timer, pendingMs } = createMockTimer();
+    const host = new MockTransport('host');
+    const server = createServer(host, ['Alice', 'Bob'], { timer });
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    p1.send('host', selectClueMsg);
+    p1.send('host', JSON.stringify({ type: 'PASS_CLUE' }));
+    p2.send('host', JSON.stringify({ type: 'PASS_CLUE' }));
+    expect(pendingMs()).toEqual([3000]);
+
+    p1.send('host', JSON.stringify({ type: 'DISMISS_CLUE' }));
+    expect(server.history.current.status).toBe('CHOOSE_CLUE');
+    expect(pendingMs()).toEqual([]);
+  });
+
+  it('withdraws a synced pass when that player opens the answer keyboard', () => {
+    const { timer, fire, pendingMs } = createMockTimer();
+    const host = new MockTransport('host');
+    const server = createServer(host, ['Alice', 'Bob'], { timer });
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    p1.send('host', selectClueMsg);
+    fire();
+    p1.send('host', JSON.stringify({ type: 'PASS_CLUE' }));
+    expect(server.history.current.passedPlayerIds).toEqual(['alice']);
+
+    p1.send('host', JSON.stringify({ type: 'BUZZ' }));
+    expect(server.history.current.passedPlayerIds).toEqual([]);
+    expect(server.history.current.buzzes).toHaveLength(1);
+    expect(server.history.current.buzzes[0]).toMatchObject({
+      playerId: 'alice', answer: '', locked: false,
+    });
+    expect(pendingMs()).toEqual([20000, 20000]);
+  });
+
+  it('cancels an unlocked answer timer when that player changes an empty answer to a pass', () => {
+    const { timer, fire, pendingMs } = createMockTimer();
+    const host = new MockTransport('host');
+    const server = createServer(host, ['Alice', 'Bob'], { timer });
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    p1.send('host', selectClueMsg);
+    fire();
+    p1.send('host', JSON.stringify({ type: 'BUZZ' }));
+    expect(pendingMs()).toEqual([20000, 20000]);
+
+    p1.send('host', JSON.stringify({ type: 'PASS_CLUE' }));
+    expect(server.history.current.buzzes).toEqual([]);
+    expect(pendingMs()).toEqual([20000]);
+  });
+
+  it('judges a typed answer when the other player passes', () => {
+    const { timer, fire, pendingMs } = createMockTimer();
+    const host = new MockTransport('host');
+    const server = createServer(host, ['Alice', 'Bob'], { timer });
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    p1.send('host', selectClueMsg);
+    fire(); // reading ends → BUZZ_OPEN
+    p2.send('host', JSON.stringify({ type: 'BUZZ' }));
+    p2.send('host', JSON.stringify({ type: 'SET_ANSWER', text: 'PLUTO' }));
+    p1.send('host', JSON.stringify({ type: 'PASS_CLUE' }));
+
+    // Passing closes the buzz window but leaves Bob's answer timer alive.
+    expect(server.history.current.status).toBe('ANSWERING');
+    expect(pendingMs()).toEqual([20000]);
+
+    fire(); // Bob's shared-deadline timer locks his typed answer
+    expect(server.history.current.status).toBe('REVEAL');
+    expect(server.history.current.buzzes).toEqual([
+      { playerId: 'bob', answer: 'PLUTO', locked: true },
+    ]);
   });
 
   it('handles undo', () => {
@@ -377,7 +489,7 @@ describe('GameServer', () => {
     fire(); // window opens
     const callsAfterOpen = setCalls();
 
-    // Bob buzzes: only his personal timer is added — the window timer
+    // Bob buzzes: only his lock timer is added — the window timer
     // (armed first, so still at index 0) keeps running untouched.
     p2.send('host', JSON.stringify({ type: 'BUZZ' }));
     expect(pendingMs()).toEqual([20000, 20000]);
@@ -394,8 +506,9 @@ describe('GameServer', () => {
     expect(server.history.current.status).toBe('ANSWERING');
   });
 
-  it('staggered buzzes get their own personal timers; locks clear them', () => {
+  it('staggered buzzes share the original deadline; locks clear their timers', () => {
     const { timer, fire, pendingMs, count } = createMockTimer();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
     const host = new MockTransport('host');
     const server = createServer(host, ['Alice', 'Bob'], { timer });
 
@@ -410,25 +523,28 @@ describe('GameServer', () => {
     p2.send('host', JSON.stringify({ type: 'BUZZ' }));
     expect(pendingMs()).toEqual([20000, 20000]); // window + bob
 
-    // Alice buzzes too: everyone in — window timer cleared (moot), her
-    // own 10s starts from her buzz, bob's keeps running untouched.
+    // Alice buzzes five seconds later: everyone is in, so the window timer
+    // clears. Her lock timer gets only the 15s left on the same deadline;
+    // Bob's existing timer remains untouched.
+    now.mockReturnValue(6000);
     p1.send('host', JSON.stringify({ type: 'BUZZ' }));
     expect(server.history.current.status).toBe('ANSWERING');
-    expect(pendingMs()).toEqual([20000, 20000]); // bob, alice
+    expect(pendingMs()).toEqual([20000, 15000]); // bob, alice
 
     // Bob swipe-locks: his timer is cleared, alice's remains
     p2.send('host', JSON.stringify({ type: 'LOCK_ANSWER', answer: 'PLUTO' }));
     expect(count()).toBe(1);
     expect(server.history.current.status).toBe('ANSWERING');
 
-    // Alice's personal timer expires: she locks with her synced text → REVEAL
+    // Alice's lock timer expires: she locks with her synced text → REVEAL
     fire(0);
     expect(server.history.current.status).toBe('REVEAL');
     expect(count()).toBe(0); // REVEAL is untimed — judging is manual
   });
 
-  it('a late buzz keeps its full typing time after the window closes', () => {
+  it('a late buzz gets only the time remaining on the shared window', () => {
     const { timer, fire, pendingMs } = createMockTimer();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
     const host = new MockTransport('host');
     const server = createServer(host, ['Alice', 'Bob'], { timer });
 
@@ -440,13 +556,16 @@ describe('GameServer', () => {
     p1.send('host', selectClueMsg);
     fire(); // window opens
 
-    // Bob buzzes just before the window closes
+    // Bob buzzes 18s into the original 20s window. His answer must lock at
+    // that original deadline; the buzz must not grant a fresh 20 seconds.
+    now.mockReturnValue(19000);
     p2.send('host', JSON.stringify({ type: 'BUZZ' }));
+    expect(pendingMs()).toEqual([20000, 2000]);
     fire(0); // window TIMEOUT → ANSWERING
     expect(server.history.current.status).toBe('ANSWERING');
 
-    // Bob's personal timer survives the phase change, never re-armed
-    expect(pendingMs()).toEqual([20000]);
+    // Bob's remaining lock timer survives the phase change, never re-armed.
+    expect(pendingMs()).toEqual([2000]);
 
     fire(0); // his time runs out → all locked → REVEAL
     expect(server.history.current.status).toBe('REVEAL');
@@ -467,7 +586,7 @@ describe('GameServer', () => {
 
     p2.send('host', JSON.stringify({ type: 'BUZZ' }));
     p2.send('host', JSON.stringify({ type: 'SET_ANSWER', text: 'HALF TY' }));
-    fire(1); // bob's personal timer fires before he locks
+    fire(1); // bob's lock timer fires before he locks
 
     const buzz = server.history.current.buzzes[0]!;
     expect(buzz).toEqual({ playerId: 'bob', answer: 'HALF TY', locked: true });

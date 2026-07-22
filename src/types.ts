@@ -33,7 +33,7 @@ export interface Buzz {
   playerId: string;
   /** The answer typed so far (final once `locked`). */
   answer: string;
-  /** Input is closed: swiped down, or their personal timer expired. */
+  /** Input is closed: swiped down, or the applicable answer deadline expired. */
   locked: boolean;
 }
 
@@ -48,6 +48,8 @@ export interface GameState {
   /** Everyone who buzzed on the active clue, in buzz order */
   buzzes: Buzz[];
   burnedClueIds: number[];
+  /** Players who have passed on the active clue via the pull-down skip. */
+  passedPlayerIds?: string[];
   /** Board dimensions */
   totalClues: number;
   /** Final Jeopardy clue if available */
@@ -104,6 +106,13 @@ export interface SkipClueAction {
   clueId: number;
 }
 
+/** A player passes on the active clue. Once every player has either passed
+ *  or locked an answer, the correct answer is shown without judging. */
+export interface PassClueAction {
+  type: 'PASS_CLUE';
+  playerId: string;
+}
+
 /** A player's input closes. Swipe-down sends the final text in `answer`;
  *  the server's personal-timer fallback omits it (last synced text stands). */
 export interface LockAnswerAction {
@@ -127,4 +136,5 @@ export type Action =
   | DismissClueAction
   | LockAnswerAction
   | UnlockAnswerAction
-  | SkipClueAction;
+  | SkipClueAction
+  | PassClueAction;

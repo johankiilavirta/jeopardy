@@ -28,7 +28,7 @@ export interface ServerOptions {
   buzzerMs?: number;
   /** How long an expired clue lingers before returning to the board */
   dismissMs?: number;
-  /** How long each buzzed player can type (from their own buzz) before input locks */
+  /** Fallback lock timeout when a restored answer has no known shared buzz-window start */
   answerMs?: number;
   /** Total number of clues on the board (default 30) */
   totalClues?: number;
@@ -41,7 +41,7 @@ export interface ServerOptions {
 }
 
 /** Actions clients are allowed to send. Timer actions are server-only. */
-const CLIENT_ACTIONS = new Set(['SELECT_CLUE', 'BUZZ', 'SET_ANSWER', 'LOCK_ANSWER', 'UNLOCK_ANSWER', 'JUDGE_ANSWER', 'SKIP_CLUE']);
+const CLIENT_ACTIONS = new Set(['SELECT_CLUE', 'BUZZ', 'SET_ANSWER', 'LOCK_ANSWER', 'UNLOCK_ANSWER', 'JUDGE_ANSWER', 'SKIP_CLUE', 'PASS_CLUE', 'DISMISS_CLUE']);
 
 /** Undo/redo land only on these statuses; the transient in-clue phases
  *  (CLUE_READING, BUZZ_OPEN, ANSWERING, CLUE_EXPIRED) are skipped over.
@@ -84,7 +84,7 @@ export function createServer(
   /** Wall-clock time when the current buzz window opened (Date.now()). */
   let buzzWindowOpenAt: number | null = null;
 
-  /** One personal typing timer per unlocked buzzer (playerId → timer id). */
+  /** One lock timer per unlocked buzzer, all scheduled against the shared deadline. */
   const answerTimerIds = new Map<string, unknown>();
 
   function clearPhaseTimer(): void {
@@ -117,17 +117,20 @@ export function createServer(
         phaseTimerId = timer.set(() => fireTimerAction({ type: 'TIMEOUT' }), buzzerMs);
         break;
       case 'CLUE_EXPIRED':
-        phaseTimerId = timer.set(() => fireTimerAction({ type: 'DISMISS_CLUE' }), dismissMs);
+        phaseTimerId = timer.set(
+          () => fireTimerAction({ type: 'DISMISS_CLUE' }),
+          (server.history.current.passedPlayerIds?.length ?? 0) > 0 ? 3000 : dismissMs,
+        );
         break;
       // ANSWERING and REVEAL are not phase-timed: ANSWERING ends via the
-      // personal answer timers below, REVEAL via manual judging.
+      // per-player lock timers below, REVEAL via manual judging.
     }
   }
 
-  /** Differentially reconcile personal typing timers with the buzz list:
-   *  each unlocked buzzer gets one answerMs timer armed at buzz time and
-   *  never reset; locked (or judged-away) entries are cleared. The timer
-   *  fires a LOCK_ANSWER without text — the last synced answer stands. */
+  /** Differentially reconcile lock timers with the buzz list. Non-Final
+   *  players all use the original buzz-window deadline, so buzzing never
+   *  resets or extends the available answer time. Locked (or judged-away)
+   *  entries are cleared. A timer-fired lock keeps the last synced answer. */
   function syncAnswerTimers(): void {
     const state = server.history.current;
     if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING' && state.status !== 'FINAL_JEOPARDY_WAGER' && state.status !== 'FINAL_JEOPARDY_ANSWER') {
@@ -298,13 +301,23 @@ export function createServer(
     // Clients may only send player actions — timer actions are server-only
     if (!CLIENT_ACTIONS.has(parsed.type)) return;
 
+    // A tap may only accelerate the dedicated three-second shared-skip
+    // reveal. Ordinary timeout reveals keep their existing server timer.
+    if (
+      parsed.type === 'DISMISS_CLUE' &&
+      (
+        server.history.current.status !== 'CLUE_EXPIRED' ||
+        (server.history.current.passedPlayerIds?.length ?? 0) === 0
+      )
+    ) return;
+
     const playerId = server.playerPeers.get(peerId);
     if (!playerId) return;
 
     // For most actions, playerId is the sender (you can only buzz, type,
     // lock as yourself). For JUDGE_ANSWER, playerId means "who is being
     // judged" — the client sends the judged player's id, not its own.
-    const action = parsed.type === 'JUDGE_ANSWER'
+    const action = parsed.type === 'JUDGE_ANSWER' || parsed.type === 'DISMISS_CLUE'
       ? { ...parsed } as Action
       : { ...parsed, playerId } as Action;
     // Keystrokes are transient: they update state without growing the

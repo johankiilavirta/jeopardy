@@ -29,14 +29,11 @@ const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number; action: Action }>> 
   CLUE_EXPIRED: { ms: 5000, action: { type: 'DISMISS_CLUE' } },
 };
 
-/** Personal typing time, from each player's own buzz (mirrors answerMs).
- *  The lights hold fully lit for the first second, then drain over the rest. */
-const ANSWER_MS = 20000;
 /** Final Jeopardy gives each player a fresh 30-second window for both the
  *  wager and answer phases (mirrors NetworkedGame). */
 const FINAL_ANSWER_MS = 30000;
 
-type DemoScreen = 'board' | 'clue' | 'judge' | 'final-wager';
+type DemoScreen = 'board' | 'clue' | 'long-clue' | 'judge' | 'final-wager';
 
 function initialStateFor(screen: string | undefined): GameState {
   const clue = getClueContent(0);
@@ -47,6 +44,19 @@ function initialStateFor(screen: string | undefined): GameState {
         status: 'CLUE_READING',
         clueSelectPlayerId: LOCAL_PLAYER_ID,
         activeClue: { ...clue, failedPlayerIds: [] },
+      };
+    case 'long-clue':
+      return {
+        ...yourTurnFresh,
+        status: 'CLUE_READING',
+        clueSelectPlayerId: LOCAL_PLAYER_ID,
+        activeClue: {
+          ...clue,
+          category: 'INQUISITIVE WRITERS',
+          text: 'IN A LETTER WRITTEN AFTER HIS FIRST VOYAGE, THIS EXPLORER DESCRIBED ISLANDS WITH MOUNTAINS OF GREAT HEIGHT, FERTILE VALLEYS, MANY HARBORS, AND PEOPLE WHO TRAVELED BETWEEN THEM IN LARGE CANOES; HE ALSO CLAIMED THE LAND HELD SPICES, GOLD, AND OTHER RICHES, THAT ITS PEOPLE COULD BE CONVERTED BY LOVE RATHER THAN FORCE, AND THAT THEIR RULERS WOULD WELCOME TRADE WITH HIS SOVEREIGNS, A DELIBERATELY OVERSIZED CLUE WITH ENOUGH EXTRA DETAIL TO OVERFLOW IN LANDSCAPE AND SHRINK ONLY ENOUGH TO LEAVE ROOM FOR THE ANSWER BELOW',
+          answer: 'CHRISTOPHER COLUMBUS',
+          failedPlayerIds: [],
+        },
       };
     case 'judge':
       return {
@@ -89,14 +99,15 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
   const [state, setState] = useState<GameState>(() => initialStateFor(initialScreen));
   const selectedCellRef = useRef<{ clueId: number; rect: CellRect } | null>(null);
   // Deadlines (epoch ms) for the current phase window and the local player's
-  // personal typing timer — they drive the activation lights' drain.
+  // shared answer window — they drive the activation lights' drain.
   const [phaseDeadline, setPhaseDeadline] = useState<number | null>(null);
   // Persists through BUZZ_OPEN → ANSWERING so post-buzz lights share the deadline.
   const buzzWindowDeadlineRef = useRef<number | null>(null);
   const dispatch = (action: Action) => setState(s => reducer(s, action));
 
   const localBuzz = getBuzz(state, LOCAL_PLAYER_ID);
-  // Buzzed and still typing — the keyboard is up and the personal timer runs.
+  const localPassed = (state.passedPlayerIds ?? []).includes(LOCAL_PLAYER_ID);
+  // Buzzed and still typing — the keyboard is up until the shared deadline.
   const typing =
     !!localBuzz &&
     !localBuzz.locked &&
@@ -123,7 +134,9 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
     }
     const ms = state.status === 'CLUE_READING' && state.activeClue
       ? computeReadingMs(state.activeClue.text)
-      : phase.ms;
+      : state.status === 'CLUE_EXPIRED' && (state.passedPlayerIds?.length ?? 0) > 0
+        ? 3000
+        : phase.ms;
     const deadline = Date.now() + ms;
     setPhaseDeadline(deadline);
     if (state.status === 'BUZZ_OPEN') buzzWindowDeadlineRef.current = deadline;
@@ -131,7 +144,7 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
     return () => clearTimeout(fire);
   }, [state.status]);
 
-  // Lock the answer when the buzz window expires — not a fresh personal timer.
+  // Lock the answer when the buzz window expires — buzzing never resets it.
   // Swipe-down locks earlier and tears this down via the cleanup.
   useEffect(() => {
     if (!typing) return;
@@ -183,6 +196,17 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
             clue={state.activeClue}
             isFinalJeopardyWager={state.status === 'FINAL_JEOPARDY_WAGER'}
             canBuzz={state.status === 'BUZZ_OPEN' && !localBuzz}
+            canPass={
+              state.activeClue.id !== -1 &&
+              !localPassed &&
+              !localBuzz?.locked &&
+              (
+                state.status === 'CLUE_READING' ||
+                state.status === 'BUZZ_OPEN' ||
+                state.status === 'ANSWERING'
+              )
+            }
+            onPass={() => dispatch({ type: 'PASS_CLUE', playerId: LOCAL_PLAYER_ID })}
             lights={
               (state.status === 'BUZZ_OPEN' || state.status === 'ANSWERING') &&
               buzzWindowDeadlineRef.current != null
@@ -215,6 +239,12 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
             reveal={
               state.status === 'REVEAL' || state.status === 'CLUE_EXPIRED'
                 ? { correctAnswer: state.activeClue.answer }
+                : undefined
+            }
+            onDismiss={
+              state.status === 'CLUE_EXPIRED' &&
+              (state.passedPlayerIds?.length ?? 0) > 0
+                ? () => dispatch({ type: 'DISMISS_CLUE' })
                 : undefined
             }
           />
