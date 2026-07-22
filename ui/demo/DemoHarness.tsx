@@ -198,7 +198,7 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
           <ClueScreen
             clue={state.activeClue}
             isFinalJeopardyWager={state.status === 'FINAL_JEOPARDY_WAGER'}
-            canBuzz={state.status === 'BUZZ_OPEN' && !localBuzz && !localPassed}
+            canBuzz={state.status === 'BUZZ_OPEN' && !localBuzz}
             canPass={
               state.activeClue.id !== -1 &&
               !localPassed &&

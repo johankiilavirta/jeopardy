@@ -248,6 +248,29 @@ describe('GameServer', () => {
     expect(pendingMs()).toEqual([]);
   });
 
+  it('withdraws a synced pass when that player opens the answer keyboard', () => {
+    const { timer, fire, pendingMs } = createMockTimer();
+    const host = new MockTransport('host');
+    const server = createServer(host, ['Alice', 'Bob'], { timer });
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    p1.send('host', selectClueMsg);
+    fire();
+    p1.send('host', JSON.stringify({ type: 'PASS_CLUE' }));
+    expect(server.history.current.passedPlayerIds).toEqual(['alice']);
+
+    p1.send('host', JSON.stringify({ type: 'BUZZ' }));
+    expect(server.history.current.passedPlayerIds).toEqual([]);
+    expect(server.history.current.buzzes).toHaveLength(1);
+    expect(server.history.current.buzzes[0]).toMatchObject({
+      playerId: 'alice', answer: '', locked: false,
+    });
+    expect(pendingMs()).toEqual([20000, 20000]);
+  });
+
   it('cancels an unlocked answer timer when that player changes an empty answer to a pass', () => {
     const { timer, fire, pendingMs } = createMockTimer();
     const host = new MockTransport('host');

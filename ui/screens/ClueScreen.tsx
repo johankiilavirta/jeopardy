@@ -257,6 +257,16 @@ export function ClueScreen({
   // value `kb` (0 hidden → 1 shown) animates the panel and clue together,
   // so rapid open/close just retargets one animation.
   const keyboardVisible = !!showKeyboard && !dismissed && !!onAnswerChange;
+  useEffect(() => {
+    if (!keyboardVisible) return;
+    // Answering wins over skipping. If the keyboard appears while a skip is
+    // being pulled (including through a hardware shortcut), invalidate the
+    // gesture immediately so releasing cannot send a stale pass.
+    verticalGestureRef.current = null;
+    skipDistanceRef.current = 0;
+    skipDrag.stopAnimation();
+    skipDrag.setValue(0);
+  }, [keyboardVisible, skipDrag]);
   const [kbMounted, setKbMounted] = useState(false);
   // The sheet's height: its measured layout once it has mounted, and the
   // styled minimum before then. The keys stretch to fill the minimum, so
@@ -533,9 +543,11 @@ export function ClueScreen({
             snapKeyboardBack();
           }
         } else if (gesture === 'skip') {
-          const committed = shouldCommitSkip(skipDistanceRef.current);
+          const s = stateRef.current;
+          const committed =
+            s.canPass && shouldCommitSkip(skipDistanceRef.current, s.keyboardVisible);
           snapSkipBack();
-          if (committed) stateRef.current.onPass?.();
+          if (committed) s.onPass?.();
         } else if (gesture === 'summon') {
           const isSwipeUp = g.dy < -30 || (g.dy < -10 && g.vy < -0.1);
           if (isSwipeUp) {

@@ -192,12 +192,14 @@ describe('PASS_CLUE', () => {
     expect(reducer(state, { type: 'PASS_CLUE', playerId: 'alice' })).toBe(before);
   });
 
-  it('does not let a passed player buzz later', () => {
+  it('withdraws a pass when that player buzzes to open the keyboard', () => {
     let state = openClue(createInitialState(['Alice', 'Bob']), 'alice');
     state = reducer(state, { type: 'PASS_CLUE', playerId: 'alice' });
-    const before = state;
+    state = reducer(state, { type: 'BUZZ', playerId: 'alice' });
 
-    expect(reducer(state, { type: 'BUZZ', playerId: 'alice' })).toBe(before);
+    expect(state.passedPlayerIds).toEqual([]);
+    expect(getBuzz(state, 'alice')).toMatchObject({ locked: false, answer: '' });
+    expect(state.status).toBe('BUZZ_OPEN');
   });
 
   it('is a no-op for duplicate passes and Final Jeopardy', () => {

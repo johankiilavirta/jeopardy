@@ -491,7 +491,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
             <ClueScreen
               clue={gameState.activeClue}
               isFinalJeopardyWager={gameState.status === 'FINAL_JEOPARDY_WAGER'}
-              canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz && !localPassed}
+              canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz}
               canPass={
                 !recoveringLocally &&
                 gameState.activeClue.id !== -1 &&

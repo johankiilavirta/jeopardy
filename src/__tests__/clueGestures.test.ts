@@ -38,8 +38,11 @@ describe('vertical clue gestures', () => {
   });
 
   it('commits skip on release only after the full pull distance', () => {
-    expect(shouldCommitSkip(79.9)).toBe(false);
-    expect(shouldCommitSkip(80)).toBe(true);
+    expect(shouldCommitSkip(119.9)).toBe(false);
+    expect(shouldCommitSkip(120)).toBe(true);
+  });
+
+  it('invalidates a fully pulled skip when the keyboard opens', () => {
+    expect(shouldCommitSkip(120, true)).toBe(false);
   });
 });
-

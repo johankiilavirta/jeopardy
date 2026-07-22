@@ -130,24 +130,28 @@ function handleBuzz(state: GameState, action: Extract<Action, { type: 'BUZZ' }>)
   if (state.status !== 'BUZZ_OPEN') return state;
   if (!state.activeClue) return state;
   if (!state.players[action.playerId]) return state;
-  if ((state.passedPlayerIds ?? []).includes(action.playerId)) return state;
 
   // One buzz per player — order is recorded, everyone types concurrently
   if (getBuzz(state, action.playerId)) return state;
 
+  // Opening the answer keyboard is a stronger, newer signal than passing:
+  // withdraw this player's pass and let them answer normally.
+  const passedPlayerIds = (state.passedPlayerIds ?? []).filter(
+    id => id !== action.playerId,
+  );
   const buzzes = [...state.buzzes, { playerId: action.playerId, answer: '', locked: false }];
 
   // Once everyone has buzzed, the window is moot — close it
   const activePlayers = Object.keys(state.players).filter(id => id !== 'opponent');
-  const passed = state.passedPlayerIds ?? [];
   const everyoneActed = activePlayers.every(
-    id => passed.includes(id) || buzzes.some(b => b.playerId === id),
+    id => passedPlayerIds.includes(id) || buzzes.some(b => b.playerId === id),
   );
 
   return {
     ...state,
     status: everyoneActed ? 'ANSWERING' : 'BUZZ_OPEN',
     buzzes,
+    passedPlayerIds,
   };
 }
 

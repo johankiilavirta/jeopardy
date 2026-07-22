@@ -1,7 +1,7 @@
 export type VerticalClueGesture = 'keyboard-dismiss' | 'skip' | 'summon' | null;
 
 export const VERTICAL_GESTURE_START = 15;
-export const SKIP_COMMIT_DISTANCE = 80;
+export const SKIP_COMMIT_DISTANCE = 120;
 
 interface VerticalClueGestureOptions {
   keyboardVisible: boolean;
@@ -30,9 +30,11 @@ export function verticalClueGesture(
   return options.canSummon ? 'summon' : null;
 }
 
-/** Skip is distance-only and commits on release, preventing a short fast
- *  flick from accidentally passing on a clue. */
-export function shouldCommitSkip(distance: number): boolean {
-  return distance >= SKIP_COMMIT_DISTANCE;
+/** Skip is distance-only and commits on release. Opening the keyboard at any
+ *  point invalidates even a fully pulled skip signal. */
+export function shouldCommitSkip(
+  distance: number,
+  keyboardVisible = false,
+): boolean {
+  return !keyboardVisible && distance >= SKIP_COMMIT_DISTANCE;
 }
-
