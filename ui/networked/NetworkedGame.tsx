@@ -430,7 +430,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     >
     <View style={styles.root}>
     <SwipeUpMenu
-      disabled={!!gameState.activeClue}
+      disabled={!!gameState.activeClue || gameState.status === 'GAME_OVER'}
       renderMenu={showSettings => (
         <MainMenuScreen
           onNewGame={onNewGame ?? onLeave ?? (() => {})}
@@ -627,6 +627,17 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
           return (
             <View style={styles.gameOverOverlay}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Return to main menu"
+                onPress={onLeave ?? onNewGame ?? (() => {})}
+                style={({ pressed }) => [
+                  styles.gameOverMainMenuButton,
+                  pressed && styles.gameOverMainMenuButtonPressed,
+                ]}
+              >
+                <Text style={styles.gameOverMainMenuText}>← MAIN MENU</Text>
+              </Pressable>
               <ScrollView
                 style={styles.gameOverScroll}
                 contentContainerStyle={styles.gameOverContent}
@@ -688,17 +699,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                     </View>
                   </View>
                 )}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Return to main menu"
-                  onPress={onLeave ?? onNewGame ?? (() => {})}
-                  style={({ pressed }) => [
-                    styles.gameOverMainMenuButton,
-                    pressed && styles.gameOverMainMenuButtonPressed,
-                  ]}
-                >
-                  <Text style={styles.gameOverMainMenuText}>← MAIN MENU</Text>
-                </Pressable>
               </ScrollView>
             </View>
           );
@@ -828,15 +828,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   gameOverMainMenuButton: {
-    marginTop: 28,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    padding: 8,
+    zIndex: 1,
   },
   gameOverMainMenuButtonPressed: {
     opacity: 0.55,
   },
   gameOverMainMenuText: {
-    fontFamily: typeTokens.ui700,
+    fontFamily: typeTokens.ui500,
     fontSize: 16,
     letterSpacing: 0.8,
     color: colors.gold,
