@@ -1,6 +1,9 @@
 import type { ExpoConfig } from 'expo/config';
 import appJson from './app.json';
-import { DEFAULT_RELAY_HOST } from './app/relayDefaults';
+
+// Keep this literal here: Expo evaluates app.config.ts through CommonJS and
+// does not resolve TypeScript-only imports outside the config itself.
+const DEFAULT_RELAY_HOST = 'wss://jeopardy-relay-johan.fly.dev';
 
 const config: ExpoConfig = {
   ...appJson.expo,
