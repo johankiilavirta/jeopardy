@@ -11,6 +11,7 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import type { ActiveClue } from '../../src/types';
+import { sanitizeText } from '../../src/sanitizeText';
 import { ActivationLights, LIGHTS_REST_BOTTOM, LIGHTS_WIDTH_PCT } from '../components/ActivationLights';
 import { AnswerKeyboard } from '../components/AnswerKeyboard';
 import { NumberKeyboard } from '../components/NumberKeyboard';
@@ -740,7 +741,7 @@ export function ClueScreen({
                 minimumFontScale={0.55}
                 allowFontScaling={false}
               >
-                {clue.category.toUpperCase()}
+                {sanitizeText(clue.category).toUpperCase()}
               </Text>
             </View>
             <Text style={styles.value} numberOfLines={1} allowFontScaling={false}>
@@ -764,7 +765,7 @@ export function ClueScreen({
                     setAnswerMeasureHeight(current => current === measured ? current : measured);
                   }}
                 >
-                  {clue.answer.toUpperCase()}
+                  {sanitizeText(clue.answer).toUpperCase()}
                 </Text>
               </View>
             )}
@@ -785,7 +786,7 @@ export function ClueScreen({
                 allowFontScaling={false}
                 onLayout={handleClueTextLayout}
               >
-                {clue.text.toUpperCase()}
+                {sanitizeText(clue.text).toUpperCase()}
               </Text>
 
               {/* The reveal: correct answer in gold under the clue text. */}
@@ -804,7 +805,7 @@ export function ClueScreen({
                   ]}
                 >
                   <Text style={styles.revealAnswer} allowFontScaling={false}>
-                    {reveal.correctAnswer.toUpperCase()}
+                    {sanitizeText(reveal.correctAnswer).toUpperCase()}
                   </Text>
                 </Animated.View>
               )}

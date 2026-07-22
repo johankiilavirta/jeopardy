@@ -430,7 +430,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     >
     <View style={styles.root}>
     <SwipeUpMenu
-      disabled={!!gameState.activeClue}
+      disabled={!!gameState.activeClue || gameState.status === 'GAME_OVER'}
       renderMenu={showSettings => (
         <MainMenuScreen
           onNewGame={onNewGame ?? onLeave ?? (() => {})}
@@ -630,11 +630,25 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               <ScrollView
                 style={styles.gameOverScroll}
                 contentContainerStyle={styles.gameOverContent}
-                showsVerticalScrollIndicator
+                showsVerticalScrollIndicator={false}
               >
-                <Text style={styles.gameOverText}>GAME OVER</Text>
-                <View style={[landscape ? styles.gameOverRow : undefined, { width: landscape ? contentW : undefined }]}>
-                  <View style={landscape ? styles.gameOverPlayersCol : undefined}>
+                <View style={styles.gameOverTopBar}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Return to main menu"
+                    onPress={onLeave ?? onNewGame ?? (() => {})}
+                    style={({ pressed }) => [
+                      styles.gameOverMainMenuButton,
+                      pressed && styles.gameOverMainMenuButtonPressed,
+                    ]}
+                  >
+                    <Text style={styles.gameOverMainMenuText}>← MAIN MENU</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.gameOverMainContent}>
+                  <Text style={styles.gameOverText}>GAME OVER</Text>
+                  <View style={[landscape ? styles.gameOverRow : undefined, { width: landscape ? contentW : undefined }]}>
+                    <View style={landscape ? styles.gameOverPlayersCol : undefined}>
                     {sorted.map((p, i) => {
                       const total = p.correct + p.incorrect;
                       const pct = total > 0 ? Math.round((p.correct / total) * 100) : 0;
@@ -665,29 +679,30 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                         </View>
                       );
                     })}
-                  </View>
-                  <ScoreChart players={chartPlayers} width={chartW} height={160} />
-                </View>
-                {recentMatches != null && recentMatches.length > 0 && (
-                  <View style={styles.gameOverHistoryWrap}>
-                    <Text style={styles.gameOverHistoryLabel}>LAST 5 GAMES</Text>
-                    <View style={styles.gameOverHistoryRow}>
-                      {recentMatches.slice(0, 5).reverse().map(m => {
-                        const tie = m.winnerNames.length !== 1;
-                        const winner = m.winnerNames[0];
-                        const initialColor = tie
-                          ? 'rgba(255,255,255,0.5)'
-                          : colorByName.get(winner!) ?? 'rgba(255,255,255,0.5)';
-                        const initial = tie ? '–' : winner!.trim().charAt(0).toUpperCase();
-                        return (
-                          <View key={m.id} style={styles.gameOverHistoryChip}>
-                            <Text style={[styles.gameOverHistoryChipText, { color: initialColor }]}>{initial}</Text>
-                          </View>
-                        );
-                      })}
                     </View>
+                    <ScoreChart players={chartPlayers} width={chartW} height={160} />
                   </View>
-                )}
+                  {recentMatches != null && recentMatches.length > 0 && (
+                    <View style={styles.gameOverHistoryWrap}>
+                      <Text style={styles.gameOverHistoryLabel}>LAST 5 GAMES</Text>
+                      <View style={styles.gameOverHistoryRow}>
+                        {recentMatches.slice(0, 5).reverse().map(m => {
+                          const tie = m.winnerNames.length !== 1;
+                          const winner = m.winnerNames[0];
+                          const initialColor = tie
+                            ? 'rgba(255,255,255,0.5)'
+                            : colorByName.get(winner!) ?? 'rgba(255,255,255,0.5)';
+                          const initial = tie ? '–' : winner!.trim().charAt(0).toUpperCase();
+                          return (
+                            <View key={m.id} style={styles.gameOverHistoryChip}>
+                              <Text style={[styles.gameOverHistoryChipText, { color: initialColor }]}>{initial}</Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  )}
+                </View>
               </ScrollView>
             </View>
           );
@@ -747,10 +762,19 @@ const styles = StyleSheet.create({
   },
   gameOverContent: {
     flexGrow: 1,
+  },
+  gameOverTopBar: {
+    width: '100%',
+    alignItems: 'flex-start',
+    paddingTop: 8,
+    paddingLeft: 8,
+  },
+  gameOverMainContent: {
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 32,
+    paddingBottom: 32,
   },
   gameOverText: {
     fontFamily: typeTokens.board,
@@ -815,5 +839,17 @@ const styles = StyleSheet.create({
   gameOverHistoryChipText: {
     fontFamily: typeTokens.ui700,
     fontSize: 16,
+  },
+  gameOverMainMenuButton: {
+    padding: 8,
+  },
+  gameOverMainMenuButtonPressed: {
+    opacity: 0.55,
+  },
+  gameOverMainMenuText: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 16,
+    letterSpacing: 0.8,
+    color: colors.gold,
   },
 });

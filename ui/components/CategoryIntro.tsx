@@ -10,6 +10,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { colors, shadow, type as typeTokens } from '../theme/tokens';
+import { sanitizeText } from '../../src/sanitizeText';
 
 /** How long each category card sits on screen before pushing to the next. */
 const HOLD_MS = 966;
@@ -106,7 +107,7 @@ export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
             <View key={i} style={[styles.slot, { width: w }, pad]}>
               <View style={styles.card}>
                 <Text style={styles.categoryText} adjustsFontSizeToFit numberOfLines={4}>
-                  {name.toUpperCase()}
+                  {sanitizeText(name).toUpperCase()}
                 </Text>
               </View>
             </View>
