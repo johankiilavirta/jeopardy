@@ -10,6 +10,8 @@ import {
 } from 'react-native';
 import { relayUrls } from '../../app/relayUrl';
 import { sanitizeText } from '../../src/sanitizeText';
+import { loadGameInfo, type GameInfo } from '../../data/gameLoader';
+import type { SessionMode } from '../../app/sessionProvider';
 import { KeyboardSheet, useKeyboardSheet } from '../components/KeyboardSheet';
 import { NumberKeyboard } from '../components/NumberKeyboard';
 import { SwipeUpMenu } from '../components/SwipeUpMenu';
@@ -37,6 +39,8 @@ interface LobbyScreenProps {
   onRelayHostChange?: (host: string) => void;
   relayPort?: string;
   onRelayPortChange?: (port: string) => void;
+  /** Local sessions preview from the bundled archive; online uses the relay. */
+  sessionMode?: SessionMode | undefined;
   gameId?: string;
   onGameIdChange?: (id: string) => void;
   /** Master toggle for in-game animations (default on). */
@@ -143,6 +147,27 @@ export function LobbyScreen(props: LobbyScreenProps) {
     }
     setGameInfoStatus('loading');
     const timer = setTimeout(async () => {
+      const applyInfo = (data: GameInfo) => {
+        setRound1Categories(data.round1 ?? null);
+        setRound2Categories(data.round2 ?? null);
+        setAirDate(data.airDate ?? null);
+        setSeasonNumber(data.season ?? null);
+        setGameInfoStatus(data.round1 ? 'idle' : 'not-found');
+      };
+
+      // Bluetooth and nearby sessions carry the complete archive in the app.
+      // Their lobby must remain usable with no relay or internet connection.
+      if (props.sessionMode === 'bluetooth' || props.sessionMode === 'nearby') {
+        const info = loadGameInfo(Number(id));
+        if (info) applyInfo(info);
+        else {
+          setRound1Categories(null); setRound2Categories(null);
+          setAirDate(null); setSeasonNumber(null);
+          setGameInfoStatus('not-found');
+        }
+        return;
+      }
+
       try {
         const base = relayUrls(props.relayHost ?? 'localhost', props.relayPort ?? '8787').http;
         const res = await fetch(`${base}/game-info/${id}`);
@@ -151,17 +176,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
           setAirDate(null); setSeasonNumber(null);
           setGameInfoStatus('not-found'); return;
         }
-        const data = await res.json() as {
-          round1: { name: string; clueCount: number }[];
-          round2: { name: string; clueCount: number }[];
-          airDate: string;
-          season: number;
-        };
-        setRound1Categories(data.round1 ?? null);
-        setRound2Categories(data.round2 ?? null);
-        setAirDate(data.airDate ?? null);
-        setSeasonNumber(data.season ?? null);
-        setGameInfoStatus(data.round1 ? 'idle' : 'not-found');
+        applyInfo(await res.json() as GameInfo);
       } catch {
         setRound1Categories(null); setRound2Categories(null);
         setAirDate(null); setSeasonNumber(null);
@@ -169,7 +184,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
       }
     }, 400);
     return () => clearTimeout(timer);
-  }, [props.gameId, props.relayHost, props.relayPort]);
+  }, [props.gameId, props.relayHost, props.relayPort, props.sessionMode]);
 
   const slots = Array.from({ length: MAX_PLAYERS }, (_, i) => props.players[i] ?? null);
 

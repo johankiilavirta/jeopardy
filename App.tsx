@@ -1156,6 +1156,7 @@ export default function App() {
             onRelayHostChange={setRelayHost}
             relayPort={relayPort}
             onRelayPortChange={setRelayPort}
+            sessionMode={transportRef.current?.mode}
             gameId={gameId}
             onGameIdChange={setGameId}
             animationsEnabled={animationsEnabled}
