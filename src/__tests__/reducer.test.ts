@@ -6,7 +6,7 @@ import {
   allBuzzersLocked,
   judgedPlayerId,
 } from '../reducer.js';
-import type { GameState } from '../types.js';
+import type { GameState, Player } from '../types.js';
 
 const clue = (id: number, value = 200) => ({
   id,
@@ -50,6 +50,9 @@ describe('createInitialState', () => {
       expect(p.correct).toBe(0);
       expect(p.incorrect).toBe(0);
       expect(p.scoreHistory).toEqual([0]);
+      expect(p.buzzCount).toBe(0);
+      expect(p.firstBuzzCount).toBe(0);
+      expect(p.reactionMsTotal).toBe(0);
     }
   });
 });
@@ -773,5 +776,97 @@ describe('per-player stats', () => {
 
     expect(state.players['bob']!.scoreHistory).toEqual([0, 200, -200]);
     expect(state.players['alice']!.scoreHistory).toEqual([0, 0, 400]);
+  });
+});
+
+describe('buzz stats', () => {
+  it('counts every buzz but only the first buzz of the window as first', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob' });
+    state = reducer(state, { type: 'BUZZ', playerId: 'alice' });
+
+    expect(state.players['bob']).toMatchObject({ buzzCount: 1, firstBuzzCount: 1 });
+    expect(state.players['alice']).toMatchObject({ buzzCount: 1, firstBuzzCount: 0 });
+  });
+
+  it('sums reactionMs into reactionMsTotal and accumulates across clues', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+
+    // Clue 1: bob first (200ms), alice second (500ms), bob correct
+    state = openClue(state, 'alice', 1, 200);
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob', reactionMs: 200 });
+    state = reducer(state, { type: 'BUZZ', playerId: 'alice', reactionMs: 500 });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice' });
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: true });
+
+    // Clue 2: only alice buzzes (100ms), wrong
+    state = openClue(state, 'bob', 2, 400);
+    state = reducer(state, { type: 'BUZZ', playerId: 'alice', reactionMs: 100 });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice' });
+    state = reducer(state, { type: 'TIMEOUT' });
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'alice', correct: false });
+
+    expect(state.players['bob']).toMatchObject({
+      buzzCount: 1,
+      firstBuzzCount: 1,
+      reactionMsTotal: 200,
+    });
+    expect(state.players['alice']).toMatchObject({
+      buzzCount: 2,
+      firstBuzzCount: 1,
+      reactionMsTotal: 600,
+    });
+  });
+
+  it('treats missing counters on a legacy player as zero', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    const { buzzCount, firstBuzzCount, reactionMsTotal, ...legacyAlice } = state.players['alice']!;
+    state = { ...state, players: { ...state.players, alice: legacyAlice as Player } };
+
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'alice', reactionMs: 250 });
+
+    expect(state.players['alice']).toMatchObject({
+      buzzCount: 1,
+      firstBuzzCount: 1,
+      reactionMsTotal: 250,
+    });
+  });
+
+  it('does not count duplicate buzzes or buzzes in the wrong phase', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice');
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob', reactionMs: 100 });
+    state = reducer(state, { type: 'BUZZ', playerId: 'bob', reactionMs: 100 }); // duplicate
+    expect(state.players['bob']).toMatchObject({ buzzCount: 1, reactionMsTotal: 100 });
+
+    // Reading lockout: buzz rejected, nothing counted
+    let reading = createInitialState(['Alice', 'Bob']);
+    reading = reducer(reading, { type: 'SELECT_CLUE', playerId: 'alice', clue: clue(1) });
+    const next = reducer(reading, { type: 'BUZZ', playerId: 'bob', reactionMs: 100 });
+    expect(next.players['bob']).toMatchObject({ buzzCount: 0, reactionMsTotal: 0 });
+  });
+
+  it('Final Jeopardy leaves buzz counters untouched', () => {
+    let state = createInitialState(['Alice', 'Bob'], 1, { category: 'C', text: 'T', answer: 'A' });
+    state = reducer(state, { type: 'SKIP_CLUE', playerId: 'alice', clueId: 1 });
+    expect(state.status).toBe('FINAL_JEOPARDY_WAGER');
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice', answer: '0' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob', answer: '0' });
+    expect(state.status).toBe('FINAL_JEOPARDY_ANSWER');
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice', answer: 'X' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob', answer: 'Y' });
+    expect(state.status).toBe('REVEAL');
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'alice', correct: true });
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false });
+    expect(state.status).toBe('GAME_OVER');
+
+    for (const p of Object.values(state.players)) {
+      expect(p.buzzCount).toBe(0);
+      expect(p.firstBuzzCount).toBe(0);
+      expect(p.reactionMsTotal).toBe(0);
+    }
   });
 });

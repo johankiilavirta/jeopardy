@@ -12,7 +12,7 @@ export function createInitialState(playerNames: string[], totalClues = 30, final
     }
     const finalId = id + suffix;
     const finalName = name.trim() ? (counter === 1 ? name : `${name} ${counter}`) : `Player ${Math.floor(Math.random() * 1000)}`;
-    players[finalId] = { id: finalId, name: finalName, score: 0, correct: 0, incorrect: 0, scoreHistory: [0] };
+    players[finalId] = { id: finalId, name: finalName, score: 0, correct: 0, incorrect: 0, scoreHistory: [0], buzzCount: 0, firstBuzzCount: 0, reactionMsTotal: 0 };
   }
   return {
     status: 'CHOOSE_CLUE',
@@ -141,6 +141,17 @@ function handleBuzz(state: GameState, action: Extract<Action, { type: 'BUZZ' }>)
   );
   const buzzes = [...state.buzzes, { playerId: action.playerId, answer: '', locked: false }];
 
+  // Buzz stats: total buzzes, first-in-the-window buzzes, and summed
+  // reaction time (server-stamped). `?? 0` covers players from states
+  // saved before these counters existed.
+  const player = state.players[action.playerId]!;
+  const updatedPlayer: Player = {
+    ...player,
+    buzzCount: (player.buzzCount ?? 0) + 1,
+    firstBuzzCount: (player.firstBuzzCount ?? 0) + (state.buzzes.length === 0 ? 1 : 0),
+    reactionMsTotal: (player.reactionMsTotal ?? 0) + (action.reactionMs ?? 0),
+  };
+
   // Once everyone has buzzed, the window is moot — close it
   const activePlayers = Object.keys(state.players).filter(id => id !== 'opponent');
   const everyoneActed = activePlayers.every(
@@ -152,6 +163,7 @@ function handleBuzz(state: GameState, action: Extract<Action, { type: 'BUZZ' }>)
     status: everyoneActed ? 'ANSWERING' : 'BUZZ_OPEN',
     buzzes,
     passedPlayerIds,
+    players: { ...state.players, [player.id]: updatedPlayer },
   };
 }
 

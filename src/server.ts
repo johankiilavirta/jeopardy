@@ -320,6 +320,15 @@ export function createServer(
     const action = parsed.type === 'JUDGE_ANSWER' || parsed.type === 'DISMISS_CLUE'
       ? { ...parsed } as Action
       : { ...parsed, playerId } as Action;
+    // Reaction time is server-measured — any client-sent value is
+    // overwritten (or dropped if the window isn't open).
+    if (action.type === 'BUZZ') {
+      if (server.history.current.status === 'BUZZ_OPEN' && buzzWindowOpenAt != null) {
+        action.reactionMs = Math.max(0, Date.now() - buzzWindowOpenAt);
+      } else {
+        delete action.reactionMs;
+      }
+    }
     // Keystrokes are transient: they update state without growing the
     // undo stack.
     applyAction(action, { transient: action.type === 'SET_ANSWER' });

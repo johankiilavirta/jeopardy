@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { sendAction } from '../../src/client';
 import { createKeystrokeThrottle, type KeystrokeThrottle } from '../../src/answerThrottle';
 import { computeReadingMs } from '../../src/readingTime';
@@ -17,6 +17,7 @@ import { demoBoard } from '../fixtures/board';
 import { getClueContent } from '../fixtures/clues';
 import { toBoardDefinition, makeClueGetter, getVisibleBoard } from '../../data/gameLoader';
 import type { GameData, RoundNumber } from '../../data/gameLoader';
+import type { MatchResult } from '../../app/matchHistory';
 import { MainMenuScreen } from '../screens/MainMenuScreen';
 import { InGameSettingsScreen } from '../screens/InGameSettingsScreen';
 import { ChooseClueScreen } from '../screens/ChooseClueScreen';
@@ -52,6 +53,8 @@ interface NetworkedGameProps {
   visibleCategories?: number | undefined;
   onVisibleCategoriesChange?: (n: number) => void;
   isResume?: boolean | undefined;
+  /** Locally recorded finished games, newest first (last-5 chips row). */
+  recentMatches?: MatchResult[];
 }
 
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
@@ -62,7 +65,7 @@ const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
 
 
 
-export function NetworkedGame({ transport, serverPeerId, initialState, boardData, remotePeerConnectionStatus = 'connected', localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, onBoardVisible, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume }: NetworkedGameProps) {
+export function NetworkedGame({ transport, serverPeerId, initialState, boardData, remotePeerConnectionStatus = 'connected', localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, onBoardVisible, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume, recentMatches }: NetworkedGameProps) {
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
@@ -609,6 +612,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         {gameState.status === 'GAME_OVER' && (() => {
           const PLAYER_COLORS = ['#5B8DEF', '#E8A035'];
           const sorted = Object.values(gameState.players).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+          const totalFirstBuzzes = sorted.reduce((sum, p) => sum + (p.firstBuzzCount ?? 0), 0);
+          const colorByName = new Map(sorted.map((p, i) => [p.name, PLAYER_COLORS[i % PLAYER_COLORS.length]!]));
           const chartPlayers = sorted.map((p, i) => ({
             name: p.name,
             color: PLAYER_COLORS[i % PLAYER_COLORS.length]!,
@@ -622,40 +627,68 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
           return (
             <View style={styles.gameOverOverlay}>
-              <Text style={styles.gameOverText}>GAME OVER</Text>
-              <View style={[landscape ? styles.gameOverRow : undefined, { width: landscape ? contentW : undefined }]}>
-                <View style={landscape ? styles.gameOverPlayersCol : undefined}>
-                  {sorted.map((p, i) => {
-                    const total = p.correct + p.incorrect;
-                    const pct = total > 0 ? Math.round((p.correct / total) * 100) : 0;
-                    // Mock stats — replace with real data when available
-                    const buzzSpeedMs = 1200 + Math.round(Math.abs(Math.sin(p.id.length * 7)) * 3000);
-                    const firstBuzzPct = 20 + Math.round(Math.abs(Math.cos(p.id.length * 3)) * 60);
-                    return (
-                      <View key={p.id} style={styles.gameOverPlayerRow}>
-                        <View style={styles.gameOverNameRow}>
-                          <View style={[styles.gameOverColorDot, { backgroundColor: PLAYER_COLORS[i % PLAYER_COLORS.length] }]} />
-                          <Text style={styles.gameOverScore}>
-                            {p.name}: ${(p.score ?? 0).toLocaleString()}
-                          </Text>
-                        </View>
-                        <Text style={styles.gameOverStats}>
-                          {p.correct} correct · {p.incorrect} incorrect · {pct}% correctness
-                        </Text>
-                        <Text style={styles.gameOverStats}>
-                          {firstBuzzPct}% buzzed first · {buzzSpeedMs}ms average reaction
-                        </Text>
-                        {gameState.finalWagers?.[p.id] != null && (
+              <ScrollView
+                style={styles.gameOverScroll}
+                contentContainerStyle={styles.gameOverContent}
+                showsVerticalScrollIndicator
+              >
+                <Text style={styles.gameOverText}>GAME OVER</Text>
+                <View style={[landscape ? styles.gameOverRow : undefined, { width: landscape ? contentW : undefined }]}>
+                  <View style={landscape ? styles.gameOverPlayersCol : undefined}>
+                    {sorted.map((p, i) => {
+                      const total = p.correct + p.incorrect;
+                      const pct = total > 0 ? Math.round((p.correct / total) * 100) : 0;
+                      const buzzCount = p.buzzCount ?? 0;
+                      const avgReactionMs = buzzCount > 0 ? Math.round((p.reactionMsTotal ?? 0) / buzzCount) : null;
+                      const firstBuzzPct = totalFirstBuzzes > 0 ? Math.round(((p.firstBuzzCount ?? 0) / totalFirstBuzzes) * 100) : 0;
+                      return (
+                        <View key={p.id} style={styles.gameOverPlayerRow}>
+                          <View style={styles.gameOverNameRow}>
+                            <View style={[styles.gameOverColorDot, { backgroundColor: PLAYER_COLORS[i % PLAYER_COLORS.length] }]} />
+                            <Text style={styles.gameOverScore}>
+                              {p.name}: ${(p.score ?? 0).toLocaleString()}
+                            </Text>
+                          </View>
                           <Text style={styles.gameOverStats}>
-                            ${gameState.finalWagers[p.id]!.toLocaleString()} final wager
+                            {p.correct} correct · {p.incorrect} incorrect · {pct}% correctness
                           </Text>
-                        )}
-                      </View>
-                    );
-                  })}
+                          {buzzCount > 0 && (
+                            <Text style={styles.gameOverStats}>
+                              {firstBuzzPct}% buzzed first · {avgReactionMs}ms average reaction
+                            </Text>
+                          )}
+                          {gameState.finalWagers?.[p.id] != null && (
+                            <Text style={styles.gameOverStats}>
+                              ${gameState.finalWagers[p.id]!.toLocaleString()} final wager
+                            </Text>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
+                  <ScoreChart players={chartPlayers} width={chartW} height={160} />
                 </View>
-                <ScoreChart players={chartPlayers} width={chartW} height={160} />
-              </View>
+                {recentMatches != null && recentMatches.length > 0 && (
+                  <View style={styles.gameOverHistoryWrap}>
+                    <Text style={styles.gameOverHistoryLabel}>LAST 5 GAMES</Text>
+                    <View style={styles.gameOverHistoryRow}>
+                      {recentMatches.slice(0, 5).reverse().map(m => {
+                        const tie = m.winnerNames.length !== 1;
+                        const winner = m.winnerNames[0];
+                        const initialColor = tie
+                          ? 'rgba(255,255,255,0.5)'
+                          : colorByName.get(winner!) ?? 'rgba(255,255,255,0.5)';
+                        const initial = tie ? '–' : winner!.trim().charAt(0).toUpperCase();
+                        return (
+                          <View key={m.id} style={styles.gameOverHistoryChip}>
+                            <Text style={[styles.gameOverHistoryChipText, { color: initialColor }]}>{initial}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
+              </ScrollView>
             </View>
           );
         })()}
@@ -706,9 +739,18 @@ const styles = StyleSheet.create({
   gameOverOverlay: {
     ...StyleSheet.absoluteFill,
     backgroundColor: colors.bg,
+    zIndex: 10000,
+  },
+  gameOverScroll: {
+    flex: 1,
+    width: '100%',
+  },
+  gameOverContent: {
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 10000,
+    paddingHorizontal: 24,
+    paddingVertical: 32,
   },
   gameOverText: {
     fontFamily: typeTokens.board,
@@ -748,5 +790,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(255,255,255,0.6)',
     marginTop: 2,
+  },
+  gameOverHistoryWrap: {
+    marginTop: 24,
+    alignItems: 'center',
+  },
+  gameOverHistoryLabel: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 12,
+    letterSpacing: 1,
+    color: 'rgba(255,255,255,0.6)',
+  },
+  gameOverHistoryRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  gameOverHistoryChip: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gameOverHistoryChipText: {
+    fontFamily: typeTokens.ui700,
+    fontSize: 16,
   },
 });
