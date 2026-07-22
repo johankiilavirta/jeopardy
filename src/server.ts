@@ -28,7 +28,7 @@ export interface ServerOptions {
   buzzerMs?: number;
   /** How long an expired clue lingers before returning to the board */
   dismissMs?: number;
-  /** How long each buzzed player can type (from their own buzz) before input locks */
+  /** Fallback lock timeout when a restored answer has no known shared buzz-window start */
   answerMs?: number;
   /** Total number of clues on the board (default 30) */
   totalClues?: number;
@@ -84,7 +84,7 @@ export function createServer(
   /** Wall-clock time when the current buzz window opened (Date.now()). */
   let buzzWindowOpenAt: number | null = null;
 
-  /** One personal typing timer per unlocked buzzer (playerId → timer id). */
+  /** One lock timer per unlocked buzzer, all scheduled against the shared deadline. */
   const answerTimerIds = new Map<string, unknown>();
 
   function clearPhaseTimer(): void {
@@ -123,14 +123,14 @@ export function createServer(
         );
         break;
       // ANSWERING and REVEAL are not phase-timed: ANSWERING ends via the
-      // personal answer timers below, REVEAL via manual judging.
+      // per-player lock timers below, REVEAL via manual judging.
     }
   }
 
-  /** Differentially reconcile personal typing timers with the buzz list:
-   *  each unlocked buzzer gets one answerMs timer armed at buzz time and
-   *  never reset; locked (or judged-away) entries are cleared. The timer
-   *  fires a LOCK_ANSWER without text — the last synced answer stands. */
+  /** Differentially reconcile lock timers with the buzz list. Non-Final
+   *  players all use the original buzz-window deadline, so buzzing never
+   *  resets or extends the available answer time. Locked (or judged-away)
+   *  entries are cleared. A timer-fired lock keeps the last synced answer. */
   function syncAnswerTimers(): void {
     const state = server.history.current;
     if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING' && state.status !== 'FINAL_JEOPARDY_WAGER' && state.status !== 'FINAL_JEOPARDY_ANSWER') {

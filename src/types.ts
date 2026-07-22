@@ -33,7 +33,7 @@ export interface Buzz {
   playerId: string;
   /** The answer typed so far (final once `locked`). */
   answer: string;
-  /** Input is closed: swiped down, or their personal timer expired. */
+  /** Input is closed: swiped down, or the applicable answer deadline expired. */
   locked: boolean;
 }
 

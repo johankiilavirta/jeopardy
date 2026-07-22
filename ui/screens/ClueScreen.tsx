@@ -252,7 +252,7 @@ export function ClueScreen({
 
   // Keyboard slide animation. The keyboard is summoned by the game phase —
   // it rises when this player buzzes and drops when their answer locks
-  // (swipe-down, personal timer) or the reveal arrives. The panel stays
+  // (swipe-down, shared deadline) or the reveal arrives. The panel stays
   // mounted (`kbMounted`) until the slide-out finishes; a single driver
   // value `kb` (0 hidden → 1 shown) animates the panel and clue together,
   // so rapid open/close just retargets one animation.

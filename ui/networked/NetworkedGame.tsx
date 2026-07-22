@@ -157,8 +157,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const playerId = initialState?.playerId ?? null;
-  // Deadlines (epoch ms) for the current phase window and the local player's
-  // personal typing timer — they drive the activation lights' drain.
+  // Deadlines (epoch ms) for the current phase and shared answer window —
+  // they drive the activation lights' drain.
   const previousStatusRef = useRef<GameStatus | null>(null);
   const buzzWindowDeadlineRef = useRef<number | null>(null);
   // Window rect of the cell this device last tapped, so the clue card can grow

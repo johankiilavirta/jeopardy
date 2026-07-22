@@ -29,9 +29,6 @@ const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number; action: Action }>> 
   CLUE_EXPIRED: { ms: 5000, action: { type: 'DISMISS_CLUE' } },
 };
 
-/** Personal typing time, from each player's own buzz (mirrors answerMs).
- *  The lights hold fully lit for the first second, then drain over the rest. */
-const ANSWER_MS = 20000;
 /** Final Jeopardy gives each player a fresh 30-second window for both the
  *  wager and answer phases (mirrors NetworkedGame). */
 const FINAL_ANSWER_MS = 30000;
@@ -102,7 +99,7 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
   const [state, setState] = useState<GameState>(() => initialStateFor(initialScreen));
   const selectedCellRef = useRef<{ clueId: number; rect: CellRect } | null>(null);
   // Deadlines (epoch ms) for the current phase window and the local player's
-  // personal typing timer — they drive the activation lights' drain.
+  // shared answer window — they drive the activation lights' drain.
   const [phaseDeadline, setPhaseDeadline] = useState<number | null>(null);
   // Persists through BUZZ_OPEN → ANSWERING so post-buzz lights share the deadline.
   const buzzWindowDeadlineRef = useRef<number | null>(null);
@@ -110,7 +107,7 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
 
   const localBuzz = getBuzz(state, LOCAL_PLAYER_ID);
   const localPassed = (state.passedPlayerIds ?? []).includes(LOCAL_PLAYER_ID);
-  // Buzzed and still typing — the keyboard is up and the personal timer runs.
+  // Buzzed and still typing — the keyboard is up until the shared deadline.
   const typing =
     !!localBuzz &&
     !localBuzz.locked &&
@@ -147,7 +144,7 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
     return () => clearTimeout(fire);
   }, [state.status]);
 
-  // Lock the answer when the buzz window expires — not a fresh personal timer.
+  // Lock the answer when the buzz window expires — buzzing never resets it.
   // Swipe-down locks earlier and tears this down via the cleanup.
   useEffect(() => {
     if (!typing) return;

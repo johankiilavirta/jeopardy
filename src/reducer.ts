@@ -412,7 +412,7 @@ function handleTimeout(state: GameState): GameState {
   }
 
   // Window closed. Everyone done typing → reveal; otherwise let the
-  // remaining buzzers finish out their personal timers.
+  // remaining buzzers reach that same window's answer deadline.
   return {
     ...state,
     status: allBuzzersLocked(state) ? 'REVEAL' : 'ANSWERING',
