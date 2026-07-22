@@ -1,6 +1,10 @@
 import type { ExpoConfig } from 'expo/config';
 import appJson from './app.json';
 
+// Keep this literal here: Expo evaluates app.config.ts through CommonJS and
+// does not resolve TypeScript-only imports outside the config itself.
+const DEFAULT_RELAY_HOST = 'wss://jeopardy-relay-johan.fly.dev';
+
 const config: ExpoConfig = {
   ...appJson.expo,
   ios: {
@@ -13,7 +17,7 @@ const config: ExpoConfig = {
   },
   extra: {
     network: !!process.env.EXPO_PUBLIC_NETWORK,
-    relayHost: process.env.EXPO_PUBLIC_RELAY_HOST ?? 'localhost',
+    relayHost: process.env.EXPO_PUBLIC_RELAY_HOST ?? DEFAULT_RELAY_HOST,
     room: process.env.EXPO_PUBLIC_ROOM,
     // Dev solo/auto-start: how many players to wait for before auto-starting
     // (default 1 = drop straight in), and which J!Archive game to load.
