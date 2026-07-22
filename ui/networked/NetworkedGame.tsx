@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { sendAction } from '../../src/client';
 import { createKeystrokeThrottle, type KeystrokeThrottle } from '../../src/answerThrottle';
 import { computeReadingMs } from '../../src/readingTime';
@@ -627,62 +627,68 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
           return (
             <View style={styles.gameOverOverlay}>
-              <Text style={styles.gameOverText}>GAME OVER</Text>
-              <View style={[landscape ? styles.gameOverRow : undefined, { width: landscape ? contentW : undefined }]}>
-                <View style={landscape ? styles.gameOverPlayersCol : undefined}>
-                  {sorted.map((p, i) => {
-                    const total = p.correct + p.incorrect;
-                    const pct = total > 0 ? Math.round((p.correct / total) * 100) : 0;
-                    const buzzCount = p.buzzCount ?? 0;
-                    const avgReactionMs = buzzCount > 0 ? Math.round((p.reactionMsTotal ?? 0) / buzzCount) : null;
-                    const firstBuzzPct = totalFirstBuzzes > 0 ? Math.round(((p.firstBuzzCount ?? 0) / totalFirstBuzzes) * 100) : 0;
-                    return (
-                      <View key={p.id} style={styles.gameOverPlayerRow}>
-                        <View style={styles.gameOverNameRow}>
-                          <View style={[styles.gameOverColorDot, { backgroundColor: PLAYER_COLORS[i % PLAYER_COLORS.length] }]} />
-                          <Text style={styles.gameOverScore}>
-                            {p.name}: ${(p.score ?? 0).toLocaleString()}
-                          </Text>
-                        </View>
-                        <Text style={styles.gameOverStats}>
-                          {p.correct} correct · {p.incorrect} incorrect · {pct}% correctness
-                        </Text>
-                        {buzzCount > 0 && (
-                          <Text style={styles.gameOverStats}>
-                            {firstBuzzPct}% buzzed first · {avgReactionMs}ms average reaction
-                          </Text>
-                        )}
-                        {gameState.finalWagers?.[p.id] != null && (
-                          <Text style={styles.gameOverStats}>
-                            ${gameState.finalWagers[p.id]!.toLocaleString()} final wager
-                          </Text>
-                        )}
-                      </View>
-                    );
-                  })}
-                </View>
-                <ScoreChart players={chartPlayers} width={chartW} height={160} />
-              </View>
-              {recentMatches != null && recentMatches.length > 0 && (
-                <View style={styles.gameOverHistoryWrap}>
-                  <Text style={styles.gameOverHistoryLabel}>LAST 5 GAMES</Text>
-                  <View style={styles.gameOverHistoryRow}>
-                    {recentMatches.slice(0, 5).reverse().map(m => {
-                      const tie = m.winnerNames.length !== 1;
-                      const winner = m.winnerNames[0];
-                      const bg = tie
-                        ? 'rgba(255,255,255,0.35)'
-                        : colorByName.get(winner!) ?? '#666';
-                      const initial = tie ? '–' : winner!.trim().charAt(0).toUpperCase();
+              <ScrollView
+                style={styles.gameOverScroll}
+                contentContainerStyle={styles.gameOverContent}
+                showsVerticalScrollIndicator
+              >
+                <Text style={styles.gameOverText}>GAME OVER</Text>
+                <View style={[landscape ? styles.gameOverRow : undefined, { width: landscape ? contentW : undefined }]}>
+                  <View style={landscape ? styles.gameOverPlayersCol : undefined}>
+                    {sorted.map((p, i) => {
+                      const total = p.correct + p.incorrect;
+                      const pct = total > 0 ? Math.round((p.correct / total) * 100) : 0;
+                      const buzzCount = p.buzzCount ?? 0;
+                      const avgReactionMs = buzzCount > 0 ? Math.round((p.reactionMsTotal ?? 0) / buzzCount) : null;
+                      const firstBuzzPct = totalFirstBuzzes > 0 ? Math.round(((p.firstBuzzCount ?? 0) / totalFirstBuzzes) * 100) : 0;
                       return (
-                        <View key={m.id} style={[styles.gameOverHistoryChip, { backgroundColor: bg }]}>
-                          <Text style={styles.gameOverHistoryChipText}>{initial}</Text>
+                        <View key={p.id} style={styles.gameOverPlayerRow}>
+                          <View style={styles.gameOverNameRow}>
+                            <View style={[styles.gameOverColorDot, { backgroundColor: PLAYER_COLORS[i % PLAYER_COLORS.length] }]} />
+                            <Text style={styles.gameOverScore}>
+                              {p.name}: ${(p.score ?? 0).toLocaleString()}
+                            </Text>
+                          </View>
+                          <Text style={styles.gameOverStats}>
+                            {p.correct} correct · {p.incorrect} incorrect · {pct}% correctness
+                          </Text>
+                          {buzzCount > 0 && (
+                            <Text style={styles.gameOverStats}>
+                              {firstBuzzPct}% buzzed first · {avgReactionMs}ms average reaction
+                            </Text>
+                          )}
+                          {gameState.finalWagers?.[p.id] != null && (
+                            <Text style={styles.gameOverStats}>
+                              ${gameState.finalWagers[p.id]!.toLocaleString()} final wager
+                            </Text>
+                          )}
                         </View>
                       );
                     })}
                   </View>
+                  <ScoreChart players={chartPlayers} width={chartW} height={160} />
                 </View>
-              )}
+                {recentMatches != null && recentMatches.length > 0 && (
+                  <View style={styles.gameOverHistoryWrap}>
+                    <Text style={styles.gameOverHistoryLabel}>LAST 5 GAMES</Text>
+                    <View style={styles.gameOverHistoryRow}>
+                      {recentMatches.slice(0, 5).reverse().map(m => {
+                        const tie = m.winnerNames.length !== 1;
+                        const winner = m.winnerNames[0];
+                        const initialColor = tie
+                          ? 'rgba(255,255,255,0.5)'
+                          : colorByName.get(winner!) ?? 'rgba(255,255,255,0.5)';
+                        const initial = tie ? '–' : winner!.trim().charAt(0).toUpperCase();
+                        return (
+                          <View key={m.id} style={styles.gameOverHistoryChip}>
+                            <Text style={[styles.gameOverHistoryChipText, { color: initialColor }]}>{initial}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
+              </ScrollView>
             </View>
           );
         })()}
@@ -733,9 +739,18 @@ const styles = StyleSheet.create({
   gameOverOverlay: {
     ...StyleSheet.absoluteFill,
     backgroundColor: colors.bg,
+    zIndex: 10000,
+  },
+  gameOverScroll: {
+    flex: 1,
+    width: '100%',
+  },
+  gameOverContent: {
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 10000,
+    paddingHorizontal: 24,
+    paddingVertical: 32,
   },
   gameOverText: {
     fontFamily: typeTokens.board,
@@ -794,13 +809,11 @@ const styles = StyleSheet.create({
   gameOverHistoryChip: {
     width: 24,
     height: 24,
-    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   gameOverHistoryChipText: {
     fontFamily: typeTokens.ui700,
-    fontSize: 13,
-    color: '#fff',
+    fontSize: 16,
   },
 });
