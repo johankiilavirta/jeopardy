@@ -11,6 +11,7 @@ import type { BoardDefinition } from '../ui/fixtures/board';
 import { clueIdAt } from '../ui/fixtures/board';
 import type { ClueContent } from '../ui/fixtures/clues';
 import { loadSeasonFile } from './seasonFiles';
+import { sanitizeText } from '../src/sanitizeText';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -156,7 +157,7 @@ export function toBoardDefinition(game: GameData, round: RoundNumber = 1): Board
   const offset = (round - 1) * ROUND_STRIDE;
   return {
     categories: roundCategories(game, round).map((cat, col) => ({
-      name: cat.name,
+      name: sanitizeText(cat.name),
       clues: cat.clues.map((clue, row) => ({
         id: offset + clueIdAt(col, row),
         value: clue.value,
@@ -184,9 +185,9 @@ export function makeClueGetter(game: GameData): (id: number) => ClueContent {
 
     return {
       id,
-      category: category.name,
-      text: clue.text,
-      answer: clue.answer,
+      category: sanitizeText(category.name),
+      text: sanitizeText(clue.text),
+      answer: sanitizeText(clue.answer),
       value: clue.value,
     };
   };

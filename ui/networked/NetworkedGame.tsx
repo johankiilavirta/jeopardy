@@ -630,7 +630,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               <ScrollView
                 style={styles.gameOverScroll}
                 contentContainerStyle={styles.gameOverContent}
-                showsVerticalScrollIndicator
+                showsVerticalScrollIndicator={false}
               >
                 <Text style={styles.gameOverText}>GAME OVER</Text>
                 <View style={[landscape ? styles.gameOverRow : undefined, { width: landscape ? contentW : undefined }]}>
@@ -688,6 +688,17 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                     </View>
                   </View>
                 )}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Return to main menu"
+                  onPress={onLeave ?? onNewGame ?? (() => {})}
+                  style={({ pressed }) => [
+                    styles.gameOverMainMenuButton,
+                    pressed && styles.gameOverMainMenuButtonPressed,
+                  ]}
+                >
+                  <Text style={styles.gameOverMainMenuText}>← MAIN MENU</Text>
+                </Pressable>
               </ScrollView>
             </View>
           );
@@ -815,5 +826,19 @@ const styles = StyleSheet.create({
   gameOverHistoryChipText: {
     fontFamily: typeTokens.ui700,
     fontSize: 16,
+  },
+  gameOverMainMenuButton: {
+    marginTop: 28,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  gameOverMainMenuButtonPressed: {
+    opacity: 0.55,
+  },
+  gameOverMainMenuText: {
+    fontFamily: typeTokens.ui700,
+    fontSize: 16,
+    letterSpacing: 0.8,
+    color: colors.gold,
   },
 });

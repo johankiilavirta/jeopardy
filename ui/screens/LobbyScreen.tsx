@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { relayUrls } from '../../app/relayUrl';
+import { sanitizeText } from '../../src/sanitizeText';
 import { KeyboardSheet, useKeyboardSheet } from '../components/KeyboardSheet';
 import { NumberKeyboard } from '../components/NumberKeyboard';
 import { SwipeUpMenu } from '../components/SwipeUpMenu';
@@ -371,7 +372,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                           >
                             {round1Categories.map(({ name, clueCount }) => (
                               <View key={name} style={styles.categoryRow}>
-                                <Text style={styles.categoryName}>{name}</Text>
+                                <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
                                 {clueCount < 5 && (
                                   <Text style={styles.clueCount}>{clueCount}/5</Text>
                                 )}
@@ -401,7 +402,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                           >
                             {round2Categories.map(({ name, clueCount }) => (
                               <View key={name} style={styles.categoryRow}>
-                                <Text style={styles.categoryName}>{name}</Text>
+                                <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
                                 {clueCount < 5 && (
                                   <Text style={styles.clueCount}>{clueCount}/5</Text>
                                 )}
