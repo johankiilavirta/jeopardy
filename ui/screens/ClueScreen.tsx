@@ -732,9 +732,17 @@ export function ClueScreen({
               { opacity: headerFade },
             ]}
           >
-            <Text style={styles.category} numberOfLines={1} allowFontScaling={false}>
-              {clue.category.toUpperCase()}
-            </Text>
+            <View style={styles.categoryWrap}>
+              <Text
+                style={styles.category}
+                numberOfLines={2}
+                adjustsFontSizeToFit
+                minimumFontScale={0.55}
+                allowFontScaling={false}
+              >
+                {clue.category.toUpperCase()}
+              </Text>
+            </View>
             <Text style={styles.value} numberOfLines={1} allowFontScaling={false}>
               {clue.value ? `$${clue.value}` : ''}
             </Text>
@@ -940,8 +948,11 @@ const styles = StyleSheet.create({
   headerFinalWager: {
     paddingHorizontal: 36,
   },
+  categoryWrap: {
+    flex: 1,
+    justifyContent: 'center',
+  },
   category: {
-    flexShrink: 1,
     fontFamily: typeTokens.board,
     fontSize: 20,
     color: colors.categoryText,
