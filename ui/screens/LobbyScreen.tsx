@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { relayUrls } from '../../app/relayUrl';
+import { DEFAULT_RELAY_HOST } from '../../app/relayDefaults';
 import { sanitizeText } from '../../src/sanitizeText';
 import { loadGameInfo, type GameInfo } from '../../data/gameLoader';
 import type { SessionMode } from '../../app/sessionProvider';
@@ -169,7 +170,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
       }
 
       try {
-        const base = relayUrls(props.relayHost ?? 'localhost', props.relayPort ?? '8787').http;
+        const base = relayUrls(props.relayHost ?? DEFAULT_RELAY_HOST, props.relayPort ?? '8787').http;
         const res = await fetch(`${base}/game-info/${id}`);
         if (!res.ok) {
           setRound1Categories(null); setRound2Categories(null);
@@ -202,7 +203,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
         <SettingsScreen
           playerName={props.playerName ?? ''}
           onNameChange={props.onNameChange ?? (() => {})}
-          relayHost={props.relayHost ?? 'localhost'}
+          relayHost={props.relayHost ?? DEFAULT_RELAY_HOST}
           onRelayHostChange={props.onRelayHostChange ?? (() => {})}
           relayPort={props.relayPort ?? '8787'}
           onRelayPortChange={props.onRelayPortChange ?? (() => {})}
