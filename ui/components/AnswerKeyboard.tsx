@@ -25,6 +25,8 @@ const KEY_RADIUS = 8;
 interface AnswerKeyboardProps {
   onInsert: (char: string) => void;
   onBackspace: () => void;
+  /** Shows the compact number deck without dismissing the answer sheet. */
+  onNumbers?: () => void;
   /** Final Jeopardy: the keys swap cell navy for the round's charcoal. */
   final?: boolean;
 }
@@ -54,7 +56,7 @@ function Key({
 
 /** Memoized: the keys are static, so with stable callbacks the whole deck
  *  skips re-rendering on every keystroke. */
-export const AnswerKeyboard = memo(function AnswerKeyboard({ onInsert, onBackspace, final = false }: AnswerKeyboardProps) {
+export const AnswerKeyboard = memo(function AnswerKeyboard({ onInsert, onBackspace, onNumbers, final = false }: AnswerKeyboardProps) {
   return (
     <View style={styles.keyboard}>
       {LETTER_ROWS.map((row, i) => (
@@ -68,7 +70,11 @@ export const AnswerKeyboard = memo(function AnswerKeyboard({ onInsert, onBackspa
         </View>
       ))}
       <View style={styles.row}>
-        <View style={styles.spacer} />
+        {onNumbers ? (
+          <Key label="123" flex={2} final={final} onPress={onNumbers} />
+        ) : (
+          <View style={styles.spacer} />
+        )}
         <Key label="SPACE" flex={4} final={final} onPress={() => onInsert(' ')} />
         <View style={styles.spacer} />
       </View>

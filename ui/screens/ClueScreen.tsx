@@ -147,11 +147,18 @@ export function ClueScreen({
   placeholder = 'TYPE YOUR ANSWER',
 }: ClueScreenProps) {
   const isFinalJeopardy = clue.id === -1;
+  // Wagers stay numeric. Regular answer entry can switch between the two
+  // decks without closing the sheet or disturbing the typed answer.
+  const [activeKeyboardType, setActiveKeyboardType] = useState<'text' | 'number'>(keyboardType);
   const { width, height } = useWindowDimensions();
   const pan = useRef(new Animated.Value(0)).current;
   const skipDrag = useRef(new Animated.Value(0)).current;
   const skipDistanceRef = useRef(0);
   const verticalGestureRef = useRef<VerticalClueGesture>(null);
+
+  useEffect(() => {
+    setActiveKeyboardType(keyboardType);
+  }, [clue.id, keyboardType]);
 
   // Normal clues retain the current 26px typography. Only a measured
   // overflow shrinks, and the hidden answer measurement reserves the room
@@ -866,10 +873,21 @@ export function ClueScreen({
               </Animated.View>
               <View style={styles.keyDeck}>
                 <View style={styles.keyDeckInner}>
-                  {keyboardType === 'number' ? (
-                    <NumberKeyboard onInsert={insertChar} onBackspace={backspaceChar} final={isFinalJeopardy} {...(onMaxWager ? { onMaxWager } : {})} />
+                  {activeKeyboardType === 'number' ? (
+                    <NumberKeyboard
+                      onInsert={insertChar}
+                      onBackspace={backspaceChar}
+                      final={isFinalJeopardy}
+                      {...(keyboardType === 'text' ? { onLetters: () => setActiveKeyboardType('text') } : {})}
+                      {...(onMaxWager ? { onMaxWager } : {})}
+                    />
                   ) : (
-                    <AnswerKeyboard onInsert={insertChar} onBackspace={backspaceChar} final={isFinalJeopardy} />
+                    <AnswerKeyboard
+                      onInsert={insertChar}
+                      onBackspace={backspaceChar}
+                      onNumbers={() => setActiveKeyboardType('number')}
+                      final={isFinalJeopardy}
+                    />
                   )}
                 </View>
               </View>
