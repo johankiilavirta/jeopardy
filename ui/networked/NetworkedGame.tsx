@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { sendAction } from '../../src/client';
 import { createKeystrokeThrottle, type KeystrokeThrottle } from '../../src/answerThrottle';
 import { computeReadingMs } from '../../src/readingTime';
@@ -67,6 +67,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
   const [gameState, setGameState] = useState<GameState | null>(initialState?.state ?? null);
+  const [showLastClueButton, setShowLastClueButton] = useState(false);
   const fadeToBlackAnim = useRef(new Animated.Value(0)).current;
   const currentVisibleStateRef = useRef<GameState | null>(initialState?.state ?? null);
   // The newest server state, always — the fade below holds the *visible*
@@ -383,16 +384,23 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const hostPlayerId = localIsHost ? playerId : remotePlayerId;
   const promotingPlayerId = recoveringLocally && !localIsHost ? playerId : null;
 
+  const unburnedCurrentRoundClueIds = fullBoard.categories
+    .flatMap(c => c.clues.map(cl => cl.id))
+    .filter(id => !burnedClueIds.includes(id));
+  const canSkipToLastClue =
+    !gameState.activeClue &&
+    !recoveringLocally &&
+    unburnedCurrentRoundClueIds.length > 1;
+
   // Update the Y-key handler every render so it closes over fresh state.
-  yKeyHandlerRef.current = () => {
-    if (gameState.activeClue) return;
-    const allIds = fullBoard.categories.flatMap(c => c.clues.map(cl => cl.id));
-    const unburned = allIds.filter(id => !burnedClueIds.includes(id));
-    if (unburned.length <= 1) return;
-    unburned.slice(0, -1).forEach(clueId => {
+  // The floating test button below calls the same action on native builds.
+  const skipToLastClue = () => {
+    if (!canSkipToLastClue) return;
+    unburnedCurrentRoundClueIds.slice(0, -1).forEach(clueId => {
       dispatch({ type: 'SKIP_CLUE', playerId, clueId });
     });
   };
+  yKeyHandlerRef.current = skipToLastClue;
 
   // Names for the fly-by: categories beyond visibleCategories are reserve
   // categories (marked " *") that will backfill as columns clear.
@@ -434,6 +442,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           onAnimationsChange={onAnimationsChange ?? (() => {})}
           visibleCategories={visibleCategories}
           onVisibleCategoriesChange={onVisibleCategoriesChange ?? (() => {})}
+          showLastClueButton={showLastClueButton}
+          onShowLastClueButtonChange={setShowLastClueButton}
           playerName={playerName ?? ''}
           onNameChange={onNameChange ?? (() => {})}
           relayHost={relayHostSetting ?? relayHost ?? 'localhost'}
@@ -466,6 +476,20 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
             onSkipClue={handleSkipClue}
           />
         </View>
+
+        {showLastClueButton && canSkipToLastClue && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Skip to the last clue"
+            onPress={skipToLastClue}
+            style={({ pressed }) => [
+              styles.localTestButton,
+              pressed ? styles.localTestButtonPressed : undefined,
+            ]}
+          >
+            <Text style={styles.localTestButtonText}>TEST: LAST CLUE</Text>
+          </Pressable>
+        )}
 
         {gameState.activeClue && (
           <View style={StyleSheet.absoluteFill}>
@@ -657,6 +681,27 @@ const styles = StyleSheet.create({
     fontFamily: typeTokens.ui500,
     fontSize: 20,
     color: colors.categoryText,
+  },
+  localTestButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 500,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.55)',
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  localTestButtonPressed: {
+    opacity: 0.55,
+  },
+  localTestButtonText: {
+    fontFamily: typeTokens.ui700,
+    fontSize: 11,
+    letterSpacing: 0.7,
+    color: '#fff',
   },
   gameOverOverlay: {
     ...StyleSheet.absoluteFill,
