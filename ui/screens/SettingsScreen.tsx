@@ -59,7 +59,6 @@ interface SettingsScreenProps {
   onRelayHostChange: (host: string) => void;
   relayPort: string;
   onRelayPortChange: (port: string) => void;
-  onHistory?: (() => void) | undefined;
   onBack: () => void;
 }
 
@@ -196,12 +195,6 @@ export function SettingsScreen(props: SettingsScreenProps) {
             </Text>
           </Pressable>
         </View>
-
-        {props.onHistory && (
-          <Pressable style={styles.historyButton} onPress={props.onHistory}>
-            <Text style={styles.historyButtonText}>HISTORY</Text>
-          </Pressable>
-        )}
 
         <Pressable
           style={styles.advancedToggle}
@@ -344,20 +337,6 @@ const styles = StyleSheet.create({
   },
   advancedToggle: {
     marginTop: 24,
-  },
-  historyButton: {
-    width: '100%',
-    maxWidth: 280,
-    marginTop: 28,
-    paddingVertical: 14,
-    borderRadius: 6,
-    alignItems: 'center',
-    backgroundColor: colors.cell,
-  },
-  historyButtonText: {
-    fontFamily: typeTokens.ui700,
-    fontSize: 18,
-    color: colors.gold,
   },
   advancedToggleText: {
     fontFamily: typeTokens.ui500,

@@ -1125,6 +1125,7 @@ export default function App() {
             onNewGame={handleNewGame}
             onJoinGame={handleJoinNav}
             onSettings={handleSettings}
+            onHistory={() => setScreen({ type: 'history' })}
             onResumeGame={resumeAvailable ? handleResumeGame : undefined}
           />
         );
@@ -1225,7 +1226,6 @@ export default function App() {
             relayPort={relayPort}
             onRelayPortChange={setRelayPort}
             onBack={() => setScreen({ type: 'menu' })}
-            onHistory={() => setScreen({ type: 'history' })}
           />
         );
       case 'history':
@@ -1233,7 +1233,7 @@ export default function App() {
           <MatchHistoryScreen
             matches={recentMatches}
             playerName={playerName}
-            onBack={() => setScreen({ type: 'settings' })}
+            onBack={() => setScreen({ type: 'menu' })}
           />
         );
       case 'demo':
