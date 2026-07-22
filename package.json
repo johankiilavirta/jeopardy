@@ -13,6 +13,7 @@
     "relay": "tsx relay/index.ts",
     "solo": "tsx scripts/dev-solo.ts",
     "ui": "tsx scripts/ui-lab.ts",
+    "ui:long-clue": "npm run ui -- --screen=long-clue",
     "convert-data": "tsx scripts/convert-jeopardy-data.ts",
     "generate-registry": "tsx scripts/generate-season-registry.ts",
     "ios:fast": "tsx scripts/test-ios.ts"

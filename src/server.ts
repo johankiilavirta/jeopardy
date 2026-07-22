@@ -41,7 +41,7 @@ export interface ServerOptions {
 }
 
 /** Actions clients are allowed to send. Timer actions are server-only. */
-const CLIENT_ACTIONS = new Set(['SELECT_CLUE', 'BUZZ', 'SET_ANSWER', 'LOCK_ANSWER', 'UNLOCK_ANSWER', 'JUDGE_ANSWER', 'SKIP_CLUE']);
+const CLIENT_ACTIONS = new Set(['SELECT_CLUE', 'BUZZ', 'SET_ANSWER', 'LOCK_ANSWER', 'UNLOCK_ANSWER', 'JUDGE_ANSWER', 'SKIP_CLUE', 'PASS_CLUE', 'DISMISS_CLUE']);
 
 /** Undo/redo land only on these statuses; the transient in-clue phases
  *  (CLUE_READING, BUZZ_OPEN, ANSWERING, CLUE_EXPIRED) are skipped over.
@@ -117,7 +117,10 @@ export function createServer(
         phaseTimerId = timer.set(() => fireTimerAction({ type: 'TIMEOUT' }), buzzerMs);
         break;
       case 'CLUE_EXPIRED':
-        phaseTimerId = timer.set(() => fireTimerAction({ type: 'DISMISS_CLUE' }), dismissMs);
+        phaseTimerId = timer.set(
+          () => fireTimerAction({ type: 'DISMISS_CLUE' }),
+          (server.history.current.passedPlayerIds?.length ?? 0) > 0 ? 3000 : dismissMs,
+        );
         break;
       // ANSWERING and REVEAL are not phase-timed: ANSWERING ends via the
       // personal answer timers below, REVEAL via manual judging.
@@ -298,13 +301,23 @@ export function createServer(
     // Clients may only send player actions — timer actions are server-only
     if (!CLIENT_ACTIONS.has(parsed.type)) return;
 
+    // A tap may only accelerate the dedicated three-second shared-skip
+    // reveal. Ordinary timeout reveals keep their existing server timer.
+    if (
+      parsed.type === 'DISMISS_CLUE' &&
+      (
+        server.history.current.status !== 'CLUE_EXPIRED' ||
+        (server.history.current.passedPlayerIds?.length ?? 0) === 0
+      )
+    ) return;
+
     const playerId = server.playerPeers.get(peerId);
     if (!playerId) return;
 
     // For most actions, playerId is the sender (you can only buzz, type,
     // lock as yourself). For JUDGE_ANSWER, playerId means "who is being
     // judged" — the client sends the judged player's id, not its own.
-    const action = parsed.type === 'JUDGE_ANSWER'
+    const action = parsed.type === 'JUDGE_ANSWER' || parsed.type === 'DISMISS_CLUE'
       ? { ...parsed } as Action
       : { ...parsed, playerId } as Action;
     // Keystrokes are transient: they update state without growing the

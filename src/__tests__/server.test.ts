@@ -206,6 +206,67 @@ describe('GameServer', () => {
     expect(server.history.current.status).toBe('CLUE_EXPIRED');
   });
 
+  it('resolves two player passes immediately, then dismisses after three seconds', () => {
+    const { timer, pendingMs, fire } = createMockTimer();
+    const host = new MockTransport('host');
+    const server = createServer(host, ['Alice', 'Bob'], { timer });
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    p1.send('host', selectClueMsg);
+    p1.send('host', JSON.stringify({ type: 'PASS_CLUE' }));
+    expect(server.history.current.status).toBe('CLUE_READING');
+    p2.send('host', JSON.stringify({ type: 'PASS_CLUE' }));
+
+    expect(server.history.current.status).toBe('CLUE_EXPIRED');
+    expect(server.history.current.passedPlayerIds).toEqual(['alice', 'bob']);
+    expect(pendingMs()).toEqual([3000]);
+
+    fire();
+    expect(server.history.current.status).toBe('CHOOSE_CLUE');
+    expect(server.history.current.burnedClueIds).toContain(1);
+  });
+
+  it('allows either client to tap-dismiss only the three-second pass reveal', () => {
+    const { timer, pendingMs } = createMockTimer();
+    const host = new MockTransport('host');
+    const server = createServer(host, ['Alice', 'Bob'], { timer });
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    p1.send('host', selectClueMsg);
+    p1.send('host', JSON.stringify({ type: 'PASS_CLUE' }));
+    p2.send('host', JSON.stringify({ type: 'PASS_CLUE' }));
+    expect(pendingMs()).toEqual([3000]);
+
+    p1.send('host', JSON.stringify({ type: 'DISMISS_CLUE' }));
+    expect(server.history.current.status).toBe('CHOOSE_CLUE');
+    expect(pendingMs()).toEqual([]);
+  });
+
+  it('cancels an unlocked answer timer when that player changes an empty answer to a pass', () => {
+    const { timer, fire, pendingMs } = createMockTimer();
+    const host = new MockTransport('host');
+    const server = createServer(host, ['Alice', 'Bob'], { timer });
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    p1.send('host', selectClueMsg);
+    fire();
+    p1.send('host', JSON.stringify({ type: 'BUZZ' }));
+    expect(pendingMs()).toEqual([20000, 20000]);
+
+    p1.send('host', JSON.stringify({ type: 'PASS_CLUE' }));
+    expect(server.history.current.buzzes).toEqual([]);
+    expect(pendingMs()).toEqual([20000]);
+  });
+
   it('handles undo', () => {
     const host = new MockTransport('host');
     createServer(host, ['Alice', 'Bob']);

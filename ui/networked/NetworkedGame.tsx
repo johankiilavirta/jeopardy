@@ -229,6 +229,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   }
 
   const localBuzz = gameState && playerId ? getBuzz(gameState, playerId) : undefined;
+  const localPassed = (gameState?.passedPlayerIds ?? []).includes(playerId ?? '');
   const typing =
     (gameState?.status === 'BUZZ_OPEN' && localBuzz && !localBuzz.locked) ||
     (gameState?.status === 'ANSWERING' && localBuzz && !localBuzz.locked) ||
@@ -490,7 +491,22 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
             <ClueScreen
               clue={gameState.activeClue}
               isFinalJeopardyWager={gameState.status === 'FINAL_JEOPARDY_WAGER'}
-              canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz}
+              canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz && !localPassed}
+              canPass={
+                !recoveringLocally &&
+                gameState.activeClue.id !== -1 &&
+                !localPassed &&
+                !localBuzz?.locked &&
+                (
+                  gameState.status === 'CLUE_READING' ||
+                  gameState.status === 'BUZZ_OPEN' ||
+                  gameState.status === 'ANSWERING'
+                )
+              }
+              onPass={() => {
+                answerThrottleRef.current?.cancel();
+                dispatch({ type: 'PASS_CLUE', playerId });
+              }}
               lights={lights}
               showKeyboard={typing}
               keyboardType={gameState.status === 'FINAL_JEOPARDY_WAGER' ? 'number' : 'text'}
@@ -521,6 +537,12 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               reveal={
                 gameState.status === 'REVEAL' || gameState.status === 'CLUE_EXPIRED'
                   ? { correctAnswer: gameState.activeClue.answer }
+                  : undefined
+              }
+              onDismiss={
+                gameState.status === 'CLUE_EXPIRED' &&
+                (gameState.passedPlayerIds?.length ?? 0) > 0
+                  ? () => dispatch({ type: 'DISMISS_CLUE' })
                   : undefined
               }
             />

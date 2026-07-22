@@ -8,6 +8,7 @@ import {
   Text,
   useWindowDimensions,
   View,
+  type LayoutChangeEvent,
 } from 'react-native';
 import type { ActiveClue } from '../../src/types';
 import { ActivationLights, LIGHTS_REST_BOTTOM, LIGHTS_WIDTH_PCT } from '../components/ActivationLights';
@@ -15,6 +16,19 @@ import { AnswerKeyboard } from '../components/AnswerKeyboard';
 import { NumberKeyboard } from '../components/NumberKeyboard';
 import { PLAYER_BAR_HEIGHT } from '../components/PlayerHeader';
 import { colors, shadow, type as typeTokens } from '../theme/tokens';
+import {
+  shouldCommitSkip,
+  SKIP_COMMIT_DISTANCE,
+  verticalClueGesture,
+  type VerticalClueGesture,
+} from './clueGestures';
+import {
+  clueHeightAvailableForReveal,
+  clueLineHeight,
+  DEFAULT_CLUE_FONT_SIZE,
+  nextFittedClueFontSize,
+  REVEAL_ANSWER_GAP,
+} from './clueTextFit';
 
 /** Horizontal drag (px) past which a release commits the judgement. */
 const SWIPE_THRESHOLD = 110;
@@ -89,6 +103,12 @@ interface ClueScreenProps {
   reveal?: RevealInfo | undefined;
   /** P key: skip this clue and return to the board without answering. */
   onSkip?: (() => void) | undefined;
+  /** Pull-down pass is available for this player on the active clue. */
+  canPass?: boolean | undefined;
+  /** Commit this player's pass after the pull-down gesture is released. */
+  onPass?: (() => void) | undefined;
+  /** Tap an answer-only skip reveal to return to the board immediately. */
+  onDismiss?: (() => void) | undefined;
   /** Activation lights in the band under the card: flash on buzzer open,
    *  then drain outside-in until the deadline. Null/undefined hides them. */
   lights?: { deadline: number; durationMs: number; flash: boolean } | null | undefined;
@@ -116,6 +136,9 @@ export function ClueScreen({
   onUnlockAnswer,
   reveal,
   onSkip,
+  canPass = false,
+  onPass,
+  onDismiss,
   lights,
   keyboardType = 'text',
   onMaxWager,
@@ -125,6 +148,61 @@ export function ClueScreen({
   const isFinalJeopardy = clue.id === -1;
   const { width, height } = useWindowDimensions();
   const pan = useRef(new Animated.Value(0)).current;
+  const skipDrag = useRef(new Animated.Value(0)).current;
+  const skipDistanceRef = useRef(0);
+  const verticalGestureRef = useRef<VerticalClueGesture>(null);
+
+  // Normal clues retain the current 26px typography. Only a measured
+  // overflow shrinks, and the hidden answer measurement reserves the room
+  // that the gold reveal will occupy below the still-centered clue.
+  const [bodyHeight, setBodyHeight] = useState(0);
+  const [bodyWidth, setBodyWidth] = useState(0);
+  const [answerMeasureHeight, setAnswerMeasureHeight] = useState(0);
+  const [renderedClueHeight, setRenderedClueHeight] = useState(0);
+  const [clueFontSize, setClueFontSize] = useState(DEFAULT_CLUE_FONT_SIZE);
+  const availableClueHeight = clueHeightAvailableForReveal(
+    bodyHeight,
+    answerMeasureHeight,
+  );
+
+  useEffect(() => {
+    setClueFontSize(DEFAULT_CLUE_FONT_SIZE);
+  }, [clue.id, bodyHeight, bodyWidth, answerMeasureHeight]);
+
+  // Layout events can arrive before the body and hidden-answer measurements
+  // have made it through React state. Retain the clue height and re-run the
+  // fit as each measurement settles instead of depending on another text
+  // layout event (Expo Web does not emit one merely because the callback's
+  // closure changed).
+  useEffect(() => {
+    if (
+      isFinalJeopardyWager ||
+      bodyHeight <= 0 ||
+      answerMeasureHeight <= 0 ||
+      renderedClueHeight <= 0
+    ) return;
+    setClueFontSize(current =>
+      nextFittedClueFontSize(current, renderedClueHeight, availableClueHeight),
+    );
+  }, [
+    answerMeasureHeight,
+    availableClueHeight,
+    bodyHeight,
+    isFinalJeopardyWager,
+    renderedClueHeight,
+  ]);
+
+  const handleBodyLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextHeight = Math.round(event.nativeEvent.layout.height);
+    const nextWidth = Math.round(event.nativeEvent.layout.width);
+    setBodyHeight(current => current === nextHeight ? current : nextHeight);
+    setBodyWidth(current => current === nextWidth ? current : nextWidth);
+  }, []);
+
+  const handleClueTextLayout = useCallback((event: LayoutChangeEvent) => {
+    const renderedHeight = Math.ceil(event.nativeEvent.layout.height);
+    setRenderedClueHeight(current => current === renderedHeight ? current : renderedHeight);
+  }, []);
 
   const revealAnim = useRef(new Animated.Value(0)).current;
 
@@ -353,16 +431,28 @@ export function ClueScreen({
     });
   }, [judgeActive, onJudge, pan, commitJudge]);
 
-  // Screen-wide responder for vertical swipes: swipe-up to summon/unlock,
-  // and swipe-down to drag/dismiss the keyboard from anywhere on screen.
+  // One screen-level responder owns every vertical gesture. This ordering is
+  // the important invariant: a visible keyboard always owns a downward drag;
+  // with no keyboard, down pulls SKIP and up is the only swipe that can
+  // summon/buzz/unlock. The outer UndoRedoSwipe remains horizontal-only.
   const screenPanResponder = useMemo(() => {
-    const snapBack = () =>
+    const snapKeyboardBack = () =>
       Animated.spring(kbDrag, {
         toValue: 0,
         speed: 22,
         bounciness: 0,
         useNativeDriver: true,
       }).start();
+
+    const snapSkipBack = () => {
+      skipDistanceRef.current = 0;
+      Animated.spring(skipDrag, {
+        toValue: 0,
+        speed: 14,
+        bounciness: 4,
+        useNativeDriver: true,
+      }).start();
+    };
 
     const finishDismiss = () => {
       Animated.timing(kbDrag, {
@@ -390,35 +480,63 @@ export function ClueScreen({
 
     return PanResponder.create({
       onMoveShouldSetPanResponder: (_e, g) => {
-        const isVertical = Math.abs(g.dy) > 15 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5;
-        if (!isVertical) return false;
-        if (keyboardVisible && g.dy > 0) return true;
-        if (!keyboardVisible && g.dy < 0) return true;
-        return false;
+        const s = stateRef.current;
+        return verticalClueGesture(g.dx, g.dy, {
+          keyboardVisible: s.keyboardVisible,
+          canSkip: s.canPass,
+          canSummon: s.canBuzz || s.dismissed || !!s.onUnlockAnswer,
+        }) != null;
       },
       onMoveShouldSetPanResponderCapture: (_e, g) => {
-        const isVertical = Math.abs(g.dy) > 15 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5;
-        if (!isVertical) return false;
-        if (keyboardVisible && g.dy > 0) return true;
-        if (!keyboardVisible && g.dy < 0) return true;
-        return false;
+        const s = stateRef.current;
+        return verticalClueGesture(g.dx, g.dy, {
+          keyboardVisible: s.keyboardVisible,
+          canSkip: s.canPass,
+          canSummon: s.canBuzz || s.dismissed || !!s.onUnlockAnswer,
+        }) != null;
+      },
+      onPanResponderGrant: () => {
+        verticalGestureRef.current = null;
+        skipDistanceRef.current = 0;
       },
       onPanResponderMove: (_e, g) => {
-        if (keyboardVisible && g.dy > 0) {
+        const s = stateRef.current;
+        if (verticalGestureRef.current == null) {
+          verticalGestureRef.current = verticalClueGesture(g.dx, g.dy, {
+            keyboardVisible: s.keyboardVisible,
+            canSkip: s.canPass,
+            canSummon: s.canBuzz || s.dismissed || !!s.onUnlockAnswer,
+          });
+        }
+
+        if (verticalGestureRef.current === 'keyboard-dismiss') {
           kbDrag.setValue(Math.min(g.dy, panelHeight));
+        } else if (verticalGestureRef.current === 'skip') {
+          const distance = Math.max(0, g.dy);
+          const resisted = distance <= SKIP_COMMIT_DISTANCE
+            ? distance
+            : SKIP_COMMIT_DISTANCE + (distance - SKIP_COMMIT_DISTANCE) * 0.12;
+          skipDistanceRef.current = resisted;
+          skipDrag.setValue(resisted);
         }
       },
       onPanResponderRelease: (_e, g) => {
-        if (keyboardVisible && g.dy > 0) {
+        const gesture = verticalGestureRef.current;
+        verticalGestureRef.current = null;
+        if (gesture === 'keyboard-dismiss') {
           // Project a short distance in the release direction so a quick,
           // intentional flick can complete without requiring a long drag.
           const projectedDistance = g.dy + Math.max(0, g.vy) * 120;
           if (g.dy > LOCK_THRESHOLD || (g.dy > 24 && projectedDistance > LOCK_THRESHOLD && g.vy > LOCK_VELOCITY)) {
             finishDismiss();
           } else {
-            snapBack();
+            snapKeyboardBack();
           }
-        } else if (!keyboardVisible) {
+        } else if (gesture === 'skip') {
+          const committed = shouldCommitSkip(skipDistanceRef.current);
+          snapSkipBack();
+          if (committed) stateRef.current.onPass?.();
+        } else if (gesture === 'summon') {
           const isSwipeUp = g.dy < -30 || (g.dy < -10 && g.vy < -0.1);
           if (isSwipeUp) {
             const s = stateRef.current;
@@ -432,9 +550,14 @@ export function ClueScreen({
           }
         }
       },
-      onPanResponderTerminate: snapBack,
+      onPanResponderTerminate: () => {
+        const gesture = verticalGestureRef.current;
+        verticalGestureRef.current = null;
+        if (gesture === 'keyboard-dismiss') snapKeyboardBack();
+        if (gesture === 'skip') snapSkipBack();
+      },
     });
-  }, [keyboardVisible, kbDrag, kb, answerOpacity, onUnlockAnswer, panelHeight]);
+  }, [answerOpacity, kb, kbDrag, panelHeight, skipDrag]);
 
   const stateRef = useRef({
     canBuzz,
@@ -445,9 +568,27 @@ export function ClueScreen({
     onAnswerChange,
     dismissed,
     onSkip,
+    keyboardVisible,
+    canPass,
+    onPass,
+    onUnlockAnswer,
     setDismissed,
   });
-  stateRef.current = { canBuzz, onBuzz, onLockAnswer, answer, showKeyboard, onAnswerChange, dismissed, onSkip, setDismissed };
+  stateRef.current = {
+    canBuzz,
+    onBuzz,
+    onLockAnswer,
+    answer,
+    showKeyboard,
+    onAnswerChange,
+    dismissed,
+    onSkip,
+    keyboardVisible,
+    canPass,
+    onPass,
+    onUnlockAnswer,
+    setDismissed,
+  };
 
   // Stable key callbacks (same latest-ref pattern as the keydown handler),
   // so the memoized AnswerKeyboard's 30 keys never re-render while typing.
@@ -471,8 +612,13 @@ export function ClueScreen({
         return;
       }
       if (s.onLockAnswer && s.answer && e.key === 'Enter') { s.onLockAnswer(s.answer); return; }
+      if (e.key === 'ArrowDown' && !s.keyboardVisible && s.canPass) {
+        e.preventDefault();
+        s.onPass?.();
+        return;
+      }
       if (s.showKeyboard && s.onAnswerChange) {
-        if (e.key === 'ArrowDown' && !s.dismissed) {
+        if (e.key === 'ArrowDown' && s.keyboardVisible) {
           e.preventDefault();
           if (s.onLockAnswer && s.answer) {
             s.onLockAnswer(s.answer);
@@ -497,9 +643,22 @@ export function ClueScreen({
   // the card's own Pressable handles the rest with the same logic.
   const handleTap = canBuzz
     ? onBuzz
-    : dismissed
-      ? () => setDismissed(false)
-      : onUnlockAnswer;
+    : onDismiss
+      ? onDismiss
+      : dismissed
+        ? () => setDismissed(false)
+        : onUnlockAnswer;
+
+  const skipTranslateY = skipDrag.interpolate({
+    inputRange: [0, SKIP_COMMIT_DISTANCE],
+    outputRange: [-68, 0],
+    extrapolate: 'clamp',
+  });
+  const skipOpacity = skipDrag.interpolate({
+    inputRange: [0, 20, SKIP_COMMIT_DISTANCE],
+    outputRange: [0, 0.4, 1],
+    extrapolate: 'clamp',
+  });
 
   const correctOpacity = pan.interpolate({
     inputRange: [0, SWIPE_THRESHOLD],
@@ -569,7 +728,26 @@ export function ClueScreen({
             </Text>
           </Animated.View>
 
-          <View style={styles.body}>
+          <View style={styles.body} onLayout={handleBodyLayout}>
+            {!isFinalJeopardyWager && (
+              <View
+                pointerEvents="none"
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+                style={styles.answerMeasure}
+              >
+                <Text
+                  style={styles.revealAnswer}
+                  allowFontScaling={false}
+                  onLayout={event => {
+                    const measured = Math.ceil(event.nativeEvent.layout.height);
+                    setAnswerMeasureHeight(current => current === measured ? current : measured);
+                  }}
+                >
+                  {clue.answer.toUpperCase()}
+                </Text>
+              </View>
+            )}
             <Animated.View
               style={{
                 transform: [{ translateY: clueRise }, { scale: clueScale }],
@@ -578,8 +756,14 @@ export function ClueScreen({
               }}
             >
               <Text
-                style={[styles.clueText, isFinalJeopardyWager && styles.wagerCategoryText]}
+                style={[
+                  styles.clueText,
+                  isFinalJeopardyWager
+                    ? styles.wagerCategoryText
+                    : { fontSize: clueFontSize, lineHeight: clueLineHeight(clueFontSize) },
+                ]}
                 allowFontScaling={false}
+                onLayout={handleClueTextLayout}
               >
                 {clue.text.toUpperCase()}
               </Text>
@@ -609,6 +793,21 @@ export function ClueScreen({
         </Pressable>
 
       </Animated.View>
+
+      {canPass && !keyboardVisible && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.skipIconWrap,
+            { opacity: skipOpacity, transform: [{ translateY: skipTranslateY }] },
+          ]}
+        >
+          <View style={styles.skipGlyph}>
+            <View style={[styles.skipStroke, styles.skipStrokeTop]} />
+            <View style={[styles.skipStroke, styles.skipStrokeBottom]} />
+          </View>
+        </Animated.View>
+      )}
 
       {/* The answer sheet: a floating console docked to the true screen
           bottom — centered, at least half the screen tall — sliding up
@@ -754,6 +953,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 12,
   },
+  answerMeasure: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    opacity: 0,
+    alignItems: 'center',
+  },
   clueText: {
     fontFamily: typeTokens.ui500,
     fontSize: 26,
@@ -773,7 +979,7 @@ const styles = StyleSheet.create({
     lineHeight: 50,
   },
   revealWrap: {
-    marginTop: 28,
+    marginTop: REVEAL_ANSWER_GAP,
     alignItems: 'center',
     gap: 10,
   },
@@ -786,6 +992,42 @@ const styles = StyleSheet.create({
     textShadowColor: shadow.valueText.textShadowColor,
     textShadowOffset: shadow.valueText.textShadowOffset,
     textShadowRadius: shadow.valueText.textShadowRadius,
+  },
+  skipIconWrap: {
+    position: 'absolute',
+    top: 8,
+    left: '50%',
+    marginLeft: -24,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.cellRecessed,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  skipGlyph: {
+    width: 24,
+    height: 24,
+    overflow: 'visible',
+    transform: [{ rotate: '-90deg' }],
+  },
+  skipStroke: {
+    position: 'absolute',
+    width: 14,
+    height: 3.5,
+    borderRadius: 2,
+    backgroundColor: '#FFFFFF',
+  },
+  skipStrokeTop: {
+    left: 4,
+    top: 5.25,
+    transform: [{ rotate: '-45deg' }],
+  },
+  skipStrokeBottom: {
+    left: 4,
+    top: 15.25,
+    transform: [{ rotate: '45deg' }],
   },
   // Full-width carrier for the slide animation; the sheet centers inside
   // it and touches beside the sheet fall through.
