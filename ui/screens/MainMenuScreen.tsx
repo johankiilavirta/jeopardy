@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -5,6 +6,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import type { CellRect } from '../components/BoardCell';
 import { colors, type as typeTokens } from '../theme/tokens';
 
 const SCREEN_TOP_PADDING = 64;
@@ -13,7 +15,7 @@ const TITLE_TO_CONTENT_GAP = 40;
 
 interface MainMenuScreenProps {
   onNewGame: () => void;
-  onJoinGame: () => void;
+  onJoinGame: (sourceRect?: CellRect) => void;
   onSettings: () => void;
   onHistory?: (() => void) | undefined;
   /** Present when an unfinished game snapshot is saved on this device. */
@@ -21,8 +23,34 @@ interface MainMenuScreenProps {
 }
 
 export function MainMenuScreen(props: MainMenuScreenProps) {
+  const rootRef = useRef<View>(null);
+  const joinButtonRef = useRef<View>(null);
+
+  const openJoinGame = () => {
+    const root = rootRef.current;
+    const button = joinButtonRef.current;
+    if (!root || !button) {
+      props.onJoinGame();
+      return;
+    }
+    root.measureInWindow((rootX, rootY) => {
+      button.measureInWindow((x, y, width, height) => {
+        if (width <= 0 || height <= 0) {
+          props.onJoinGame();
+          return;
+        }
+        props.onJoinGame({
+          x: x - rootX,
+          y: y - rootY,
+          width,
+          height,
+        });
+      });
+    });
+  };
+
   return (
-    <View style={styles.root}>
+    <View ref={rootRef} collapsable={false} style={styles.root}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
@@ -46,8 +74,10 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
             <Text style={styles.buttonText}>NEW GAME</Text>
           </Pressable>
           <Pressable
+            ref={joinButtonRef}
+            collapsable={false}
             style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-            onPress={props.onJoinGame}
+            onPress={openJoinGame}
           >
             <Text style={styles.buttonText}>JOIN GAME</Text>
           </Pressable>
