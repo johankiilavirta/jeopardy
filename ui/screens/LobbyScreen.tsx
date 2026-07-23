@@ -104,13 +104,9 @@ function LobbySlotBug({ player, slotIndex, localIsHost, settingsOpen, onSettings
           style={bugStyles.actionBtn}
           onPress={onSettings}
           accessibilityRole="button"
-          accessibilityLabel={settingsOpen ? 'Close game settings' : 'Open game settings'}
+          accessibilityLabel="Open game settings"
         >
-          {settingsOpen ? (
-            <Text style={bugStyles.closeIcon}>×</Text>
-          ) : (
-            <SettingsGlyph />
-          )}
+          <SettingsGlyph />
         </Pressable>
       )}
 
@@ -804,96 +800,90 @@ export function LobbyScreen(props: LobbyScreenProps) {
                   >
                     <Text style={styles.gameSettingsTitle}>GAME SETTINGS</Text>
 
-                    <Text style={styles.label}>Animations</Text>
-                    <Pressable
-                      style={styles.toggleBox}
-                      onPress={() =>
-                        props.onAnimationsChange?.(!(props.animationsEnabled ?? true))
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.toggleText,
-                          !(props.animationsEnabled ?? true) && styles.toggleTextOff,
-                        ]}
-                      >
-                        {(props.animationsEnabled ?? true) ? 'On' : 'Off'}
-                      </Text>
-                    </Pressable>
-
-                    <Text style={[styles.label, styles.stackedLabel]}>Categories Displayed</Text>
-                    <View style={styles.catCountRow}>
-                      {([4, 5, 6] as const).map(n => {
-                        const active = (props.visibleCategories ?? 6) === n;
-                        return (
-                          <Pressable
-                            key={n}
-                            style={[styles.catCountBtn, active && styles.catCountBtnActive]}
-                            onPress={() => props.onVisibleCategoriesChange?.(n)}
-                          >
-                            <Text style={[styles.catCountText, active && styles.catCountTextActive]}>
-                              {n}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-
-                    <Text style={[styles.label, styles.stackedLabel]}>Game #</Text>
-                    <Pressable
-                      style={styles.input}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Game number ${props.gameId || 'random'}`}
-                      onLayout={event => {
-                        gameIdLayoutRef.current = {
-                          y: advancedYRef.current + event.nativeEvent.layout.y,
-                          height: event.nativeEvent.layout.height,
-                        };
-                      }}
-                      onPress={sheet.open}
-                    >
-                      <Text style={[styles.inputText, !props.gameId && styles.inputPlaceholder]}>
-                        {props.gameId || 'Random'}
-                      </Text>
-                    </Pressable>
-
-                    {gameInfoStatus === 'loading' && (
-                      <Text style={styles.gameInfoNote}>Loading...</Text>
-                    )}
-                    {gameInfoStatus === 'not-found' && (
-                      <Text style={styles.gameInfoNote}>Game not found</Text>
-                    )}
-
-                    {round1Categories && (
-                      <>
-                        {seasonNumber != null && (
-                          <Text style={styles.gameMetadata}>Season {seasonNumber}</Text>
-                        )}
-                        {airDate && (
-                          <Text style={styles.gameMetadata}>
-                            {new Date(airDate + 'T12:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                          </Text>
-                        )}
-
+                    <View style={styles.settingsTwoCol}>
+                      {/* ── Left column: quick toggles ── */}
+                      <View style={styles.settingsColLeft}>
+                        <Text style={styles.label}>ANIMATIONS</Text>
                         <Pressable
-                          style={styles.roundToggle}
-                          onPress={() => setShowRound1(v => !v)}
+                          style={styles.toggleBox}
+                          onPress={() =>
+                            props.onAnimationsChange?.(!(props.animationsEnabled ?? true))
+                          }
                         >
-                          <Text style={styles.roundToggleText}>
-                            {showRound1 ? '▾ ' : '▸ '}
-                            Jeopardy!
-                            {round1Categories.some(c => c.clueCount < 5) && (
-                              <Text style={styles.clueCount}> *</Text>
-                            )}
+                          <Text
+                            style={[
+                              styles.toggleText,
+                              !(props.animationsEnabled ?? true) && styles.toggleTextOff,
+                            ]}
+                          >
+                            {(props.animationsEnabled ?? true) ? 'ON' : 'OFF'}
                           </Text>
                         </Pressable>
-                        {showRound1 && (
-                          <ScrollView
-                            style={styles.categoryList}
-                            nestedScrollEnabled
-                            showsVerticalScrollIndicator={false}
-                            showsHorizontalScrollIndicator={false}
-                          >
+
+                        <Text style={[styles.label, styles.stackedLabel]}>CATEGORIES</Text>
+                        <View style={styles.catCountRow}>
+                          {([4, 5, 6] as const).map(n => {
+                            const active = (props.visibleCategories ?? 6) === n;
+                            return (
+                              <Pressable
+                                key={n}
+                                style={styles.catCountBtn}
+                                onPress={() => props.onVisibleCategoriesChange?.(n)}
+                              >
+                                <Text style={[styles.catCountText, active && styles.catCountTextActive]}>
+                                  {n}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* ── Column divider ── */}
+                      <View style={styles.settingsColDivider} />
+
+                      {/* ── Right column: game selection ── */}
+                      <View style={styles.settingsColRight}>
+                        <Text style={styles.label}>GAME #</Text>
+                        <Pressable
+                          style={styles.input}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Game number ${props.gameId || 'random'}`}
+                          onLayout={event => {
+                            gameIdLayoutRef.current = {
+                              y: advancedYRef.current + event.nativeEvent.layout.y,
+                              height: event.nativeEvent.layout.height,
+                            };
+                          }}
+                          onPress={sheet.open}
+                        >
+                          <Text style={[styles.inputText, !props.gameId && styles.inputPlaceholder]}>
+                            {props.gameId || 'Random'}
+                          </Text>
+                        </Pressable>
+
+                        {gameInfoStatus === 'loading' && (
+                          <Text style={styles.gameInfoNote}>Loading…</Text>
+                        )}
+                        {gameInfoStatus === 'not-found' && (
+                          <Text style={styles.gameInfoNote}>Game not found</Text>
+                        )}
+
+                        {round1Categories && (
+                          <>
+                            {(seasonNumber != null || airDate) && (
+                              <Text style={styles.gameMetadata}>
+                                {[
+                                  seasonNumber != null ? `Season ${seasonNumber}` : null,
+                                  airDate ? new Date(airDate + 'T12:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : null,
+                                ].filter(Boolean).join('  ·  ')}
+                              </Text>
+                            )}
+
+                            <Text style={[styles.label, styles.stackedLabel]}>
+                              JEOPARDY!
+                              {round1Categories.some(c => c.clueCount < 5) ? ' *' : ''}
+                            </Text>
                             {round1Categories.map(({ name, clueCount }) => (
                               <View key={name} style={styles.categoryRow}>
                                 <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
@@ -902,40 +892,27 @@ export function LobbyScreen(props: LobbyScreenProps) {
                                 )}
                               </View>
                             ))}
-                          </ScrollView>
-                        )}
 
-                        <Pressable
-                          style={styles.roundToggle}
-                          onPress={() => setShowRound2(v => !v)}
-                        >
-                          <Text style={styles.roundToggleText}>
-                            {showRound2 ? '▾ ' : '▸ '}
-                            Double Jeopardy!
-                            {round2Categories?.some(c => c.clueCount < 5) && (
-                              <Text style={styles.clueCount}> *</Text>
+                            {round2Categories && (
+                              <>
+                                <Text style={[styles.label, styles.stackedLabel]}>
+                                  DOUBLE JEOPARDY!
+                                  {round2Categories.some(c => c.clueCount < 5) ? ' *' : ''}
+                                </Text>
+                                {round2Categories.map(({ name, clueCount }) => (
+                                  <View key={name} style={styles.categoryRow}>
+                                    <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
+                                    {clueCount < 5 && (
+                                      <Text style={styles.clueCount}>{clueCount}/5</Text>
+                                    )}
+                                  </View>
+                                ))}
+                              </>
                             )}
-                          </Text>
-                        </Pressable>
-                        {showRound2 && round2Categories && (
-                          <ScrollView
-                            style={styles.categoryList}
-                            nestedScrollEnabled
-                            showsVerticalScrollIndicator={false}
-                            showsHorizontalScrollIndicator={false}
-                          >
-                            {round2Categories.map(({ name, clueCount }) => (
-                              <View key={name} style={styles.categoryRow}>
-                                <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
-                                {clueCount < 5 && (
-                                  <Text style={styles.clueCount}>{clueCount}/5</Text>
-                                )}
-                              </View>
-                            ))}
-                          </ScrollView>
+                          </>
                         )}
-                      </>
-                    )}
+                      </View>
+                    </View>
                   </View>
                 </ScrollView>
                 </Animated.View>
@@ -1101,11 +1078,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 8,
   },
-  // ── Settings content (on dark backdrop, no card) ───────────────────────
+  // ── Settings content (two-column, on dark backdrop) ────────────────────
   advancedSection: {
     width: '100%',
-    maxWidth: 470,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingBottom: 24,
   },
   gameSettingsTitle: {
@@ -1113,21 +1089,35 @@ const styles = StyleSheet.create({
     fontSize: 28,
     color: colors.categoryText,
     textAlign: 'center',
-    marginBottom: 28,
+    marginBottom: 24,
+  },
+  settingsTwoCol: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 0,
+  },
+  settingsColLeft: {
+    width: 130,
+  },
+  settingsColDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: '#222',
+    marginHorizontal: 20,
+    marginTop: 4,
+  },
+  settingsColRight: {
+    flex: 1,
   },
   stackedLabel: {
-    marginTop: 22,
+    marginTop: 20,
   },
-  // Toggle: just a pressable row — ON in gold, OFF in dim
   toggleBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
     paddingVertical: 2,
   },
   toggleText: {
     fontFamily: typeTokens.board,
-    fontSize: 22,
+    fontSize: 26,
     color: colors.gold,
   },
   toggleTextOff: {
@@ -1135,16 +1125,16 @@ const styles = StyleSheet.create({
   },
   catCountRow: {
     flexDirection: 'row',
-    gap: 18,
+    gap: 14,
   },
   catCountBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingVertical: 2,
+    paddingHorizontal: 2,
   },
   catCountBtnActive: {},
   catCountText: {
     fontFamily: typeTokens.board,
-    fontSize: 22,
+    fontSize: 26,
     color: '#444',
   },
   catCountTextActive: {
@@ -1152,21 +1142,22 @@ const styles = StyleSheet.create({
   },
   label: {
     fontFamily: typeTokens.ui700,
-    fontSize: 10,
-    letterSpacing: 1.8,
+    fontSize: 11,
+    letterSpacing: 1.6,
     color: '#555',
     marginBottom: 6,
   },
   input: {
-    paddingVertical: 6,
+    paddingVertical: 4,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
     justifyContent: 'center',
-    minHeight: 38,
+    minHeight: 36,
+    marginBottom: 6,
   },
   inputText: {
     fontFamily: typeTokens.board,
-    fontSize: 22,
+    fontSize: 30,
     color: '#fff',
   },
   inputPlaceholder: {
