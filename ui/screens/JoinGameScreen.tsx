@@ -50,6 +50,9 @@ export function JoinGameScreen(props: JoinGameScreenProps) {
   const contentOpacity = useRef(new Animated.Value(0)).current;
   const clueTextOpacity = useRef(new Animated.Value(1)).current;
   const pageX = useRef(new Animated.Value(0)).current;
+  // Flipped to 0 the instant a committed swipe fires so chevrons vanish
+  // immediately rather than staying lit through the slide-out animation.
+  const chevronVisible = useRef(new Animated.Value(1)).current;
   const exitDragRef = useRef(0);
   const exitDirectionRef = useRef<-1 | 1 | null>(null);
   const lastSubmittedCode = useRef<string | null>(null);
@@ -282,21 +285,27 @@ export function JoinGameScreen(props: JoinGameScreenProps) {
       outputRange: [source.height, textTarget.height],
     }),
   };
-  const exitIconOpacity = pageX.interpolate({
-    inputRange: [-EXIT_COMMIT_DISTANCE, -20, 0],
-    outputRange: [1, 0.4, 0],
-    extrapolate: 'clamp',
-  });
+  const exitIconOpacity = Animated.multiply(
+    pageX.interpolate({
+      inputRange: [-EXIT_COMMIT_DISTANCE, -20, 0],
+      outputRange: [1, 0.4, 0],
+      extrapolate: 'clamp',
+    }),
+    chevronVisible,
+  );
   const exitIconTranslateX = pageX.interpolate({
     inputRange: [-EXIT_COMMIT_DISTANCE, 0],
     outputRange: [0, 68],
     extrapolate: 'clamp',
   });
-  const oppositeExitIconOpacity = pageX.interpolate({
-    inputRange: [0, 20, EXIT_COMMIT_DISTANCE],
-    outputRange: [0, 0.4, 1],
-    extrapolate: 'clamp',
-  });
+  const oppositeExitIconOpacity = Animated.multiply(
+    pageX.interpolate({
+      inputRange: [0, 20, EXIT_COMMIT_DISTANCE],
+      outputRange: [0, 0.4, 1],
+      extrapolate: 'clamp',
+    }),
+    chevronVisible,
+  );
   const oppositeExitIconTranslateX = pageX.interpolate({
     inputRange: [0, EXIT_COMMIT_DISTANCE],
     outputRange: [-68, 0],
@@ -304,15 +313,20 @@ export function JoinGameScreen(props: JoinGameScreenProps) {
   });
 
   const returnToMenu = useCallback((direction: -1 | 1) => {
+    // Hide chevrons immediately so they don't stay lit through the slide-out.
+    chevronVisible.setValue(0);
     Animated.timing(pageX, {
       toValue: direction * width,
       duration: 220,
       easing: Easing.inOut(Easing.cubic),
       useNativeDriver: true,
     }).start(({ finished }) => {
-      if (finished) props.onBack();
+      if (finished) {
+        chevronVisible.setValue(1);
+        props.onBack();
+      }
     });
-  }, [pageX, props, width]);
+  }, [chevronVisible, pageX, props, width]);
 
   const exitResponder = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_event, gesture) =>
