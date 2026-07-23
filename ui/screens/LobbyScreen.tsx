@@ -839,9 +839,6 @@ export function LobbyScreen(props: LobbyScreenProps) {
                         </View>
                       </View>
 
-                      {/* ── Column divider ── */}
-                      <View style={styles.settingsColDivider} />
-
                       {/* ── Right column: game selection ── */}
                       <View style={styles.settingsColRight}>
                         <Text style={styles.label}>GAME #</Text>
@@ -880,35 +877,33 @@ export function LobbyScreen(props: LobbyScreenProps) {
                               </Text>
                             )}
 
-                            <Text style={[styles.label, styles.stackedLabel]}>
-                              JEOPARDY!
-                              {round1Categories.some(c => c.clueCount < 5) ? ' *' : ''}
-                            </Text>
-                            {round1Categories.map(({ name, clueCount }) => (
-                              <View key={name} style={styles.categoryRow}>
-                                <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
-                                {clueCount < 5 && (
-                                  <Text style={styles.clueCount}>{clueCount}/5</Text>
-                                )}
-                              </View>
-                            ))}
-
-                            {round2Categories && (
-                              <>
-                                <Text style={[styles.label, styles.stackedLabel]}>
-                                  DOUBLE JEOPARDY!
-                                  {round2Categories.some(c => c.clueCount < 5) ? ' *' : ''}
+                            <View style={styles.categoryTwoCol}>
+                              <View style={styles.categorySubCol}>
+                                <Text style={styles.label}>
+                                  {'JEOPARDY!' + (round1Categories.some(c => c.clueCount < 5) ? ' *' : '')}
                                 </Text>
-                                {round2Categories.map(({ name, clueCount }) => (
+                                {round1Categories.map(({ name, clueCount }) => (
                                   <View key={name} style={styles.categoryRow}>
                                     <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
-                                    {clueCount < 5 && (
-                                      <Text style={styles.clueCount}>{clueCount}/5</Text>
-                                    )}
+                                    {clueCount < 5 && <Text style={styles.clueCount}>{clueCount}/5</Text>}
                                   </View>
                                 ))}
-                              </>
-                            )}
+                              </View>
+
+                              {round2Categories && (
+                                <View style={styles.categorySubCol}>
+                                  <Text style={styles.label}>
+                                    {'DOUBLE!' + (round2Categories.some(c => c.clueCount < 5) ? ' *' : '')}
+                                  </Text>
+                                  {round2Categories.map(({ name, clueCount }) => (
+                                    <View key={name} style={styles.categoryRow}>
+                                      <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
+                                      {clueCount < 5 && <Text style={styles.clueCount}>{clueCount}/5</Text>}
+                                    </View>
+                                  ))}
+                                </View>
+                              )}
+                            </View>
                           </>
                         )}
                       </View>
@@ -1099,13 +1094,6 @@ const styles = StyleSheet.create({
   settingsColLeft: {
     width: 130,
   },
-  settingsColDivider: {
-    width: 1,
-    alignSelf: 'stretch',
-    backgroundColor: '#222',
-    marginHorizontal: 20,
-    marginTop: 4,
-  },
   settingsColRight: {
     flex: 1,
   },
@@ -1149,11 +1137,17 @@ const styles = StyleSheet.create({
   },
   input: {
     paddingVertical: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
     justifyContent: 'center',
     minHeight: 36,
     marginBottom: 6,
+  },
+  categoryTwoCol: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  categorySubCol: {
+    flex: 1,
   },
   inputText: {
     fontFamily: typeTokens.board,
