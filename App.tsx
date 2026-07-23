@@ -695,6 +695,18 @@ export default function App() {
       transport.stop();
     }, options.timeoutMs ?? CONNECTION_TIMEOUT_MS);
 
+    // Handle lobby kick: when a guest receives LOBBY_KICK, leave immediately.
+    transport.onMessage((_peerId, message) => {
+      try {
+        const msg = JSON.parse(message) as { type?: string };
+        if (msg.type === 'LOBBY_KICK' && screenRef.current.type === 'lobby') {
+          handleLeave();
+        }
+      } catch {
+        // not a JSON lobby control message — ignore
+      }
+    });
+
     transport.onControlMessage((msg) => {
       if (isCancelled()) return;
       switch (msg.type) {
@@ -1098,6 +1110,12 @@ export default function App() {
 
   const handleGameLeave = handleLeave;
 
+  /** Host kicks a player from the lobby by sending them a leave message. */
+  const handleKickPlayer = useCallback((peerId: string) => {
+    transportRef.current?.send(peerId, JSON.stringify({ type: 'LOBBY_KICK' }));
+    setLobbyPlayers(prev => prev.filter(p => p.peerId !== peerId));
+  }, []);
+
   // Menu-overlay actions: abandon the current session, then do the action.
   const handleOverlayNewGame = useCallback(() => {
     cancelReconnect();
@@ -1217,31 +1235,45 @@ export default function App() {
         );
       case 'lobby':
         return (
-          <LobbyScreen
-            roomCode={screen.roomCode}
-            players={lobbyPlayers}
-            isHost={screen.isHost}
-            onStart={handleStartGame}
-            onLeave={handleLeave}
-            onNewGame={handleOverlayNewGame}
-            onJoinGame={handleOverlayJoinGame}
-            playerName={playerName}
-            onNameChange={handleNameChange}
-            relayHost={relayHost}
-            onRelayHostChange={setRelayHost}
-            relayPort={relayPort}
-            onRelayPortChange={setRelayPort}
-            sessionMode={transportRef.current?.mode}
-            gameId={gameId}
-            onGameIdChange={setGameId}
-            animationsEnabled={animationsEnabled}
-            onAnimationsChange={setAnimationsEnabled}
-            visibleCategories={visibleCategories}
-            onVisibleCategoriesChange={setVisibleCategories}
-            error={lobbyError}
-            fadeOut={lobbyFadingOut}
-            onFadeOutDone={handleLobbyFadeOutDone}
-          />
+          <View style={styles.screenStack}>
+            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+              <MainMenuScreen
+                onNewGame={handleNewGame}
+                onJoinGame={handleJoinNav}
+                onSettings={handleSettings}
+                onHistory={() => setScreen({ type: 'history' })}
+                onResumeGame={resumeAvailable ? handleResumeGame : undefined}
+              />
+            </View>
+            <View style={StyleSheet.absoluteFill}>
+              <LobbyScreen
+                roomCode={screen.roomCode}
+                players={lobbyPlayers}
+                isHost={screen.isHost}
+                onStart={handleStartGame}
+                onLeave={handleLeave}
+                onNewGame={handleOverlayNewGame}
+                onJoinGame={handleOverlayJoinGame}
+                playerName={playerName}
+                onNameChange={handleNameChange}
+                relayHost={relayHost}
+                onRelayHostChange={setRelayHost}
+                relayPort={relayPort}
+                onRelayPortChange={setRelayPort}
+                sessionMode={transportRef.current?.mode}
+                gameId={gameId}
+                onGameIdChange={setGameId}
+                animationsEnabled={animationsEnabled}
+                onAnimationsChange={setAnimationsEnabled}
+                visibleCategories={visibleCategories}
+                onVisibleCategoriesChange={setVisibleCategories}
+                onKickPlayer={handleKickPlayer}
+                error={lobbyError}
+                fadeOut={lobbyFadingOut}
+                onFadeOutDone={handleLobbyFadeOutDone}
+              />
+            </View>
+          </View>
         );
       case 'game':
         return transportRef.current ? (

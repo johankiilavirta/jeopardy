@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  Easing,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -8,6 +10,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { relayUrls } from '../../app/relayUrl';
 import { DEFAULT_RELAY_HOST } from '../../app/relayDefaults';
 import { sanitizeText } from '../../src/sanitizeText';
@@ -15,10 +18,9 @@ import { loadGameInfo, type GameInfo } from '../../data/gameLoader';
 import type { SessionMode } from '../../app/sessionProvider';
 import { KeyboardSheet, useKeyboardSheet } from '../components/KeyboardSheet';
 import { NumberKeyboard } from '../components/NumberKeyboard';
-import { SwipeUpMenu } from '../components/SwipeUpMenu';
-import { MainMenuScreen } from './MainMenuScreen';
-import { SettingsScreen } from './SettingsScreen';
 import { colors, type as typeTokens } from '../theme/tokens';
+import { Board } from '../components/Board';
+import { demoBoard, type BoardDefinition } from '../fixtures/board';
 
 export interface LobbyPlayer {
   peerId: string;
@@ -50,17 +52,191 @@ interface LobbyScreenProps {
   /** How many category columns to show (4, 5, or 6). Default 6. */
   visibleCategories?: number | undefined;
   onVisibleCategoriesChange?: ((n: number) => void) | undefined;
+  /** Host calls this to remove a player from the lobby. */
+  onKickPlayer?: (peerId: string) => void;
   error?: string | null;
-  /** The game is ready to mount — fade the lobby out, then hand off. Runs on
-   *  host and joiner alike so the transition looks the same on both. */
+  /** The game is ready to mount — fade the lobby out, then hand off. */
   fadeOut?: boolean;
   onFadeOutDone?: () => void;
 }
 
 const MAX_PLAYERS = 2;
+const EXIT_COMMIT_DISTANCE = 100;
+const EXIT_COMMIT_VELOCITY = 0.5;
+const START_COMMIT_DISTANCE = 90;
+const START_COMMIT_VELOCITY = 0.5;
+const EMPTY_BURNED: number[] = [];
+const LOBBY_VALUES = [200, 400, 600, 800, 1000] as const;
+
+// ─── Lobby player slot bug ─────────────────────────────────────────────────
+
+interface LobbySlotBugProps {
+  player: LobbyPlayer | null;
+  slotIndex: number;       // 0 = host slot, 1 = guest slot
+  localIsHost: boolean;    // true if the local user is the host
+  settingsOpen: boolean;
+  onSettings: () => void;
+  onKick: () => void;
+}
+
+function LobbySlotBug({ player, slotIndex, localIsHost, settingsOpen, onSettings, onKick }: LobbySlotBugProps) {
+  const isHostSlot = slotIndex === 0;
+  const filled = player != null;
+
+  return (
+    <View style={bugStyles.bug}>
+      <Text style={bugStyles.roleLabel} allowFontScaling={false}>
+        {isHostSlot ? 'HOST' : 'PLAYER 2'}
+      </Text>
+      <Text
+        style={[bugStyles.name, !filled && bugStyles.nameWaiting]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.5}
+        allowFontScaling={false}
+      >
+        {filled ? player.name.toUpperCase() : 'WAITING…'}
+      </Text>
+
+      {/* Settings gear — only on host slot, only visible to the host */}
+      {isHostSlot && localIsHost && (
+        <Pressable
+          style={bugStyles.actionBtn}
+          onPress={onSettings}
+          accessibilityRole="button"
+          accessibilityLabel={settingsOpen ? 'Close game settings' : 'Open game settings'}
+        >
+          {settingsOpen ? (
+            <Text style={bugStyles.closeIcon}>×</Text>
+          ) : (
+            <SettingsGlyph />
+          )}
+        </Pressable>
+      )}
+
+      {/* Kick button — only on guest slot, only visible to host when slot is filled */}
+      {!isHostSlot && localIsHost && filled && (
+        <Pressable style={[bugStyles.actionBtn, bugStyles.kickBtn]} onPress={onKick}>
+          <Text style={bugStyles.kickText}>KICK</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+const bugStyles = StyleSheet.create({
+  bug: {
+    flex: 1,
+    backgroundColor: colors.cell,
+    borderRadius: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingRight: 44,  // room for action button
+    justifyContent: 'center',
+    minHeight: 64,
+  },
+  roleLabel: {
+    fontFamily: typeTokens.ui700,
+    fontSize: 9,
+    letterSpacing: 1.8,
+    color: colors.gold,
+    opacity: 0.75,
+    marginBottom: 3,
+  },
+  name: {
+    fontFamily: typeTokens.board,
+    fontSize: 22,
+    color: colors.categoryText,
+    letterSpacing: 0.3,
+  },
+  nameWaiting: {
+    opacity: 0.3,
+    fontSize: 14,
+    letterSpacing: 1.5,
+    fontFamily: typeTokens.ui500,
+  },
+  actionBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.cellRecessed,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeIcon: {
+    fontFamily: typeTokens.ui700,
+    fontSize: 22,
+    lineHeight: 22,
+    color: colors.categoryText,
+  },
+  kickBtn: {
+    borderRadius: 4,
+    width: 'auto',
+    paddingHorizontal: 8,
+    height: 26,
+    top: undefined,
+    bottom: 10,
+    right: 10,
+  },
+  kickText: {
+    fontFamily: typeTokens.ui700,
+    fontSize: 10,
+    letterSpacing: 1.2,
+    color: '#E25550',
+  },
+});
+
+// ─── Settings glyph (3-line equaliser icon) ────────────────────────────────
+
+function SettingsGlyph() {
+  return (
+    <View style={glyphStyles.wrap}>
+      <View style={[glyphStyles.stroke, glyphStyles.strokeTop]} />
+      <View style={[glyphStyles.knob, glyphStyles.knobTop]} />
+      <View style={[glyphStyles.stroke, glyphStyles.strokeMid]} />
+      <View style={[glyphStyles.knob, glyphStyles.knobMid]} />
+      <View style={[glyphStyles.stroke, glyphStyles.strokeBot]} />
+      <View style={[glyphStyles.knob, glyphStyles.knobBot]} />
+    </View>
+  );
+}
+
+const glyphStyles = StyleSheet.create({
+  wrap: { width: 20, height: 18 },
+  stroke: {
+    position: 'absolute',
+    left: 1,
+    width: 18,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: colors.categoryText,
+  },
+  knob: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    borderWidth: 1.5,
+    borderColor: colors.categoryText,
+    backgroundColor: colors.cellRecessed,
+  },
+  strokeTop: { top: 1 },
+  strokeMid: { top: 8 },
+  strokeBot: { top: 15 },
+  knobTop:  { top: -1, left: 4 },
+  knobMid:  { top: 6,  right: 3 },
+  knobBot:  { top: 13, left: 7 },
+});
+
+// ─── Main lobby screen ─────────────────────────────────────────────────────
 
 export function LobbyScreen(props: LobbyScreenProps) {
-  const { height } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const canStart = props.isHost && props.players.length >= MAX_PLAYERS;
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showRound1, setShowRound1] = useState(false);
@@ -71,17 +247,21 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const [seasonNumber, setSeasonNumber] = useState<number | null>(null);
   const [gameInfoStatus, setGameInfoStatus] = useState<'idle' | 'loading' | 'not-found'>('idle');
 
-  // Fade the lobby out when App signals the game is ready to mount (first
-  // STATE_UPDATE received) — not on the START press, which would delay the
-  // start-game send and only ever play on the host's device.
   const contentOpacity = useRef(new Animated.Value(1)).current;
   const setupScrollRef = useRef<ScrollView | null>(null);
   const advancedYRef = useRef(0);
   const gameIdLayoutRef = useRef({ y: 0, height: 0 });
   const fadeStartedRef = useRef(false);
+  const pageX = useRef(new Animated.Value(0)).current;
+  const gestureAxisRef = useRef<'horizontal' | 'vertical' | null>(null);
+  const dragXRef = useRef(0);
+  const dragYRef = useRef(0);
+  const leavingRef = useRef(false);
+  const startRequestedRef = useRef(false);
+
+  // ── Keyboard sheet for game # entry ──────────────────────────────────────
 
   const sheet = useKeyboardSheet(
-    // onOpen: scroll the game # input into the keyboard window
     () => {
       const layout = gameIdLayoutRef.current;
       if (!layout.height) return;
@@ -121,6 +301,8 @@ export function LobbyScreen(props: LobbyScreenProps) {
     return () => window.removeEventListener('keydown', handler);
   }, [backspaceGameId, sheet, insertGameIdDigit]);
 
+  // ── Fade out when game starts ─────────────────────────────────────────────
+
   useEffect(() => {
     if (!props.fadeOut || fadeStartedRef.current) return;
     fadeStartedRef.current = true;
@@ -135,6 +317,8 @@ export function LobbyScreen(props: LobbyScreenProps) {
     }).start(() => props.onFadeOutDone?.());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.fadeOut]);
+
+  // ── Game info loading ─────────────────────────────────────────────────────
 
   useEffect(() => {
     const id = props.gameId;
@@ -156,8 +340,6 @@ export function LobbyScreen(props: LobbyScreenProps) {
         setGameInfoStatus(data.round1 ? 'idle' : 'not-found');
       };
 
-      // Bluetooth and nearby sessions carry the complete archive in the app.
-      // Their lobby must remain usable with no relay or internet connection.
       if (props.sessionMode === 'bluetooth' || props.sessionMode === 'nearby') {
         const info = loadGameInfo(Number(id));
         if (info) applyInfo(info);
@@ -187,384 +369,474 @@ export function LobbyScreen(props: LobbyScreenProps) {
     return () => clearTimeout(timer);
   }, [props.gameId, props.relayHost, props.relayPort, props.sessionMode]);
 
-  const slots = Array.from({ length: MAX_PLAYERS }, (_, i) => props.players[i] ?? null);
+  // ── Board backdrop ────────────────────────────────────────────────────────
+
+  const lobbyBoard = useMemo((): BoardDefinition => {
+    if (!round1Categories || round1Categories.length === 0) {
+      return demoBoard;
+    }
+    const count = Math.min(round1Categories.length, props.visibleCategories ?? 6);
+    return {
+      categories: round1Categories.slice(0, count).map((cat, col) => ({
+        name: cat.name,
+        clues: LOBBY_VALUES.map((value, row) => ({
+          id: col * 5 + row,
+          value,
+        })),
+      })),
+    };
+  }, [round1Categories, props.visibleCategories]);
+
+  // ── Sorted player slots (host always first) ───────────────────────────────
+
+  const sortedSlots = useMemo((): (LobbyPlayer | null)[] => {
+    const hostPlayer = props.players.find(p => p.isHost) ?? null;
+    const guestPlayer = props.players.find(p => !p.isHost) ?? null;
+    return [hostPlayer, guestPlayer];
+  }, [props.players]);
+
+  // ── Gesture handling ──────────────────────────────────────────────────────
+
+  const returnGestureToRest = useCallback(() => {
+    gestureAxisRef.current = null;
+    dragXRef.current = 0;
+    dragYRef.current = 0;
+    Animated.spring(pageX, {
+      toValue: 0,
+      speed: 18,
+      bounciness: 3,
+      useNativeDriver: true,
+    }).start();
+  }, [pageX]);
+
+  const leaveLobby = useCallback((direction: -1 | 1) => {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
+    Animated.timing(pageX, {
+      toValue: direction * width,
+      duration: 240,
+      easing: Easing.inOut(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) props.onLeave();
+      else leavingRef.current = false;
+    });
+  }, [pageX, props.onLeave, width]);
+
+  const requestStart = useCallback(() => {
+    if (!canStart || startRequestedRef.current) return;
+    startRequestedRef.current = true;
+    props.onStart();
+    setTimeout(() => {
+      startRequestedRef.current = false;
+    }, 1000);
+  }, [canStart, props.onStart]);
+
+  const lobbyPanResponder = PanResponder.create({
+    onMoveShouldSetPanResponder: (_event, gesture) => {
+      if (showAdvanced || leavingRef.current || startRequestedRef.current) return false;
+      const horizontal =
+        Math.abs(gesture.dx) > 12 &&
+        Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35;
+      const verticalStart =
+        canStart &&
+        gesture.dy < -12 &&
+        Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.35;
+      return horizontal || verticalStart;
+    },
+    onPanResponderGrant: () => {
+      gestureAxisRef.current = null;
+      dragXRef.current = 0;
+      dragYRef.current = 0;
+    },
+    onPanResponderMove: (_event, gesture) => {
+      if (!gestureAxisRef.current) {
+        gestureAxisRef.current =
+          Math.abs(gesture.dx) > Math.abs(gesture.dy) ? 'horizontal' : 'vertical';
+      }
+      if (gestureAxisRef.current === 'horizontal') {
+        const sign = gesture.dx < 0 ? -1 : 1;
+        const distance = Math.abs(gesture.dx);
+        const resisted =
+          distance <= EXIT_COMMIT_DISTANCE
+            ? distance
+            : EXIT_COMMIT_DISTANCE + (distance - EXIT_COMMIT_DISTANCE) * 0.18;
+        dragXRef.current = sign * resisted;
+        pageX.setValue(sign * resisted);
+        return;
+      }
+      const distance = Math.abs(Math.min(0, gesture.dy));
+      const resisted =
+        distance <= START_COMMIT_DISTANCE
+          ? distance
+          : START_COMMIT_DISTANCE + (distance - START_COMMIT_DISTANCE) * 0.18;
+      dragYRef.current = -resisted;
+    },
+    onPanResponderRelease: (_event, gesture) => {
+      if (gestureAxisRef.current === 'horizontal') {
+        const committed =
+          Math.abs(dragXRef.current) >= EXIT_COMMIT_DISTANCE ||
+          (
+            Math.abs(dragXRef.current) >= 45 &&
+            Math.abs(gesture.vx) >= EXIT_COMMIT_VELOCITY
+          );
+        if (committed) {
+          leaveLobby(dragXRef.current < 0 ? -1 : 1);
+          return;
+        }
+      } else if (gestureAxisRef.current === 'vertical') {
+        const committed =
+          -dragYRef.current >= START_COMMIT_DISTANCE ||
+          (-dragYRef.current >= 40 && -gesture.vy >= START_COMMIT_VELOCITY);
+        if (committed) requestStart();
+      }
+      returnGestureToRest();
+    },
+    onPanResponderTerminate: returnGestureToRest,
+  });
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  // Gradient covers the bottom portion of the board backdrop
+  const gradientTop = Math.round(height * 0.25);
 
   return (
-    <SwipeUpMenu
-      disabled
-      renderMenu={showSettings => (
-        <MainMenuScreen
-          onNewGame={props.onNewGame ?? props.onLeave}
-          onJoinGame={props.onJoinGame ?? props.onLeave}
-          onSettings={showSettings}
+    <View style={styles.root} {...lobbyPanResponder.panHandlers}>
+      <Animated.View style={[styles.page, { transform: [{ translateX: pageX }] }]}>
+
+        {/* 1. Game board as non-interactive backdrop */}
+        <View style={styles.boardBackdrop} pointerEvents="none">
+          <Board
+            board={lobbyBoard}
+            burnedClueIds={EMPTY_BURNED}
+            locked={true}
+          />
+        </View>
+
+        {/* 2. Gradient: fades board into the background colour */}
+        <LinearGradient
+          pointerEvents="none"
+          colors={['transparent', colors.bg]}
+          locations={[0, 0.8]}
+          style={[styles.boardGradient, { top: gradientTop }]}
         />
-      )}
-      renderSettings={goBack => (
-        <SettingsScreen
-          playerName={props.playerName ?? ''}
-          onNameChange={props.onNameChange ?? (() => {})}
-          relayHost={props.relayHost ?? DEFAULT_RELAY_HOST}
-          onRelayHostChange={props.onRelayHostChange ?? (() => {})}
-          relayPort={props.relayPort ?? '8787'}
-          onRelayPortChange={props.onRelayPortChange ?? (() => {})}
-          onBack={goBack}
-        />
-      )}
-    >
-      <View style={styles.root}>
+
+        {/* 3. Interactive content layer */}
         <Animated.View
-          style={[
-            StyleSheet.absoluteFill,
-            styles.contentWrap,
-            {
-              opacity: contentOpacity,
-            },
-          ]}
+          style={[StyleSheet.absoluteFill, styles.contentLayer, { opacity: contentOpacity }]}
         >
-          <Pressable style={styles.leaveButton} onPress={props.onLeave}>
-            <Text style={styles.leaveText}>← LEAVE</Text>
-          </Pressable>
 
-          <ScrollView
-            ref={setupScrollRef}
-            style={styles.setupScroll}
-            contentContainerStyle={[
-              styles.setupScrollContent,
-              {
-                paddingBottom: 32 + sheet.panelHeight,
-              },
-            ]}
-            showsVerticalScrollIndicator={false}
-            showsHorizontalScrollIndicator={false}
-            scrollEventThrottle={16}
-          >
-            {props.roomCode > 0 ? (
-              <>
-                <Text style={styles.roomCode}>{props.roomCode}</Text>
-                <Text style={styles.subtitle}>Share this code with your friend</Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.creatingText}>Creating room...</Text>
-                <Text style={styles.subtitle}> </Text>
-              </>
-            )}
-
-            <View style={styles.playerList}>
-              {slots.map((player, i) => (
-                <View key={player?.peerId ?? `empty-${i}`} style={styles.playerRow}>
-                  <Text style={styles.slotLabel}>P{i + 1}</Text>
-                  {player ? (
-                    <>
-                      <Text style={styles.playerName}>{player.name}</Text>
-                      {player.isHost && <Text style={styles.hostBadge}>HOST</Text>}
-                    </>
-                  ) : (
-                    <Text style={styles.emptySlot}>Open</Text>
-                  )}
-                </View>
+          {/* Bottom section: player bugs + lobby code */}
+          <View style={styles.bottomSection}>
+            <View style={styles.playerRow}>
+              {sortedSlots.map((player, i) => (
+                <LobbySlotBug
+                  key={player?.peerId ?? `slot-${i}`}
+                  player={player}
+                  slotIndex={i}
+                  localIsHost={props.isHost}
+                  settingsOpen={showAdvanced}
+                  onSettings={() => { sheet.close(); setShowAdvanced(v => !v); }}
+                  onKick={() => { if (player) props.onKickPlayer?.(player.peerId); }}
+                />
               ))}
             </View>
 
-            {props.isHost && (
-              <>
-                <Pressable
-                  style={[styles.startButton, !canStart && styles.startButtonDisabled]}
-                  onPress={props.onStart}
-                  disabled={!canStart}
-                >
-                  <Text style={[styles.startButtonText, !canStart && styles.startButtonTextDisabled]}>
-                    START GAME
-                  </Text>
-                </Pressable>
+            <View style={styles.codeBlock}>
+              <Text style={styles.codeLabel}>LOBBY CODE</Text>
+              {props.roomCode > 0 ? (
+                <Text style={styles.codeValue}>{props.roomCode}</Text>
+              ) : (
+                <Text style={styles.creatingText}>CREATING…</Text>
+              )}
+            </View>
+          </View>
 
-                <Pressable
-                  style={styles.advancedToggle}
-                  onPress={() => {
-                    sheet.close();
-                    setShowAdvanced(!showAdvanced);
+          {/* Settings panel overlay */}
+          {props.isHost && showAdvanced && (
+            <View style={StyleSheet.absoluteFill}>
+              <Pressable
+                style={styles.settingsBackdrop}
+                onPress={() => { sheet.close(); setShowAdvanced(false); }}
+              />
+              <ScrollView
+                ref={setupScrollRef}
+                style={styles.settingsScroll}
+                contentContainerStyle={[
+                  styles.settingsScrollContent,
+                  { paddingBottom: 32 + sheet.panelHeight },
+                ]}
+                showsVerticalScrollIndicator={false}
+                showsHorizontalScrollIndicator={false}
+                scrollEnabled
+                scrollEventThrottle={16}
+              >
+                <View
+                  style={styles.advancedSection}
+                  onLayout={event => {
+                    advancedYRef.current = event.nativeEvent.layout.y;
                   }}
                 >
-                  <Text style={styles.advancedToggleText}>
-                    {showAdvanced ? '▾ Game Settings' : '▸ Game Settings'}
-                  </Text>
-                </Pressable>
+                  <Text style={styles.gameSettingsTitle}>GAME SETTINGS</Text>
 
-                {showAdvanced && (
-                  <View
-                    style={styles.advancedSection}
-                    onLayout={event => {
-                      advancedYRef.current = event.nativeEvent.layout.y;
-                    }}
+                  <Text style={styles.label}>Animations</Text>
+                  <Pressable
+                    style={styles.toggleBox}
+                    onPress={() =>
+                      props.onAnimationsChange?.(!(props.animationsEnabled ?? true))
+                    }
                   >
-                    <Text style={styles.label}>Animations</Text>
-                    <Pressable
-                      style={styles.toggleBox}
-                      onPress={() =>
-                        props.onAnimationsChange?.(!(props.animationsEnabled ?? true))
-                      }
+                    <Text
+                      style={[
+                        styles.toggleText,
+                        !(props.animationsEnabled ?? true) && styles.toggleTextOff,
+                      ]}
                     >
-                      <Text
-                        style={[
-                          styles.toggleText,
-                          !(props.animationsEnabled ?? true) && styles.toggleTextOff,
-                        ]}
-                      >
-                        {(props.animationsEnabled ?? true) ? 'On' : 'Off'}
-                      </Text>
-                    </Pressable>
+                      {(props.animationsEnabled ?? true) ? 'On' : 'Off'}
+                    </Text>
+                  </Pressable>
 
-                    <Text style={[styles.label, styles.stackedLabel]}>Categories Displayed</Text>
-                    <View style={styles.catCountRow}>
-                      {([4, 5, 6] as const).map(n => {
-                        const active = (props.visibleCategories ?? 6) === n;
-                        return (
-                          <Pressable
-                            key={n}
-                            style={[styles.catCountBtn, active && styles.catCountBtnActive]}
-                            onPress={() => props.onVisibleCategoriesChange?.(n)}
-                          >
-                            <Text style={[styles.catCountText, active && styles.catCountTextActive]}>
-                              {n}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-
-                    <Text style={[styles.label, styles.stackedLabel]}>Game #</Text>
-                    <Pressable
-                      style={styles.input}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Game number ${props.gameId || 'random'}`}
-                      onLayout={event => {
-                        gameIdLayoutRef.current = {
-                          y: advancedYRef.current + event.nativeEvent.layout.y,
-                          height: event.nativeEvent.layout.height,
-                        };
-                      }}
-                      onPress={sheet.open}
-                    >
-                      <Text style={[styles.inputText, !props.gameId && styles.inputPlaceholder]}>
-                        {props.gameId || 'Random'}
-                      </Text>
-                    </Pressable>
-
-                    {gameInfoStatus === 'loading' && (
-                      <Text style={styles.gameInfoNote}>Loading...</Text>
-                    )}
-                    {gameInfoStatus === 'not-found' && (
-                      <Text style={styles.gameInfoNote}>Game not found</Text>
-                    )}
-
-                    {round1Categories && (
-                      <>
-                        {seasonNumber != null && (
-                          <Text style={styles.gameMetadata}>Season {seasonNumber}</Text>
-                        )}
-                        {airDate && (
-                          <Text style={styles.gameMetadata}>
-                            {new Date(airDate + 'T12:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                          </Text>
-                        )}
+                  <Text style={[styles.label, styles.stackedLabel]}>Categories Displayed</Text>
+                  <View style={styles.catCountRow}>
+                    {([4, 5, 6] as const).map(n => {
+                      const active = (props.visibleCategories ?? 6) === n;
+                      return (
                         <Pressable
-                          style={styles.roundToggle}
-                          onPress={() => setShowRound1(v => !v)}
+                          key={n}
+                          style={[styles.catCountBtn, active && styles.catCountBtnActive]}
+                          onPress={() => props.onVisibleCategoriesChange?.(n)}
                         >
-                          <Text style={styles.roundToggleText}>
-                            {showRound1 ? '▾ ' : '▸ '}
-                            Jeopardy!
-                            {round1Categories.some(c => c.clueCount < 5) && (
-                              <Text style={styles.clueCount}> *</Text>
-                            )}
+                          <Text style={[styles.catCountText, active && styles.catCountTextActive]}>
+                            {n}
                           </Text>
                         </Pressable>
-                        {showRound1 && (
-                          <ScrollView
-                            style={styles.categoryList}
-                            nestedScrollEnabled
-                            showsVerticalScrollIndicator={false}
-                            showsHorizontalScrollIndicator={false}
-                          >
-                            {round1Categories.map(({ name, clueCount }) => (
-                              <View key={name} style={styles.categoryRow}>
-                                <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
-                                {clueCount < 5 && (
-                                  <Text style={styles.clueCount}>{clueCount}/5</Text>
-                                )}
-                              </View>
-                            ))}
-                          </ScrollView>
-                        )}
-
-                        <Pressable
-                          style={styles.roundToggle}
-                          onPress={() => setShowRound2(v => !v)}
-                        >
-                          <Text style={styles.roundToggleText}>
-                            {showRound2 ? '▾ ' : '▸ '}
-                            Double Jeopardy!
-                            {round2Categories?.some(c => c.clueCount < 5) && (
-                              <Text style={styles.clueCount}> *</Text>
-                            )}
-                          </Text>
-                        </Pressable>
-                        {showRound2 && round2Categories && (
-                          <ScrollView
-                            style={styles.categoryList}
-                            nestedScrollEnabled
-                            showsVerticalScrollIndicator={false}
-                            showsHorizontalScrollIndicator={false}
-                          >
-                            {round2Categories.map(({ name, clueCount }) => (
-                              <View key={name} style={styles.categoryRow}>
-                                <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
-                                {clueCount < 5 && (
-                                  <Text style={styles.clueCount}>{clueCount}/5</Text>
-                                )}
-                              </View>
-                            ))}
-                          </ScrollView>
-                        )}
-                      </>
-                    )}
+                      );
+                    })}
                   </View>
-                )}
-              </>
-            )}
-          </ScrollView>
 
-        {props.error && (
-          <View style={styles.statusLineWrap}>
-            <Text style={styles.statusLine}>{props.error}</Text>
-          </View>
-        )}
+                  <Text style={[styles.label, styles.stackedLabel]}>Game #</Text>
+                  <Pressable
+                    style={styles.input}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Game number ${props.gameId || 'random'}`}
+                    onLayout={event => {
+                      gameIdLayoutRef.current = {
+                        y: advancedYRef.current + event.nativeEvent.layout.y,
+                        height: event.nativeEvent.layout.height,
+                      };
+                    }}
+                    onPress={sheet.open}
+                  >
+                    <Text style={[styles.inputText, !props.gameId && styles.inputPlaceholder]}>
+                      {props.gameId || 'Random'}
+                    </Text>
+                  </Pressable>
+
+                  {gameInfoStatus === 'loading' && (
+                    <Text style={styles.gameInfoNote}>Loading...</Text>
+                  )}
+                  {gameInfoStatus === 'not-found' && (
+                    <Text style={styles.gameInfoNote}>Game not found</Text>
+                  )}
+
+                  {round1Categories && (
+                    <>
+                      {seasonNumber != null && (
+                        <Text style={styles.gameMetadata}>Season {seasonNumber}</Text>
+                      )}
+                      {airDate && (
+                        <Text style={styles.gameMetadata}>
+                          {new Date(airDate + 'T12:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                        </Text>
+                      )}
+
+                      <Pressable
+                        style={styles.roundToggle}
+                        onPress={() => setShowRound1(v => !v)}
+                      >
+                        <Text style={styles.roundToggleText}>
+                          {showRound1 ? '▾ ' : '▸ '}
+                          Jeopardy!
+                          {round1Categories.some(c => c.clueCount < 5) && (
+                            <Text style={styles.clueCount}> *</Text>
+                          )}
+                        </Text>
+                      </Pressable>
+                      {showRound1 && (
+                        <ScrollView
+                          style={styles.categoryList}
+                          nestedScrollEnabled
+                          showsVerticalScrollIndicator={false}
+                          showsHorizontalScrollIndicator={false}
+                        >
+                          {round1Categories.map(({ name, clueCount }) => (
+                            <View key={name} style={styles.categoryRow}>
+                              <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
+                              {clueCount < 5 && (
+                                <Text style={styles.clueCount}>{clueCount}/5</Text>
+                              )}
+                            </View>
+                          ))}
+                        </ScrollView>
+                      )}
+
+                      <Pressable
+                        style={styles.roundToggle}
+                        onPress={() => setShowRound2(v => !v)}
+                      >
+                        <Text style={styles.roundToggleText}>
+                          {showRound2 ? '▾ ' : '▸ '}
+                          Double Jeopardy!
+                          {round2Categories?.some(c => c.clueCount < 5) && (
+                            <Text style={styles.clueCount}> *</Text>
+                          )}
+                        </Text>
+                      </Pressable>
+                      {showRound2 && round2Categories && (
+                        <ScrollView
+                          style={styles.categoryList}
+                          nestedScrollEnabled
+                          showsVerticalScrollIndicator={false}
+                          showsHorizontalScrollIndicator={false}
+                        >
+                          {round2Categories.map(({ name, clueCount }) => (
+                            <View key={name} style={styles.categoryRow}>
+                              <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
+                              {clueCount < 5 && (
+                                <Text style={styles.clueCount}>{clueCount}/5</Text>
+                              )}
+                            </View>
+                          ))}
+                        </ScrollView>
+                      )}
+                    </>
+                  )}
+                </View>
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Error status line */}
+          {props.error && (
+            <View style={styles.statusLineWrap}>
+              <Text style={styles.statusLine}>{props.error}</Text>
+            </View>
+          )}
+
         </Animated.View>
 
         <KeyboardSheet controls={sheet}>
           <NumberKeyboard dark onInsert={insertGameIdDigit} onBackspace={backspaceGameId} />
         </KeyboardSheet>
-      </View>
-    </SwipeUpMenu>
+
+      </Animated.View>
+    </View>
   );
 }
+
+// ─── Styles ────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+    backgroundColor: 'transparent',
+  },
+  page: {
+    flex: 1,
     backgroundColor: colors.bg,
   },
-  contentWrap: {
-    width: '100%',
+  // Board fills entire page as backdrop
+  boardBackdrop: {
+    ...StyleSheet.absoluteFillObject,
   },
-  setupScroll: {
-    flex: 1,
-    width: '100%',
-  },
-  setupScrollContent: {
-    flexGrow: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-  },
-  leaveButton: {
+  // Gradient overlay anchored to bottom, top set dynamically
+  boardGradient: {
     position: 'absolute',
-    top: 16,
-    left: 16,
-    padding: 8,
-    zIndex: 1,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
-  leaveText: {
-    fontFamily: typeTokens.ui500,
-    fontSize: 16,
-    color: colors.gold,
+  contentLayer: {
+    // sits above board + gradient
   },
-  roomCode: {
-    fontFamily: typeTokens.board,
-    fontSize: 72,
-    color: colors.gold,
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontFamily: typeTokens.ui500,
-    fontSize: 16,
-    color: '#888',
-    marginBottom: 32,
-  },
-  playerList: {
-    width: '100%',
-    maxWidth: 280,
-    gap: 8,
-    marginBottom: 32,
+  // ── Bottom interactive section ─────────────────────────────────────────
+  bottomSection: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 14,
+    paddingBottom: 20,
   },
   playerRow: {
     flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
+  // ── Lobby code ─────────────────────────────────────────────────────────
+  codeBlock: {
     alignItems: 'center',
-    backgroundColor: colors.cellFinalRecessed,
-    padding: 12,
-    borderRadius: 6,
   },
-  slotLabel: {
+  codeLabel: {
     fontFamily: typeTokens.ui700,
-    fontSize: 14,
-    color: colors.boardValue,
-    opacity: 0.5,
-    marginRight: 12,
+    fontSize: 11,
+    letterSpacing: 2.2,
+    color: '#666',
+    marginBottom: 0,
   },
-  playerName: {
-    fontFamily: typeTokens.ui500,
-    fontSize: 18,
-    color: colors.categoryText,
-    flex: 1,
-  },
-  emptySlot: {
-    fontFamily: typeTokens.ui500,
-    fontSize: 18,
-    color: colors.categoryText,
-    opacity: 0.25,
-    fontStyle: 'italic',
-    flex: 1,
-  },
-  hostBadge: {
-    fontFamily: typeTokens.ui700,
-    fontSize: 12,
+  codeValue: {
+    fontFamily: typeTokens.board,
+    fontSize: 86,
     color: colors.gold,
-    backgroundColor: colors.cellFinal,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
+    lineHeight: 100,
+    textShadowColor: 'rgba(229,178,13,0.15)',
+    textShadowOffset: { width: 0, height: 5 },
+    textShadowRadius: 14,
   },
   creatingText: {
     fontFamily: typeTokens.board,
-    fontSize: 36,
+    fontSize: 32,
     color: colors.gold,
-    marginBottom: 4,
+    opacity: 0.6,
+    lineHeight: 100,
   },
-  statusLineWrap: {
+  // ── Settings overlay ────────────────────────────────────────────────────
+  settingsBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  settingsScroll: {
     position: 'absolute',
-    left: 24,
-    bottom: 20,
-    height: 40,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  settingsScrollContent: {
+    flexGrow: 1,
+    alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
   },
-  statusLine: {
-    fontFamily: typeTokens.ui500,
-    fontSize: 13,
-    letterSpacing: 0.5,
-    color: 'rgba(255,255,255,0.65)',
-  },
-  advancedToggle: {
-    marginTop: 24,
-  },
-  advancedToggleText: {
-    fontFamily: typeTokens.ui500,
-    fontSize: 14,
-    color: '#888',
-  },
+  // ── Advanced settings section ───────────────────────────────────────────
   advancedSection: {
     width: '100%',
-    maxWidth: 280,
-    marginBottom: 16,
+    maxWidth: 470,
+    padding: 18,
+    marginTop: 2,
+    marginBottom: 24,
+    borderRadius: 8,
+    backgroundColor: colors.cellFinalRecessed,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  gameSettingsTitle: {
+    fontFamily: typeTokens.board,
+    fontSize: 24,
+    color: colors.categoryText,
+    textAlign: 'center',
+    marginBottom: 18,
   },
   stackedLabel: {
     marginTop: 16,
@@ -672,21 +944,18 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontStyle: 'italic',
   },
-  startButton: {
-    backgroundColor: colors.cell,
-    paddingVertical: 14,
-    paddingHorizontal: 48,
-    borderRadius: 6,
+  // ── Error status ────────────────────────────────────────────────────────
+  statusLineWrap: {
+    position: 'absolute',
+    left: 24,
+    bottom: 20,
+    height: 40,
+    justifyContent: 'center',
   },
-  startButtonDisabled: {
-    opacity: 0.4,
-  },
-  startButtonText: {
-    fontFamily: typeTokens.ui700,
-    fontSize: 18,
-    color: colors.gold,
-  },
-  startButtonTextDisabled: {
-    color: '#666',
+  statusLine: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    color: 'rgba(255,255,255,0.65)',
   },
 });
