@@ -285,27 +285,21 @@ export function JoinGameScreen(props: JoinGameScreenProps) {
       outputRange: [source.height, textTarget.height],
     }),
   };
-  const exitIconOpacity = Animated.multiply(
-    pageX.interpolate({
-      inputRange: [-EXIT_COMMIT_DISTANCE, -20, 0],
-      outputRange: [1, 0.4, 0],
-      extrapolate: 'clamp',
-    }),
-    chevronVisible,
-  );
+  const exitIconOpacity = pageX.interpolate({
+    inputRange: [-EXIT_COMMIT_DISTANCE, -20, 0],
+    outputRange: [1, 0.4, 0],
+    extrapolate: 'clamp',
+  });
   const exitIconTranslateX = pageX.interpolate({
     inputRange: [-EXIT_COMMIT_DISTANCE, 0],
     outputRange: [0, 68],
     extrapolate: 'clamp',
   });
-  const oppositeExitIconOpacity = Animated.multiply(
-    pageX.interpolate({
-      inputRange: [0, 20, EXIT_COMMIT_DISTANCE],
-      outputRange: [0, 0.4, 1],
-      extrapolate: 'clamp',
-    }),
-    chevronVisible,
-  );
+  const oppositeExitIconOpacity = pageX.interpolate({
+    inputRange: [0, 20, EXIT_COMMIT_DISTANCE],
+    outputRange: [0, 0.4, 1],
+    extrapolate: 'clamp',
+  });
   const oppositeExitIconTranslateX = pageX.interpolate({
     inputRange: [0, EXIT_COMMIT_DISTANCE],
     outputRange: [-68, 0],
@@ -446,37 +440,42 @@ export function JoinGameScreen(props: JoinGameScreenProps) {
 
       {expanded && (
         <>
+          {/* Wrapper zeroed immediately on commit so chevrons vanish before the
+              slide-out animation runs (avoids clamped-opacity flash). */}
           <Animated.View
             pointerEvents="none"
-            style={[
-              styles.exitIcon,
-              styles.exitIconRight,
-              {
-                opacity: exitIconOpacity,
-                transform: [{ translateX: exitIconTranslateX }],
-              },
-            ]}
+            style={[StyleSheet.absoluteFill, { opacity: chevronVisible }]}
           >
-            <View style={styles.chevron}>
-              <View style={[styles.chevronStroke, styles.chevronTop]} />
-              <View style={[styles.chevronStroke, styles.chevronBottom]} />
-            </View>
-          </Animated.View>
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.exitIcon,
-              styles.exitIconLeft,
-              {
-                opacity: oppositeExitIconOpacity,
-                transform: [{ translateX: oppositeExitIconTranslateX }],
-              },
-            ]}
-          >
-            <View style={[styles.chevron, styles.chevronFlipped]}>
-              <View style={[styles.chevronStroke, styles.chevronTop]} />
-              <View style={[styles.chevronStroke, styles.chevronBottom]} />
-            </View>
+            <Animated.View
+              style={[
+                styles.exitIcon,
+                styles.exitIconRight,
+                {
+                  opacity: exitIconOpacity,
+                  transform: [{ translateX: exitIconTranslateX }],
+                },
+              ]}
+            >
+              <View style={styles.chevron}>
+                <View style={[styles.chevronStroke, styles.chevronTop]} />
+                <View style={[styles.chevronStroke, styles.chevronBottom]} />
+              </View>
+            </Animated.View>
+            <Animated.View
+              style={[
+                styles.exitIcon,
+                styles.exitIconLeft,
+                {
+                  opacity: oppositeExitIconOpacity,
+                  transform: [{ translateX: oppositeExitIconTranslateX }],
+                },
+              ]}
+            >
+              <View style={[styles.chevron, styles.chevronFlipped]}>
+                <View style={[styles.chevronStroke, styles.chevronTop]} />
+                <View style={[styles.chevronStroke, styles.chevronBottom]} />
+              </View>
+            </Animated.View>
           </Animated.View>
         </>
       )}

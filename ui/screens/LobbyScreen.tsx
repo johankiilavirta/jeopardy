@@ -248,6 +248,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const [gameInfoStatus, setGameInfoStatus] = useState<'idle' | 'loading' | 'not-found'>('idle');
 
   const contentOpacity = useRef(new Animated.Value(1)).current;
+  const codeVisible = useRef(new Animated.Value(0)).current;
   const setupScrollRef = useRef<ScrollView | null>(null);
   const advancedYRef = useRef(0);
   const gameIdLayoutRef = useRef({ y: 0, height: 0 });
@@ -317,6 +318,20 @@ export function LobbyScreen(props: LobbyScreenProps) {
     }).start(() => props.onFadeOutDone?.());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.fadeOut]);
+
+  // ── Room code fade-in ─────────────────────────────────────────────────────
+  // Code block (number + share label) is invisible until the relay assigns a
+  // room code, then fades in so the black-overlay reveal looks clean.
+
+  useEffect(() => {
+    if (props.roomCode <= 0) return;
+    Animated.timing(codeVisible, {
+      toValue: 1,
+      duration: 350,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+  }, [props.roomCode, codeVisible]);
 
   // ── Game info loading ─────────────────────────────────────────────────────
 
@@ -431,10 +446,14 @@ export function LobbyScreen(props: LobbyScreenProps) {
   // ── Sorted player slots (host always first) ───────────────────────────────
 
   const sortedSlots = useMemo((): (LobbyPlayer | null)[] => {
-    const hostPlayer = props.players.find(p => p.isHost) ?? null;
+    const hostPlayer = props.players.find(p => p.isHost)
+      // Pre-populate with local name so the bug never shows WAITING→name flash.
+      ?? (props.isHost && props.playerName
+        ? { peerId: 'local-host', name: props.playerName, isHost: true }
+        : null);
     const guestPlayer = props.players.find(p => !p.isHost) ?? null;
     return [hostPlayer, guestPlayer];
-  }, [props.players]);
+  }, [props.players, props.isHost, props.playerName]);
 
   // ── Gesture handling ──────────────────────────────────────────────────────
 
@@ -531,30 +550,30 @@ export function LobbyScreen(props: LobbyScreenProps) {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  // Gradient starts near the very top and is fully opaque before the $400
-  // row — categories visible through gradient, $400+ hidden.
-  const gradientLocations: [number, number] = [0.05, 0.42];
+  // Gradient: split between original and previous tweak for balance.
+  const gradientLocations: [number, number] = [0.10, 0.47];
 
-  // Chevron icons — appear as the user drags left or right, matching the
-  // JoinGameScreen pattern: pageX drives opacity/offset but the page stays put.
-  const leftChevronOpacity = pageX.interpolate({
+  // Chevron icons — mirror JoinGameScreen exactly:
+  // drag LEFT  → right-side ">" icon slides in from the right
+  // drag RIGHT → left-side  "<" icon slides in from the left
+  const dragLeftChevronOpacity = pageX.interpolate({
     inputRange: [-EXIT_COMMIT_DISTANCE, -20, 0],
     outputRange: [1, 0.4, 0],
     extrapolate: 'clamp',
   });
-  const leftChevronTranslateX = pageX.interpolate({
+  const dragLeftChevronTranslateX = pageX.interpolate({
     inputRange: [-EXIT_COMMIT_DISTANCE, 0],
-    outputRange: [0, -68],
+    outputRange: [0, 68],
     extrapolate: 'clamp',
   });
-  const rightChevronOpacity = pageX.interpolate({
+  const dragRightChevronOpacity = pageX.interpolate({
     inputRange: [0, 20, EXIT_COMMIT_DISTANCE],
     outputRange: [0, 0.4, 1],
     extrapolate: 'clamp',
   });
-  const rightChevronTranslateX = pageX.interpolate({
+  const dragRightChevronTranslateX = pageX.interpolate({
     inputRange: [0, EXIT_COMMIT_DISTANCE],
-    outputRange: [68, 0],
+    outputRange: [-68, 0],
     extrapolate: 'clamp',
   });
 
@@ -637,16 +656,14 @@ export function LobbyScreen(props: LobbyScreenProps) {
 
           {/* Bottom section: lobby code above, player bugs at the very bottom */}
           <View style={styles.bottomSection}>
-            <View style={styles.codeBlock}>
-              <Text style={styles.codeLabel} allowFontScaling={false}>
-                {'SHARE ' + (props.sessionMode ?? 'ONLINE').toUpperCase() + ' LOBBY CODE\nWITH YOUR FRIEND'}
+            <Animated.View style={[styles.codeBlock, { opacity: codeVisible }]}>
+              <Text style={styles.codeValue} allowFontScaling={false}>
+                {props.roomCode > 0 ? props.roomCode : ''}
               </Text>
-              {props.roomCode > 0 ? (
-                <Text style={styles.codeValue}>{props.roomCode}</Text>
-              ) : (
-                <Text style={styles.creatingText}>CREATING…</Text>
-              )}
-            </View>
+              <Text style={styles.codeLabel} allowFontScaling={false} numberOfLines={1}>
+                {'SHARE ' + (props.sessionMode ?? 'ONLINE').toUpperCase() + ' LOBBY CODE WITH YOUR FRIEND'}
+              </Text>
+            </Animated.View>
 
             <View style={styles.playerRow}>
               {sortedSlots.map((player, i) => (
@@ -840,31 +857,31 @@ export function LobbyScreen(props: LobbyScreenProps) {
           <NumberKeyboard dark onInsert={insertGameIdDigit} onBackspace={backspaceGameId} />
         </KeyboardSheet>
 
-        {/* Left exit chevron — appears when dragging left */}
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.exitIcon,
-            styles.exitIconLeft,
-            { opacity: leftChevronOpacity, transform: [{ translateX: leftChevronTranslateX }] },
-          ]}
-        >
-          <View style={[styles.chevron, styles.chevronFlipped]}>
-            <View style={[styles.chevronStroke, styles.chevronTop]} />
-            <View style={[styles.chevronStroke, styles.chevronBottom]} />
-          </View>
-        </Animated.View>
-
-        {/* Right exit chevron — appears when dragging right */}
+        {/* Drag-left → right-side ">" chevron (matches JoinGameScreen) */}
         <Animated.View
           pointerEvents="none"
           style={[
             styles.exitIcon,
             styles.exitIconRight,
-            { opacity: rightChevronOpacity, transform: [{ translateX: rightChevronTranslateX }] },
+            { opacity: dragLeftChevronOpacity, transform: [{ translateX: dragLeftChevronTranslateX }] },
           ]}
         >
           <View style={styles.chevron}>
+            <View style={[styles.chevronStroke, styles.chevronTop]} />
+            <View style={[styles.chevronStroke, styles.chevronBottom]} />
+          </View>
+        </Animated.View>
+
+        {/* Drag-right → left-side "<" chevron (matches JoinGameScreen) */}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.exitIcon,
+            styles.exitIconLeft,
+            { opacity: dragRightChevronOpacity, transform: [{ translateX: dragRightChevronTranslateX }] },
+          ]}
+        >
+          <View style={[styles.chevron, styles.chevronFlipped]}>
             <View style={[styles.chevronStroke, styles.chevronTop]} />
             <View style={[styles.chevronStroke, styles.chevronBottom]} />
           </View>
@@ -926,28 +943,18 @@ const styles = StyleSheet.create({
   },
   codeLabel: {
     fontFamily: typeTokens.board,
-    fontSize: 14,
+    fontSize: 13,
     color: colors.categoryText,
-    opacity: 0.75,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 4,
+    marginTop: 2,
   },
   codeValue: {
     fontFamily: typeTokens.board,
-    fontSize: 47,
+    fontSize: 42,
     color: colors.gold,
-    lineHeight: 54,
+    lineHeight: 49,
     textShadowColor: 'rgba(229,178,13,0.15)',
     textShadowOffset: { width: 0, height: 3 },
     textShadowRadius: 10,
-  },
-  creatingText: {
-    fontFamily: typeTokens.board,
-    fontSize: 28,
-    color: colors.gold,
-    opacity: 0.6,
-    lineHeight: 60,
   },
   // ── Settings overlay ────────────────────────────────────────────────────
   settingsBackdrop: {
