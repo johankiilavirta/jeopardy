@@ -538,8 +538,9 @@ export function LobbyScreen(props: LobbyScreenProps) {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  // Gradient covers the bottom portion of the board backdrop
-  const gradientTop = Math.round(height * 0.25);
+  // Gradient starts near the top and becomes fully opaque well before the
+  // $600 row — categories + $200 visible, $400 half-visible, rest hidden.
+  const gradientLocations: [number, number] = [0.15, 0.52];
 
   return (
     <View style={styles.root} {...lobbyPanResponder.panHandlers}>
@@ -609,8 +610,8 @@ export function LobbyScreen(props: LobbyScreenProps) {
         <LinearGradient
           pointerEvents="none"
           colors={['transparent', colors.bg]}
-          locations={[0, 0.8]}
-          style={[styles.boardGradient, { top: gradientTop }]}
+          locations={gradientLocations}
+          style={styles.boardGradient}
         />
 
         {/* 3. Interactive content layer */}
@@ -618,8 +619,17 @@ export function LobbyScreen(props: LobbyScreenProps) {
           style={[StyleSheet.absoluteFill, styles.contentLayer, { opacity: contentOpacity }]}
         >
 
-          {/* Bottom section: player bugs + lobby code */}
+          {/* Bottom section: lobby code above, player bugs at the very bottom */}
           <View style={styles.bottomSection}>
+            <View style={styles.codeBlock}>
+              <Text style={styles.codeLabel}>LOBBY CODE</Text>
+              {props.roomCode > 0 ? (
+                <Text style={styles.codeValue}>{props.roomCode}</Text>
+              ) : (
+                <Text style={styles.creatingText}>CREATING…</Text>
+              )}
+            </View>
+
             <View style={styles.playerRow}>
               {sortedSlots.map((player, i) => (
                 <LobbySlotBug
@@ -632,15 +642,6 @@ export function LobbyScreen(props: LobbyScreenProps) {
                   onKick={() => { if (player) props.onKickPlayer?.(player.peerId); }}
                 />
               ))}
-            </View>
-
-            <View style={styles.codeBlock}>
-              <Text style={styles.codeLabel}>LOBBY CODE</Text>
-              {props.roomCode > 0 ? (
-                <Text style={styles.codeValue}>{props.roomCode}</Text>
-              ) : (
-                <Text style={styles.creatingText}>CREATING…</Text>
-              )}
             </View>
           </View>
 
@@ -837,17 +838,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bg,
   },
-  // Board fills entire page as backdrop
+  // Board fills entire page as backdrop, with a little breathing room around edges
   boardBackdrop: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
+    top: 6,
+    left: 8,
+    right: 8,
     bottom: 0,
   },
-  // Gradient overlay anchored to bottom, top set dynamically
+  // Gradient covers the full screen from top, fading board out high up
   boardGradient: {
     position: 'absolute',
+    top: 0,
     left: 0,
     right: 0,
     bottom: 0,
@@ -862,16 +864,17 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     paddingHorizontal: 14,
-    paddingBottom: 20,
+    paddingBottom: 18,  // keep bugs off the very bottom edge
   },
   playerRow: {
     flexDirection: 'row',
     gap: 10,
-    marginBottom: 16,
+    // no bottom margin — paddingBottom on bottomSection handles the gap
   },
   // ── Lobby code ─────────────────────────────────────────────────────────
   codeBlock: {
     alignItems: 'center',
+    marginBottom: 12,
   },
   codeLabel: {
     fontFamily: typeTokens.ui700,
@@ -882,19 +885,19 @@ const styles = StyleSheet.create({
   },
   codeValue: {
     fontFamily: typeTokens.board,
-    fontSize: 86,
+    fontSize: 52,
     color: colors.gold,
-    lineHeight: 100,
+    lineHeight: 60,
     textShadowColor: 'rgba(229,178,13,0.15)',
-    textShadowOffset: { width: 0, height: 5 },
-    textShadowRadius: 14,
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 10,
   },
   creatingText: {
     fontFamily: typeTokens.board,
-    fontSize: 32,
+    fontSize: 28,
     color: colors.gold,
     opacity: 0.6,
-    lineHeight: 100,
+    lineHeight: 60,
   },
   // ── Settings overlay ────────────────────────────────────────────────────
   settingsBackdrop: {
