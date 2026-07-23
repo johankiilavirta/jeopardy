@@ -450,19 +450,12 @@ export function LobbyScreen(props: LobbyScreenProps) {
     }).start();
   }, [pageX]);
 
-  const leaveLobby = useCallback((direction: -1 | 1) => {
+  const leaveLobby = useCallback((_direction: -1 | 1) => {
     if (leavingRef.current) return;
     leavingRef.current = true;
-    Animated.timing(pageX, {
-      toValue: direction * width,
-      duration: 240,
-      easing: Easing.inOut(Easing.cubic),
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) props.onLeave();
-      else leavingRef.current = false;
-    });
-  }, [pageX, props.onLeave, width]);
+    // Page stays put; parent fades to black then transitions to menu.
+    props.onLeave();
+  }, [props]);
 
   const requestStart = useCallback(() => {
     if (!canStart || startRequestedRef.current) return;
@@ -538,13 +531,36 @@ export function LobbyScreen(props: LobbyScreenProps) {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  // Gradient starts near the top and becomes fully opaque well before the
-  // $600 row — categories + $200 visible, $400 half-visible, rest hidden.
-  const gradientLocations: [number, number] = [0.15, 0.52];
+  // Gradient starts near the very top and is fully opaque before the $400
+  // row — categories visible through gradient, $400+ hidden.
+  const gradientLocations: [number, number] = [0.05, 0.42];
+
+  // Chevron icons — appear as the user drags left or right, matching the
+  // JoinGameScreen pattern: pageX drives opacity/offset but the page stays put.
+  const leftChevronOpacity = pageX.interpolate({
+    inputRange: [-EXIT_COMMIT_DISTANCE, -20, 0],
+    outputRange: [1, 0.4, 0],
+    extrapolate: 'clamp',
+  });
+  const leftChevronTranslateX = pageX.interpolate({
+    inputRange: [-EXIT_COMMIT_DISTANCE, 0],
+    outputRange: [0, -68],
+    extrapolate: 'clamp',
+  });
+  const rightChevronOpacity = pageX.interpolate({
+    inputRange: [0, 20, EXIT_COMMIT_DISTANCE],
+    outputRange: [0, 0.4, 1],
+    extrapolate: 'clamp',
+  });
+  const rightChevronTranslateX = pageX.interpolate({
+    inputRange: [0, EXIT_COMMIT_DISTANCE],
+    outputRange: [68, 0],
+    extrapolate: 'clamp',
+  });
 
   return (
     <View style={styles.root} {...lobbyPanResponder.panHandlers}>
-      <Animated.View style={[styles.page, { transform: [{ translateX: pageX }] }]}>
+      <Animated.View style={styles.page}>
 
         {/* 1. Game board as non-interactive backdrop */}
         <View style={styles.boardBackdrop} pointerEvents="none">
@@ -622,7 +638,9 @@ export function LobbyScreen(props: LobbyScreenProps) {
           {/* Bottom section: lobby code above, player bugs at the very bottom */}
           <View style={styles.bottomSection}>
             <View style={styles.codeBlock}>
-              <Text style={styles.codeLabel}>LOBBY CODE</Text>
+              <Text style={styles.codeLabel} allowFontScaling={false}>
+                {'SHARE ' + (props.sessionMode ?? 'ONLINE').toUpperCase() + ' LOBBY CODE\nWITH YOUR FRIEND'}
+              </Text>
               {props.roomCode > 0 ? (
                 <Text style={styles.codeValue}>{props.roomCode}</Text>
               ) : (
@@ -822,6 +840,36 @@ export function LobbyScreen(props: LobbyScreenProps) {
           <NumberKeyboard dark onInsert={insertGameIdDigit} onBackspace={backspaceGameId} />
         </KeyboardSheet>
 
+        {/* Left exit chevron — appears when dragging left */}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.exitIcon,
+            styles.exitIconLeft,
+            { opacity: leftChevronOpacity, transform: [{ translateX: leftChevronTranslateX }] },
+          ]}
+        >
+          <View style={[styles.chevron, styles.chevronFlipped]}>
+            <View style={[styles.chevronStroke, styles.chevronTop]} />
+            <View style={[styles.chevronStroke, styles.chevronBottom]} />
+          </View>
+        </Animated.View>
+
+        {/* Right exit chevron — appears when dragging right */}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.exitIcon,
+            styles.exitIconRight,
+            { opacity: rightChevronOpacity, transform: [{ translateX: rightChevronTranslateX }] },
+          ]}
+        >
+          <View style={styles.chevron}>
+            <View style={[styles.chevronStroke, styles.chevronTop]} />
+            <View style={[styles.chevronStroke, styles.chevronBottom]} />
+          </View>
+        </Animated.View>
+
       </Animated.View>
     </View>
   );
@@ -877,17 +925,19 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   codeLabel: {
-    fontFamily: typeTokens.ui700,
-    fontSize: 11,
-    letterSpacing: 2.2,
-    color: '#666',
-    marginBottom: 0,
+    fontFamily: typeTokens.board,
+    fontSize: 14,
+    color: colors.categoryText,
+    opacity: 0.75,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 4,
   },
   codeValue: {
     fontFamily: typeTokens.board,
-    fontSize: 52,
+    fontSize: 47,
     color: colors.gold,
-    lineHeight: 60,
+    lineHeight: 54,
     textShadowColor: 'rgba(229,178,13,0.15)',
     textShadowOffset: { width: 0, height: 3 },
     textShadowRadius: 10,
@@ -1088,5 +1138,41 @@ const styles = StyleSheet.create({
     color: colors.categoryText,
     textAlign: 'center',
     transform: [{ scaleX: 0.85 }],
+  },
+  // ── Exit chevron icons (JoinGameScreen pattern) ─────────────────────────
+  exitIcon: {
+    position: 'absolute',
+    top: '45%',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.cellRecessed,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exitIconLeft: { left: 8 },
+  exitIconRight: { right: 8 },
+  chevron: {
+    width: 24,
+    height: 24,
+  },
+  chevronFlipped: {
+    transform: [{ scaleX: -1 }],
+  },
+  chevronStroke: {
+    position: 'absolute',
+    left: 4,
+    width: 14,
+    height: 3.5,
+    borderRadius: 2,
+    backgroundColor: '#FFFFFF',
+  },
+  chevronTop: {
+    top: 5.25,
+    transform: [{ rotate: '-45deg' }],
+  },
+  chevronBottom: {
+    top: 15.25,
+    transform: [{ rotate: '45deg' }],
   },
 });
