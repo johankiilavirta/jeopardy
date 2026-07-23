@@ -260,7 +260,9 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const leavingRef = useRef(false);
   const startRequestedRef = useRef(false);
 
-  const settingsY = useRef(new Animated.Value(1200)).current;
+  // Settings: phase-1 = gradient grows from bottom; phase-2 = content fades in.
+  const gradientH = useRef(new Animated.Value(0)).current;
+  const settingsContentOpacity = useRef(new Animated.Value(0)).current;
   const settingsDragYRef = useRef(0);
   const settingsScrollOffsetRef = useRef(0);
   const settingsClosingRef = useRef(false);
@@ -477,30 +479,51 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const openSettings = useCallback(() => {
     sheet.close();
     settingsClosingRef.current = false;
-    settingsY.setValue(height);
+    gradientH.setValue(0);
+    settingsContentOpacity.setValue(0);
     setShowAdvanced(true);
-    Animated.spring(settingsY, {
-      toValue: 0,
-      speed: 13,
-      bounciness: 2,
-      useNativeDriver: true,
-    }).start();
-  }, [settingsY, height, sheet]);
+    // Phase 1: gradient grows from bottom to cover full screen.
+    Animated.timing(gradientH, {
+      toValue: height,
+      duration: 380,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start(({ finished }) => {
+      if (!finished) return;
+      // Phase 2: settings content fades in.
+      Animated.timing(settingsContentOpacity, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    });
+  }, [gradientH, settingsContentOpacity, height, sheet]);
 
   const closeSettings = useCallback(() => {
     if (settingsClosingRef.current) return;
     settingsClosingRef.current = true;
     sheet.close();
-    Animated.timing(settingsY, {
-      toValue: height,
-      duration: 280,
-      easing: Easing.inOut(Easing.ease),
+    // Phase 1: fade out content.
+    Animated.timing(settingsContentOpacity, {
+      toValue: 0,
+      duration: 140,
+      easing: Easing.in(Easing.ease),
       useNativeDriver: true,
     }).start(({ finished }) => {
-      if (finished) setShowAdvanced(false);
-      else settingsClosingRef.current = false;
+      if (!finished) return;
+      // Phase 2: gradient shrinks back down.
+      Animated.timing(gradientH, {
+        toValue: 0,
+        duration: 300,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: false,
+      }).start(({ finished: f }) => {
+        if (f) setShowAdvanced(false);
+        else settingsClosingRef.current = false;
+      });
     });
-  }, [settingsY, height, sheet]);
+  }, [gradientH, settingsContentOpacity, sheet]);
 
   const leaveLobby = useCallback((_direction: -1 | 1) => {
     if (leavingRef.current) return;
@@ -713,63 +736,49 @@ export function LobbyScreen(props: LobbyScreenProps) {
             </View>
           </View>
 
-          {/* Settings bottom sheet */}
+          {/* Settings panel — phase 1: gradient grows from bottom; phase 2: content fades in */}
           {props.isHost && showAdvanced && (() => {
             const settingsPanResponder = PanResponder.create({
               onMoveShouldSetPanResponder: (_e, gesture) =>
-                gesture.dy > 8 &&
+                gesture.dy > 10 &&
                 Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.5 &&
                 settingsScrollOffsetRef.current <= 0,
               onPanResponderGrant: () => { settingsDragYRef.current = 0; },
               onPanResponderMove: (_e, gesture) => {
-                const dy = Math.max(0, gesture.dy);
-                settingsDragYRef.current = dy;
-                settingsY.setValue(dy);
+                settingsDragYRef.current = Math.max(0, gesture.dy);
               },
               onPanResponderRelease: (_e, gesture) => {
-                const committed =
-                  settingsDragYRef.current > height * 0.28 || gesture.vy > 0.7;
+                const committed = settingsDragYRef.current > 60 || gesture.vy > 0.7;
                 settingsDragYRef.current = 0;
-                if (committed) {
-                  closeSettings();
-                } else {
-                  Animated.spring(settingsY, {
-                    toValue: 0,
-                    speed: 18,
-                    bounciness: 2,
-                    useNativeDriver: true,
-                  }).start();
-                }
+                if (committed) closeSettings();
               },
-              onPanResponderTerminate: () => {
-                settingsDragYRef.current = 0;
-                Animated.spring(settingsY, {
-                  toValue: 0,
-                  speed: 18,
-                  bounciness: 2,
-                  useNativeDriver: true,
-                }).start();
-              },
+              onPanResponderTerminate: () => { settingsDragYRef.current = 0; },
             });
             return (
-              <Animated.View
-                style={[
-                  StyleSheet.absoluteFill,
-                  styles.settingsSheet,
-                  { transform: [{ translateY: settingsY }] },
-                ]}
-                {...settingsPanResponder.panHandlers}
-              >
-                {/* Gradient leading edge — fades from transparent as sheet sweeps up */}
-                <LinearGradient
-                  colors={['transparent', colors.bg]}
-                  style={styles.settingsSheetEdge}
+              <View style={StyleSheet.absoluteFill} {...settingsPanResponder.panHandlers}>
+                {/* Phase 1: dark gradient grows upward from the very bottom */}
+                <Animated.View
                   pointerEvents="none"
-                />
-                {/* Drag handle */}
-                <Pressable style={styles.settingsDragHandle} onPress={closeSettings}>
-                  <View style={styles.settingsDragPill} />
-                </Pressable>
+                  style={[styles.settingsGradientWrap, { height: gradientH }]}
+                >
+                  {/* Soft fade at the leading (top) edge */}
+                  <LinearGradient
+                    colors={['transparent', colors.bg]}
+                    style={styles.settingsGradientEdge}
+                    pointerEvents="none"
+                  />
+                  {/* Solid fill behind the fade so the screen is fully covered */}
+                  <View style={styles.settingsGradientSolid} />
+                </Animated.View>
+
+                {/* Phase 2: content fades in once gradient covers screen */}
+                <Animated.View
+                  style={[StyleSheet.absoluteFill, { opacity: settingsContentOpacity }]}
+                >
+                  {/* Drag handle / tap to close */}
+                  <Pressable style={styles.settingsDragHandle} onPress={closeSettings}>
+                    <View style={styles.settingsDragPill} />
+                  </Pressable>
 
                 <ScrollView
                   ref={setupScrollRef}
@@ -929,7 +938,8 @@ export function LobbyScreen(props: LobbyScreenProps) {
                     )}
                   </View>
                 </ScrollView>
-              </Animated.View>
+                </Animated.View>
+              </View>
             );
           })()}
 
@@ -1046,17 +1056,32 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 3 },
     textShadowRadius: 10,
   },
-  // ── Settings bottom sheet ───────────────────────────────────────────────
-  settingsSheet: {
-    backgroundColor: colors.bg,
+  // ── Settings panel ──────────────────────────────────────────────────────
+  // Phase 1: gradient grows from the bottom of the screen upward.
+  settingsGradientWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
-  settingsSheetEdge: {
+  // Soft fade at the top leading edge as the gradient sweeps upward.
+  settingsGradientEdge: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: 80,
+    height: 72,
   },
+  // Solid fill that sits below the fade, ensuring full coverage.
+  settingsGradientSolid: {
+    position: 'absolute',
+    top: 72,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.bg,
+  },
+  // Phase 2: content layer (opacity animated after gradient finishes).
   settingsDragHandle: {
     alignItems: 'center',
     paddingTop: 14,
