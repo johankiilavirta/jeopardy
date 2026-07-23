@@ -14,7 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { relayUrls } from '../../app/relayUrl';
 import { DEFAULT_RELAY_HOST } from '../../app/relayDefaults';
 import { sanitizeText } from '../../src/sanitizeText';
-import { loadGameInfo, type GameInfo } from '../../data/gameLoader';
+import { loadGameInfo, loadGameIndex, type GameInfo } from '../../data/gameLoader';
 import type { SessionMode } from '../../app/sessionProvider';
 import { KeyboardSheet, useKeyboardSheet } from '../components/KeyboardSheet';
 import { NumberKeyboard } from '../components/NumberKeyboard';
@@ -344,13 +344,37 @@ export function LobbyScreen(props: LobbyScreenProps) {
 
   // ── Game info loading ─────────────────────────────────────────────────────
 
+  // Stable random game number ≥ 7500 used when no specific game is chosen.
+  // Picked once on mount so the board doesn't re-randomise on every render.
+  const fallbackGameId = useRef<number>(0);
+  if (fallbackGameId.current === 0) {
+    const index = loadGameIndex();
+    const min = 7500;
+    const max = index.totalGames;
+    fallbackGameId.current = min + Math.floor(Math.random() * (max - min + 1));
+  }
+
   useEffect(() => {
     const id = props.gameId;
-    if (!id || !/^\d+$/.test(id) || Number(id) < 1) {
-      setRound1Categories(null);
-      setRound2Categories(null);
-      setAirDate(null);
-      setSeasonNumber(null);
+    // When no specific game is set, use the fallback random id for the board backdrop.
+    const resolvedId = (!id || !/^\d+$/.test(id) || Number(id) < 1)
+      ? String(fallbackGameId.current)
+      : id;
+
+    if (resolvedId !== id) {
+      // Random/blank game — load locally for backdrop display only, no status feedback
+      const info = loadGameInfo(Number(resolvedId));
+      if (info) {
+        setRound1Categories(info.round1 ?? null);
+        setRound2Categories(info.round2 ?? null);
+        setAirDate(info.airDate ?? null);
+        setSeasonNumber(info.season ?? null);
+      } else {
+        setRound1Categories(null);
+        setRound2Categories(null);
+        setAirDate(null);
+        setSeasonNumber(null);
+      }
       setGameInfoStatus('idle');
       return;
     }
@@ -979,8 +1003,8 @@ export function LobbyScreen(props: LobbyScreenProps) {
                                 <Text style={styles.label}>
                                   {'JEOPARDY!' + (round1Categories.some(c => c.clueCount < 5) ? ' *' : '')}
                                 </Text>
-                                {round1Categories.map(({ name, clueCount }) => (
-                                  <View key={name} style={styles.categoryRow}>
+                                {round1Categories.map(({ name, clueCount }, i) => (
+                                  <View key={i} style={styles.categoryRow}>
                                     <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
                                     {clueCount < 5 && <Text style={styles.clueCount}>{clueCount}/5</Text>}
                                   </View>
@@ -992,8 +1016,8 @@ export function LobbyScreen(props: LobbyScreenProps) {
                                   <Text style={styles.label}>
                                     {'DOUBLE!' + (round2Categories.some(c => c.clueCount < 5) ? ' *' : '')}
                                   </Text>
-                                  {round2Categories.map(({ name, clueCount }) => (
-                                    <View key={name} style={styles.categoryRow}>
+                                  {round2Categories.map(({ name, clueCount }, i) => (
+                                    <View key={i} style={styles.categoryRow}>
                                       <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
                                       {clueCount < 5 && <Text style={styles.clueCount}>{clueCount}/5</Text>}
                                     </View>
