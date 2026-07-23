@@ -24,22 +24,25 @@ import { compareAuthority, createLeaderId, createRoomId, normalizeEpoch, normali
 import { DemoHarness } from './ui/demo/DemoHarness';
 import { NetworkedGame } from './ui/networked/NetworkedGame';
 import { MainMenuScreen } from './ui/screens/MainMenuScreen';
+import type { CellRect } from './ui/components/BoardCell';
 import { JoinGameScreen } from './ui/screens/JoinGameScreen';
-import { NewGameScreen } from './ui/screens/NewGameScreen';
 import { LobbyScreen, type LobbyPlayer } from './ui/screens/LobbyScreen';
 import { ReconnectingScreen } from './ui/screens/ReconnectingScreen';
 import {
   clearSession,
   clearSnapshot,
   loadPlayerName,
+  loadPreferredConnectionMode,
   loadSession,
   loadSnapshot,
   savePlayerName,
+  savePreferredConnectionMode,
   saveSession,
   saveSnapshotBoard,
   saveSnapshotState,
   type SavedSession,
   type SavedSnapshot,
+  type PreferredConnectionMode,
 } from './app/sessionStore';
 import { computeWinnerNames, loadMatchHistory, recordMatch, type MatchResult } from './app/matchHistory';
 import { SettingsScreen } from './ui/screens/SettingsScreen';
@@ -113,8 +116,7 @@ const PERSISTENCE_ENABLED = DEV_ROOM == null;
 
 type AppScreen =
   | { type: 'menu' }
-  | { type: 'new' }
-  | { type: 'join' }
+  | { type: 'join'; sourceRect: CellRect | null }
   | { type: 'lobby'; roomCode: number; isHost: boolean }
   | { type: 'game'; serverPeerId: string; roomCode: number; isResume?: boolean }
   | { type: 'reconnecting'; roomCode: number }
@@ -201,6 +203,7 @@ export default function App() {
 
   const [screen, setScreen] = useState<AppScreen>(() => (UI_LAB ? { type: 'demo' } : { type: 'menu' }));
   const [playerName, setPlayerName] = useState('');
+  const [connectionMode, setConnectionMode] = useState<PreferredConnectionMode>('online');
   const [relayHost, setRelayHost] = useState(relayHostFromConfig);
   const [relayPort, setRelayPort] = useState('8787');
   const [gameId, setGameId] = useState('');
@@ -209,11 +212,13 @@ export default function App() {
   const [lobbyPlayers, setLobbyPlayers] = useState<LobbyPlayer[]>([]);
   const [lobbyError, setLobbyError] = useState<string | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [joinSearching, setJoinSearching] = useState(false);
   const [initialGameState, setInitialGameState] = useState<{ state: GameState; playerId: string | null; canUndo?: boolean; canRedo?: boolean } | null>(null);
   const [boardData, setBoardData] = useState<GameData | null>(null);
   const [peerConnectionStatus, setPeerConnectionStatus] = useState<PeerConnectionStatus>('connected');
   const [localRecovery, setLocalRecovery] = useState<LocalRecoveryState>('none');
   const transportRef = useRef<SessionProvider | null>(null);
+  const joinAttemptRef = useRef(0);
   const myPeerIdRef = useRef<string | null>(null);
   const devAutoStartedRef = useRef(false);
 
@@ -583,8 +588,11 @@ export default function App() {
       authority?: SessionAuthority;
       candidate?: boolean;
       keepGameMounted?: boolean;
+      timeoutMs?: number;
+      isCancelled?: () => boolean;
     } = {},
   ) => {
+    const isCancelled = () => options.isCancelled?.() ?? false;
     cancelReconnect();
     const keepGameMounted = !!options.keepGameMounted && action === 'create' && isLocalSessionMode(mode) && screenRef.current.type === 'game';
     if (keepGameMounted) {
@@ -650,6 +658,7 @@ export default function App() {
     };
 
     transport.onError((err) => {
+      if (isCancelled()) return;
       if (abandonKeptMountedRecovery(err)) return;
       // Mid-game socket loss is handled by the rejoin loop, not an error label.
       if (screenRef.current.type === 'game') {
@@ -657,6 +666,7 @@ export default function App() {
         return;
       }
       if (action !== 'create') {
+        setJoinSearching(false);
         setJoinError(err);
       } else {
         setLobbyError(err);
@@ -669,21 +679,24 @@ export default function App() {
       if (!isLocalSessionMode(mode)) setPeerConnectionStatus('connected');
     });
 
-    // Time out if we don't get a welcome within 7 seconds
+    // For joins, a peer id only means the transport started. Wait for the
+    // room response itself so the eight-second "Not Found" state is honest.
+    let roomSettled = false;
     const timeout = setTimeout(() => {
-      if (!myPeerIdRef.current) {
-        const err = connectionTimeoutMessage(mode);
-        if (abandonKeptMountedRecovery(err)) return;
-        if (action !== 'create') {
-          setJoinError(err);
-        } else {
-          setLobbyError(err);
-        }
-        transport.stop();
+      if (isCancelled() || roomSettled) return;
+      const err = connectionTimeoutMessage(mode);
+      if (abandonKeptMountedRecovery(err)) return;
+      if (action !== 'create') {
+        setJoinSearching(false);
+        setJoinError(err);
+      } else {
+        setLobbyError(err);
       }
-    }, CONNECTION_TIMEOUT_MS);
+      transport.stop();
+    }, options.timeoutMs ?? CONNECTION_TIMEOUT_MS);
 
     transport.onControlMessage((msg) => {
+      if (isCancelled()) return;
       switch (msg.type) {
         case 'host-liveness':
         case 'guest-liveness':
@@ -697,6 +710,8 @@ export default function App() {
           }
           break;
         case 'room-created':
+          roomSettled = true;
+          clearTimeout(timeout);
           roomCode = msg.roomCode as number;
           roomAuthority = authorityFromMessage(msg) ?? roomAuthority;
           if (!keepGameMounted) {
@@ -717,12 +732,15 @@ export default function App() {
           }
           break;
         case 'lobby-update':
+          roomSettled = true;
+          clearTimeout(timeout);
           roomAuthority = authorityFromMessage(msg) ?? roomAuthority;
           setLobbyPlayers(msg.players as LobbyPlayer[]);
           setLobbyError(null);
           // If we were on the join screen, now navigate to lobby
           if (action !== 'create') {
             const roomCode = typeof action === 'object' ? action.join : 0;
+            setJoinSearching(false);
             setScreen({ type: 'lobby', roomCode, isHost: false });
           }
           break;
@@ -824,8 +842,11 @@ export default function App() {
           break;
         }
         case 'room-error':
+          roomSettled = true;
+          clearTimeout(timeout);
           if (abandonKeptMountedRecovery(msg.message as string)) return;
           if (action !== 'create') {
+            setJoinSearching(false);
             setJoinError(msg.message as string);
           } else {
             setLobbyError(msg.message as string);
@@ -835,7 +856,11 @@ export default function App() {
     });
 
     transport.ready.then((peerId) => {
-      clearTimeout(timeout);
+      if (isCancelled()) {
+        transport.stop();
+        return;
+      }
+      if (action === 'create') clearTimeout(timeout);
       myPeerIdRef.current = peerId;
       if (action === 'create') {
         transport.createRoom(
@@ -848,10 +873,14 @@ export default function App() {
         transport.joinRoom(action.join, effectivePlayerName, roomAuthority ?? undefined);
       }
     }).catch((error: unknown) => {
+      if (isCancelled()) return;
       const message = error instanceof Error ? error.message : 'Could not start session';
       if (abandonKeptMountedRecovery(message)) return;
       if (action === 'create') setLobbyError(message);
-      else setJoinError(message);
+      else {
+        setJoinSearching(false);
+        setJoinError(message);
+      }
     });
   }, [relayHost, relayPort, playerName, disconnect, cancelReconnect, refreshResumeAvailable, handleStateUpdate, handleSocketLost, handlePeerDisconnected]);
 
@@ -974,10 +1003,9 @@ export default function App() {
     if (next && screenRef.current.type === 'lobby') setScreen(next);
   }, []);
 
-  const handleNewGame = useCallback(() => setScreen({ type: 'new' }), []);
-  const handleBluetoothNewGame = useCallback(() => connectAndDo('create', undefined, 'bluetooth'), [connectAndDo]);
-  const handleNearbyNewGame = useCallback(() => connectAndDo('create', undefined, 'nearby'), [connectAndDo]);
-  const handleOnlineNewGame = useCallback(() => connectAndDo('create'), [connectAndDo]);
+  const handleNewGame = useCallback(() => {
+    connectAndDo('create', undefined, connectionMode);
+  }, [connectAndDo, connectionMode]);
 
   /** RESUME GAME: host a fresh room seeded with the snapshot on this device. */
   const handleResumeGame = useCallback(() => {
@@ -996,28 +1024,49 @@ export default function App() {
     if (PERSISTENCE_ENABLED) void savePlayerName(name);
   }, []);
 
-  const handleJoinNav = useCallback(() => {
+  const handleJoinNav = useCallback((sourceRect?: CellRect) => {
     setLobbyError(null);
     setJoinError(null);
-    setScreen({ type: 'join' });
+    setJoinSearching(false);
+    setScreen({ type: 'join', sourceRect: sourceRect ?? null });
+  }, []);
+
+  const cancelJoinAttempt = useCallback(() => {
+    joinAttemptRef.current += 1;
+    if (screenRef.current.type === 'join') {
+      transportRef.current?.stop();
+      transportRef.current = null;
+      myPeerIdRef.current = null;
+    }
+    setJoinSearching(false);
+    setJoinError(null);
   }, []);
 
   const handleJoinSubmit = useCallback((code: number) => {
-    const mode = connectionModeForRoomCode(code);
-    if (mode === 'online') {
-      connectAndDo({ join: code });
+    const roomMode = connectionModeForRoomCode(code);
+    if (!roomMode || roomMode === 'nearby') {
+      setJoinSearching(false);
+      setJoinError('Enter a Bluetooth or online room code');
       return;
     }
-    if (mode === 'bluetooth') {
-      connectAndDo({ join: code }, undefined, 'bluetooth');
+    if (roomMode !== connectionMode) {
+      setJoinSearching(false);
+      setJoinError(`This is a ${roomMode.toUpperCase()} room. Change Connection in Settings to join it.`);
       return;
     }
-    if (mode === 'nearby') {
-      connectAndDo({ join: code }, undefined, 'nearby');
-      return;
-    }
-    setJoinError('Enter a room code from 100 to 999');
-  }, [connectAndDo]);
+    const attempt = joinAttemptRef.current + 1;
+    joinAttemptRef.current = attempt;
+    setJoinError(null);
+    setJoinSearching(true);
+    connectAndDo({ join: code }, undefined, connectionMode, {
+      timeoutMs: 8000,
+      isCancelled: () => joinAttemptRef.current !== attempt,
+    });
+  }, [connectAndDo, connectionMode]);
+  const handleConnectionModeChange = useCallback((mode: PreferredConnectionMode) => {
+    setConnectionMode(mode);
+    if (PERSISTENCE_ENABLED) void savePreferredConnectionMode(mode);
+  }, []);
   const handleSettings = useCallback(() => setScreen({ type: 'settings' }), []);
 
   /** Deliberately walk away from the current room (also cancels a pending
@@ -1053,17 +1102,17 @@ export default function App() {
   const handleOverlayNewGame = useCallback(() => {
     cancelReconnect();
     disconnect();
-    setScreen({ type: 'new' });
-  }, [cancelReconnect, disconnect]);
+    connectAndDo('create', undefined, connectionMode);
+  }, [cancelReconnect, connectAndDo, connectionMode, disconnect]);
 
-  const handleOverlayJoinGame = useCallback(() => {
+  const handleOverlayJoinGame = useCallback((sourceRect?: CellRect) => {
     cancelReconnect();
     disconnect();
     sessionRef.current = null;
     pendingResumeRef.current = null;
     if (PERSISTENCE_ENABLED) void clearSession();
     setJoinError(null);
-    setScreen({ type: 'join' });
+    setScreen({ type: 'join', sourceRect: sourceRect ?? null });
   }, [cancelReconnect, disconnect]);
 
   // On launch: restore the saved player name, offer RESUME GAME if an
@@ -1073,10 +1122,11 @@ export default function App() {
     if (!PERSISTENCE_ENABLED || UI_LAB) return;
     let stale = false;
     void (async () => {
-      const [name, session, snapshot] = await Promise.all([
+      const [name, session, snapshot, preferredMode] = await Promise.all([
         loadPlayerName(),
         loadSession(),
         loadSnapshot(),
+        loadPreferredConnectionMode(),
       ]);
       if (stale) return;
       if (name) {
@@ -1087,6 +1137,7 @@ export default function App() {
         void savePlayerName(fallbackName);
       }
       setResumeAvailable(!!snapshot);
+      if (preferredMode) setConnectionMode(preferredMode);
       // Relaunch: our snapshot is stale, so join-first rather than
       // insta-promoting a candidate that could clobber the live game.
       if (session) startReconnectRef.current(session, { promoteDelayMs: RETURNING_GUEST_PROMOTE_MS });
@@ -1129,15 +1180,6 @@ export default function App() {
             onResumeGame={resumeAvailable ? handleResumeGame : undefined}
           />
         );
-      case 'new':
-        return (
-          <NewGameScreen
-            onBluetooth={handleBluetoothNewGame}
-            onNearby={handleNearbyNewGame}
-            onOnline={handleOnlineNewGame}
-            onBack={() => setScreen({ type: 'menu' })}
-          />
-        );
       case 'reconnecting':
         return (
           <ReconnectingScreen
@@ -1147,11 +1189,31 @@ export default function App() {
         );
       case 'join':
         return (
-          <JoinGameScreen
-            onSubmit={handleJoinSubmit}
-            onBack={() => setScreen({ type: 'menu' })}
-            error={joinError}
-          />
+          <View style={styles.screenStack}>
+            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+              <MainMenuScreen
+                onNewGame={handleNewGame}
+                onJoinGame={handleJoinNav}
+                onSettings={handleSettings}
+                onHistory={() => setScreen({ type: 'history' })}
+                onResumeGame={resumeAvailable ? handleResumeGame : undefined}
+              />
+            </View>
+            <View style={StyleSheet.absoluteFill}>
+              <JoinGameScreen
+                sourceRect={screen.sourceRect}
+                onSubmit={handleJoinSubmit}
+                onCodeChange={cancelJoinAttempt}
+                onBack={() => {
+                  cancelJoinAttempt();
+                  setScreen({ type: 'menu' });
+                }}
+                error={joinError}
+                searching={joinSearching}
+                connectionMode={connectionMode}
+              />
+            </View>
+          </View>
         );
       case 'lobby':
         return (
@@ -1225,6 +1287,8 @@ export default function App() {
             onRelayHostChange={setRelayHost}
             relayPort={relayPort}
             onRelayPortChange={setRelayPort}
+            connectionMode={connectionMode}
+            onConnectionModeChange={handleConnectionModeChange}
             onBack={() => setScreen({ type: 'menu' })}
           />
         );
@@ -1257,6 +1321,10 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
+  screenStack: {
     flex: 1,
     backgroundColor: colors.bg,
   },
