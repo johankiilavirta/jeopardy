@@ -257,11 +257,17 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const startRequestedRef = useRef(false);
 
   // Settings: phase-1 = gradient grows from bottom; phase-2 = content fades in.
+  const categoriesVisible = useRef(new Animated.Value(0)).current;
   const gradientH = useRef(new Animated.Value(0)).current;
   const settingsContentOpacity = useRef(new Animated.Value(0)).current;
+  const settingsDragX = useRef(new Animated.Value(0)).current;
+  const settingsDragY = useRef(new Animated.Value(0)).current;
   const settingsDragYRef = useRef(0);
+  const settingsAxisRef = useRef<'horizontal' | 'vertical' | null>(null);
   const settingsScrollOffsetRef = useRef(0);
   const settingsClosingRef = useRef(false);
+  const [settingsContentH, setSettingsContentH] = useState(0);
+  const [settingsScrollH, setSettingsScrollH] = useState(0);
 
   // ── Keyboard sheet for game # entry ──────────────────────────────────────
 
@@ -389,10 +395,8 @@ export function LobbyScreen(props: LobbyScreenProps) {
 
   // ── Board backdrop ────────────────────────────────────────────────────────
 
-  const lobbyBoard = useMemo((): BoardDefinition => {
-    if (!round1Categories || round1Categories.length === 0) {
-      return demoBoard;
-    }
+  const realBoard = useMemo((): BoardDefinition | null => {
+    if (!round1Categories || round1Categories.length === 0) return null;
     const count = Math.min(round1Categories.length, props.visibleCategories ?? 6);
     return {
       categories: round1Categories.slice(0, count).map((cat, col) => {
@@ -409,6 +413,23 @@ export function LobbyScreen(props: LobbyScreenProps) {
       }),
     };
   }, [round1Categories, props.visibleCategories]);
+
+  // lobbyBoard is used by the overlay and column-count logic; falls back to demoBoard.
+  const lobbyBoard = realBoard ?? demoBoard;
+
+  // Fade real board in when categories load, reset when they clear.
+  useEffect(() => {
+    if (!realBoard) {
+      categoriesVisible.setValue(0);
+      return;
+    }
+    Animated.timing(categoriesVisible, {
+      toValue: 1,
+      duration: 350,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+  }, [realBoard, categoriesVisible]);
 
   // ── R1/R2 category toggle ─────────────────────────────────────────────────
   // Tapping a category header fades in the Double Jeopardy category name.
@@ -635,11 +656,18 @@ export function LobbyScreen(props: LobbyScreenProps) {
 
         {/* 1. Game board as non-interactive backdrop */}
         <View style={styles.boardBackdrop} pointerEvents="none">
+          {/* Blank board (no category names) always visible as base layer */}
           <Board
-            board={lobbyBoard}
+            board={{ categories: demoBoard.categories.map(c => ({ ...c, name: '' })) }}
             burnedClueIds={EMPTY_BURNED}
             locked={true}
           />
+          {/* Real categories fade in on top once loaded */}
+          {realBoard && (
+            <Animated.View style={[StyleSheet.absoluteFill, { opacity: categoriesVisible }]}>
+              <Board board={realBoard} burnedClueIds={EMPTY_BURNED} locked={true} />
+            </Animated.View>
+          )}
         </View>
 
         {/* 1b. Clickable category-toggle overlay (positioned over the board's category header row) */}
@@ -734,22 +762,67 @@ export function LobbyScreen(props: LobbyScreenProps) {
 
           {/* Settings panel — phase 1: gradient grows from bottom; phase 2: content fades in */}
           {props.isHost && showAdvanced && (() => {
+            const SETTINGS_COMMIT = 60;
             const settingsPanResponder = PanResponder.create({
-              onMoveShouldSetPanResponder: (_e, gesture) =>
-                gesture.dy > 10 &&
-                Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.5 &&
-                settingsScrollOffsetRef.current <= 0,
-              onPanResponderGrant: () => { settingsDragYRef.current = 0; },
+              onMoveShouldSetPanResponder: (_e, gesture) => {
+                const isDown =
+                  gesture.dy > 10 &&
+                  Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.5 &&
+                  settingsScrollOffsetRef.current <= 0;
+                const isHorizontal =
+                  Math.abs(gesture.dx) > 10 &&
+                  Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5;
+                return isDown || isHorizontal;
+              },
+              onPanResponderGrant: () => {
+                settingsAxisRef.current = null;
+                settingsDragYRef.current = 0;
+                settingsDragX.setValue(0);
+                settingsDragY.setValue(0);
+              },
               onPanResponderMove: (_e, gesture) => {
-                settingsDragYRef.current = Math.max(0, gesture.dy);
+                if (!settingsAxisRef.current) {
+                  if (Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5) {
+                    settingsAxisRef.current = 'horizontal';
+                  } else if (gesture.dy > 0) {
+                    settingsAxisRef.current = 'vertical';
+                  }
+                }
+                if (settingsAxisRef.current === 'horizontal') {
+                  settingsDragX.setValue(gesture.dx);
+                } else if (settingsAxisRef.current === 'vertical') {
+                  settingsDragYRef.current = Math.max(0, gesture.dy);
+                  settingsDragY.setValue(Math.max(0, gesture.dy));
+                }
               },
               onPanResponderRelease: (_e, gesture) => {
-                const committed = settingsDragYRef.current > 60 || gesture.vy > 0.7;
+                const committed =
+                  (settingsAxisRef.current === 'horizontal' && (Math.abs(gesture.dx) > SETTINGS_COMMIT || Math.abs(gesture.vx) > 0.7)) ||
+                  (settingsAxisRef.current === 'vertical' && (gesture.dy > SETTINGS_COMMIT || gesture.vy > 0.7));
+                settingsAxisRef.current = null;
                 settingsDragYRef.current = 0;
+                settingsDragX.setValue(0);
+                settingsDragY.setValue(0);
                 if (committed) closeSettings();
               },
-              onPanResponderTerminate: () => { settingsDragYRef.current = 0; },
+              onPanResponderTerminate: () => {
+                settingsAxisRef.current = null;
+                settingsDragYRef.current = 0;
+                settingsDragX.setValue(0);
+                settingsDragY.setValue(0);
+              },
             });
+
+            // Chevron interpolations — mirror lobby pattern exactly.
+            // Drag LEFT  → right-side ">" chevron slides in from the right
+            const settingsLeftDragChevOpacity = settingsDragX.interpolate({ inputRange: [-SETTINGS_COMMIT, -20, 0], outputRange: [1, 0.4, 0], extrapolate: 'clamp' });
+            const settingsLeftDragChevTransX = settingsDragX.interpolate({ inputRange: [-SETTINGS_COMMIT, 0], outputRange: [0, 68], extrapolate: 'clamp' });
+            // Drag RIGHT → left-side  "<" chevron slides in from the left
+            const settingsRightDragChevOpacity = settingsDragX.interpolate({ inputRange: [0, 20, SETTINGS_COMMIT], outputRange: [0, 0.4, 1], extrapolate: 'clamp' });
+            const settingsRightDragChevTransX = settingsDragX.interpolate({ inputRange: [0, SETTINGS_COMMIT], outputRange: [-68, 0], extrapolate: 'clamp' });
+            // Drag DOWN  → bottom-centre "v" chevron slides up into position
+            const settingsDownChevOpacity = settingsDragY.interpolate({ inputRange: [0, 20, SETTINGS_COMMIT], outputRange: [0, 0.4, 1], extrapolate: 'clamp' });
+            const settingsDownChevTransY = settingsDragY.interpolate({ inputRange: [0, SETTINGS_COMMIT], outputRange: [68, 0], extrapolate: 'clamp' });
             return (
               <View style={StyleSheet.absoluteFill} {...settingsPanResponder.panHandlers}>
                 {/* Phase 1: dark gradient grows upward from the very bottom */}
@@ -776,6 +849,28 @@ export function LobbyScreen(props: LobbyScreenProps) {
                     <View style={styles.settingsDragPill} />
                   </Pressable>
 
+                {/* Drag-left → right-side ">" chevron */}
+                <Animated.View pointerEvents="none" style={[styles.exitIcon, styles.exitIconRight, { opacity: settingsLeftDragChevOpacity, transform: [{ translateX: settingsLeftDragChevTransX }] }]}>
+                  <View style={styles.chevron}>
+                    <View style={[styles.chevronStroke, styles.chevronTop]} />
+                    <View style={[styles.chevronStroke, styles.chevronBottom]} />
+                  </View>
+                </Animated.View>
+                {/* Drag-right → left-side "<" chevron */}
+                <Animated.View pointerEvents="none" style={[styles.exitIcon, styles.exitIconLeft, { opacity: settingsRightDragChevOpacity, transform: [{ translateX: settingsRightDragChevTransX }] }]}>
+                  <View style={[styles.chevron, styles.chevronFlipped]}>
+                    <View style={[styles.chevronStroke, styles.chevronTop]} />
+                    <View style={[styles.chevronStroke, styles.chevronBottom]} />
+                  </View>
+                </Animated.View>
+                {/* Drag-down → bottom-centre "v" chevron */}
+                <Animated.View pointerEvents="none" style={[styles.exitIconBottom, { opacity: settingsDownChevOpacity, transform: [{ translateY: settingsDownChevTransY }] }]}>
+                  <View style={[styles.chevron, styles.chevronDown]}>
+                    <View style={[styles.chevronStroke, styles.chevronTop]} />
+                    <View style={[styles.chevronStroke, styles.chevronBottom]} />
+                  </View>
+                </Animated.View>
+
                 <ScrollView
                   ref={setupScrollRef}
                   style={styles.settingsScroll}
@@ -785,9 +880,11 @@ export function LobbyScreen(props: LobbyScreenProps) {
                   ]}
                   showsVerticalScrollIndicator={false}
                   showsHorizontalScrollIndicator={false}
-                  scrollEnabled
+                  scrollEnabled={settingsContentH > settingsScrollH}
                   scrollEventThrottle={16}
                   bounces={false}
+                  onLayout={e => setSettingsScrollH(e.nativeEvent.layout.height)}
+                  onContentSizeChange={(_w, h) => setSettingsContentH(h)}
                   onScroll={e => {
                     settingsScrollOffsetRef.current = e.nativeEvent.contentOffset.y;
                   }}
@@ -1133,13 +1230,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1.6,
     color: '#555',
-    marginBottom: 6,
+    marginBottom: 2,
   },
   input: {
-    paddingVertical: 4,
     justifyContent: 'center',
-    minHeight: 36,
-    marginBottom: 6,
+    marginBottom: 2,
   },
   categoryTwoCol: {
     flexDirection: 'row',
@@ -1161,7 +1256,7 @@ const styles = StyleSheet.create({
     fontFamily: typeTokens.ui500,
     fontSize: 12,
     color: '#666',
-    marginTop: 10,
+    marginTop: 2,
   },
   roundToggle: {
     marginTop: 14,
@@ -1179,7 +1274,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 2,
+    paddingVertical: 1,
   },
   categoryName: {
     fontFamily: typeTokens.ui500,
@@ -1253,12 +1348,26 @@ const styles = StyleSheet.create({
   },
   exitIconLeft: { left: 8 },
   exitIconRight: { right: 8 },
+  exitIconBottom: {
+    position: 'absolute',
+    bottom: 24,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.cellRecessed,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+  },
   chevron: {
     width: 24,
     height: 24,
   },
   chevronFlipped: {
     transform: [{ scaleX: -1 }],
+  },
+  chevronDown: {
+    transform: [{ rotate: '90deg' }],
   },
   chevronStroke: {
     position: 'absolute',
