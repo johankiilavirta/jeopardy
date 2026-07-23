@@ -11,6 +11,7 @@ import { AnswerKeyboard } from '../components/AnswerKeyboard';
 import { KeyboardSheet, useKeyboardSheet } from '../components/KeyboardSheet';
 import { NumberKeyboard } from '../components/NumberKeyboard';
 import { colors, type as typeTokens } from '../theme/tokens';
+import type { PreferredConnectionMode } from '../../app/sessionStore';
 
 const SCREEN_TOP_PADDING = 64;
 const SCREEN_SIDE_PADDING = 32;
@@ -59,6 +60,9 @@ interface SettingsScreenProps {
   onRelayHostChange: (host: string) => void;
   relayPort: string;
   onRelayPortChange: (port: string) => void;
+  /** Shown from the main menu. It sets the transport for the next game. */
+  connectionMode?: PreferredConnectionMode | undefined;
+  onConnectionModeChange?: ((mode: PreferredConnectionMode) => void) | undefined;
   onBack: () => void;
 }
 
@@ -196,6 +200,25 @@ export function SettingsScreen(props: SettingsScreenProps) {
           </Pressable>
         </View>
 
+        {props.connectionMode && props.onConnectionModeChange && (
+          <View style={styles.section}>
+            <Text style={styles.label}>Bluetooth Mode</Text>
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: props.connectionMode === 'bluetooth' }}
+              accessibilityLabel={`Bluetooth mode: ${props.connectionMode === 'bluetooth' ? 'on' : 'off'}`}
+              style={styles.toggleBox}
+              onPress={() => props.onConnectionModeChange?.(
+                props.connectionMode === 'bluetooth' ? 'online' : 'bluetooth',
+              )}
+            >
+              <Text style={[styles.toggleText, props.connectionMode === 'online' && styles.toggleTextOff]}>
+                {props.connectionMode === 'bluetooth' ? 'On' : 'Off'}
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
         <Pressable
           style={styles.advancedToggle}
           onPress={() => {
@@ -327,6 +350,20 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   inputPlaceholder: {
+    color: '#666',
+  },
+  toggleBox: {
+    borderWidth: 1,
+    borderColor: '#444',
+    borderRadius: 6,
+    padding: 10,
+  },
+  toggleText: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 16,
+    color: '#fff',
+  },
+  toggleTextOff: {
     color: '#666',
   },
   buildTag: {

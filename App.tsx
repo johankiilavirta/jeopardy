@@ -25,21 +25,23 @@ import { DemoHarness } from './ui/demo/DemoHarness';
 import { NetworkedGame } from './ui/networked/NetworkedGame';
 import { MainMenuScreen } from './ui/screens/MainMenuScreen';
 import { JoinGameScreen } from './ui/screens/JoinGameScreen';
-import { NewGameScreen } from './ui/screens/NewGameScreen';
 import { LobbyScreen, type LobbyPlayer } from './ui/screens/LobbyScreen';
 import { ReconnectingScreen } from './ui/screens/ReconnectingScreen';
 import {
   clearSession,
   clearSnapshot,
   loadPlayerName,
+  loadPreferredConnectionMode,
   loadSession,
   loadSnapshot,
   savePlayerName,
+  savePreferredConnectionMode,
   saveSession,
   saveSnapshotBoard,
   saveSnapshotState,
   type SavedSession,
   type SavedSnapshot,
+  type PreferredConnectionMode,
 } from './app/sessionStore';
 import { computeWinnerNames, loadMatchHistory, recordMatch, type MatchResult } from './app/matchHistory';
 import { SettingsScreen } from './ui/screens/SettingsScreen';
@@ -113,7 +115,6 @@ const PERSISTENCE_ENABLED = DEV_ROOM == null;
 
 type AppScreen =
   | { type: 'menu' }
-  | { type: 'new' }
   | { type: 'join' }
   | { type: 'lobby'; roomCode: number; isHost: boolean }
   | { type: 'game'; serverPeerId: string; roomCode: number; isResume?: boolean }
@@ -201,6 +202,7 @@ export default function App() {
 
   const [screen, setScreen] = useState<AppScreen>(() => (UI_LAB ? { type: 'demo' } : { type: 'menu' }));
   const [playerName, setPlayerName] = useState('');
+  const [connectionMode, setConnectionMode] = useState<PreferredConnectionMode>('online');
   const [relayHost, setRelayHost] = useState(relayHostFromConfig);
   const [relayPort, setRelayPort] = useState('8787');
   const [gameId, setGameId] = useState('');
@@ -974,10 +976,9 @@ export default function App() {
     if (next && screenRef.current.type === 'lobby') setScreen(next);
   }, []);
 
-  const handleNewGame = useCallback(() => setScreen({ type: 'new' }), []);
-  const handleBluetoothNewGame = useCallback(() => connectAndDo('create', undefined, 'bluetooth'), [connectAndDo]);
-  const handleNearbyNewGame = useCallback(() => connectAndDo('create', undefined, 'nearby'), [connectAndDo]);
-  const handleOnlineNewGame = useCallback(() => connectAndDo('create'), [connectAndDo]);
+  const handleNewGame = useCallback(() => {
+    connectAndDo('create', undefined, connectionMode);
+  }, [connectAndDo, connectionMode]);
 
   /** RESUME GAME: host a fresh room seeded with the snapshot on this device. */
   const handleResumeGame = useCallback(() => {
@@ -1003,21 +1004,21 @@ export default function App() {
   }, []);
 
   const handleJoinSubmit = useCallback((code: number) => {
-    const mode = connectionModeForRoomCode(code);
-    if (mode === 'online') {
-      connectAndDo({ join: code });
+    const roomMode = connectionModeForRoomCode(code);
+    if (!roomMode || roomMode === 'nearby') {
+      setJoinError('Enter a Bluetooth or online room code');
       return;
     }
-    if (mode === 'bluetooth') {
-      connectAndDo({ join: code }, undefined, 'bluetooth');
+    if (roomMode !== connectionMode) {
+      setJoinError(`This is a ${roomMode.toUpperCase()} room. Change Connection in Settings to join it.`);
       return;
     }
-    if (mode === 'nearby') {
-      connectAndDo({ join: code }, undefined, 'nearby');
-      return;
-    }
-    setJoinError('Enter a room code from 100 to 999');
-  }, [connectAndDo]);
+    connectAndDo({ join: code }, undefined, connectionMode);
+  }, [connectAndDo, connectionMode]);
+  const handleConnectionModeChange = useCallback((mode: PreferredConnectionMode) => {
+    setConnectionMode(mode);
+    if (PERSISTENCE_ENABLED) void savePreferredConnectionMode(mode);
+  }, []);
   const handleSettings = useCallback(() => setScreen({ type: 'settings' }), []);
 
   /** Deliberately walk away from the current room (also cancels a pending
@@ -1053,8 +1054,8 @@ export default function App() {
   const handleOverlayNewGame = useCallback(() => {
     cancelReconnect();
     disconnect();
-    setScreen({ type: 'new' });
-  }, [cancelReconnect, disconnect]);
+    connectAndDo('create', undefined, connectionMode);
+  }, [cancelReconnect, connectAndDo, connectionMode, disconnect]);
 
   const handleOverlayJoinGame = useCallback(() => {
     cancelReconnect();
@@ -1073,10 +1074,11 @@ export default function App() {
     if (!PERSISTENCE_ENABLED || UI_LAB) return;
     let stale = false;
     void (async () => {
-      const [name, session, snapshot] = await Promise.all([
+      const [name, session, snapshot, preferredMode] = await Promise.all([
         loadPlayerName(),
         loadSession(),
         loadSnapshot(),
+        loadPreferredConnectionMode(),
       ]);
       if (stale) return;
       if (name) {
@@ -1087,6 +1089,7 @@ export default function App() {
         void savePlayerName(fallbackName);
       }
       setResumeAvailable(!!snapshot);
+      if (preferredMode) setConnectionMode(preferredMode);
       // Relaunch: our snapshot is stale, so join-first rather than
       // insta-promoting a candidate that could clobber the live game.
       if (session) startReconnectRef.current(session, { promoteDelayMs: RETURNING_GUEST_PROMOTE_MS });
@@ -1127,15 +1130,6 @@ export default function App() {
             onSettings={handleSettings}
             onHistory={() => setScreen({ type: 'history' })}
             onResumeGame={resumeAvailable ? handleResumeGame : undefined}
-          />
-        );
-      case 'new':
-        return (
-          <NewGameScreen
-            onBluetooth={handleBluetoothNewGame}
-            onNearby={handleNearbyNewGame}
-            onOnline={handleOnlineNewGame}
-            onBack={() => setScreen({ type: 'menu' })}
           />
         );
       case 'reconnecting':
@@ -1225,6 +1219,8 @@ export default function App() {
             onRelayHostChange={setRelayHost}
             relayPort={relayPort}
             onRelayPortChange={setRelayPort}
+            connectionMode={connectionMode}
+            onConnectionModeChange={handleConnectionModeChange}
             onBack={() => setScreen({ type: 'menu' })}
           />
         );

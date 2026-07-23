@@ -22,6 +22,10 @@ const SESSION_KEY = 'jeopardy/session';
 const SNAPSHOT_STATE_KEY = 'jeopardy/snapshot-state';
 const SNAPSHOT_BOARD_KEY = 'jeopardy/snapshot-board';
 const PLAYER_NAME_KEY = 'jeopardy/player-name';
+const CONNECTION_MODE_KEY = 'jeopardy/connection-mode';
+
+/** The transport used by the next game created or joined from the menu. */
+export type PreferredConnectionMode = 'bluetooth' | 'online';
 
 /** Rooms live in relay memory; a session older than this is certainly dead. */
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -63,6 +67,25 @@ export async function savePlayerName(name: string): Promise<void> {
 
 export async function loadPlayerName(): Promise<string | null> {
   try { return await AsyncStorage.getItem(PLAYER_NAME_KEY); } catch { return null; }
+}
+
+// --- Connection preference ---
+
+export async function savePreferredConnectionMode(mode: PreferredConnectionMode): Promise<void> {
+  try { await AsyncStorage.setItem(CONNECTION_MODE_KEY, JSON.stringify({ mode })); } catch {}
+}
+
+export async function loadPreferredConnectionMode(): Promise<PreferredConnectionMode | null> {
+  try {
+    const raw = await AsyncStorage.getItem(CONNECTION_MODE_KEY);
+    if (!raw) return null;
+    const { mode } = JSON.parse(raw) as { mode?: unknown };
+    return mode === 'bluetooth' || mode === 'online' ? mode : null;
+  } catch {
+    // The first version stored an unversioned string. Treat it as unset so
+    // existing installs pick up the current default once.
+    return null;
+  }
 }
 
 // --- Active session (rejoin) ---
