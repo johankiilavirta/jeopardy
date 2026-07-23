@@ -940,7 +940,7 @@ const styles = StyleSheet.create({
   codeBlock: {
     alignItems: 'center',
     marginBottom: 12,
-    paddingTop: 8,  // Anton ascenders clip without breathing room
+    paddingTop: 16,  // Anton ascenders clip without breathing room
   },
   codeLabel: {
     fontFamily: typeTokens.board,
