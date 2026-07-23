@@ -260,6 +260,11 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const leavingRef = useRef(false);
   const startRequestedRef = useRef(false);
 
+  const settingsY = useRef(new Animated.Value(1200)).current;
+  const settingsDragYRef = useRef(0);
+  const settingsScrollOffsetRef = useRef(0);
+  const settingsClosingRef = useRef(false);
+
   // ── Keyboard sheet for game # entry ──────────────────────────────────────
 
   const sheet = useKeyboardSheet(
@@ -469,6 +474,34 @@ export function LobbyScreen(props: LobbyScreenProps) {
     }).start();
   }, [pageX]);
 
+  const openSettings = useCallback(() => {
+    sheet.close();
+    settingsClosingRef.current = false;
+    settingsY.setValue(height);
+    setShowAdvanced(true);
+    Animated.spring(settingsY, {
+      toValue: 0,
+      speed: 13,
+      bounciness: 2,
+      useNativeDriver: true,
+    }).start();
+  }, [settingsY, height, sheet]);
+
+  const closeSettings = useCallback(() => {
+    if (settingsClosingRef.current) return;
+    settingsClosingRef.current = true;
+    sheet.close();
+    Animated.timing(settingsY, {
+      toValue: height,
+      duration: 280,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setShowAdvanced(false);
+      else settingsClosingRef.current = false;
+    });
+  }, [settingsY, height, sheet]);
+
   const leaveLobby = useCallback((_direction: -1 | 1) => {
     if (leavingRef.current) return;
     leavingRef.current = true;
@@ -673,176 +706,232 @@ export function LobbyScreen(props: LobbyScreenProps) {
                   slotIndex={i}
                   localIsHost={props.isHost}
                   settingsOpen={showAdvanced}
-                  onSettings={() => { sheet.close(); setShowAdvanced(v => !v); }}
+                  onSettings={() => { if (showAdvanced) closeSettings(); else openSettings(); }}
                   onKick={() => { if (player) props.onKickPlayer?.(player.peerId); }}
                 />
               ))}
             </View>
           </View>
 
-          {/* Settings panel overlay */}
-          {props.isHost && showAdvanced && (
-            <View style={StyleSheet.absoluteFill}>
-              <Pressable
-                style={styles.settingsBackdrop}
-                onPress={() => { sheet.close(); setShowAdvanced(false); }}
-              />
-              <ScrollView
-                ref={setupScrollRef}
-                style={styles.settingsScroll}
-                contentContainerStyle={[
-                  styles.settingsScrollContent,
-                  { paddingBottom: 32 + sheet.panelHeight },
+          {/* Settings bottom sheet */}
+          {props.isHost && showAdvanced && (() => {
+            const settingsPanResponder = PanResponder.create({
+              onMoveShouldSetPanResponder: (_e, gesture) =>
+                gesture.dy > 8 &&
+                Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.5 &&
+                settingsScrollOffsetRef.current <= 0,
+              onPanResponderGrant: () => { settingsDragYRef.current = 0; },
+              onPanResponderMove: (_e, gesture) => {
+                const dy = Math.max(0, gesture.dy);
+                settingsDragYRef.current = dy;
+                settingsY.setValue(dy);
+              },
+              onPanResponderRelease: (_e, gesture) => {
+                const committed =
+                  settingsDragYRef.current > height * 0.28 || gesture.vy > 0.7;
+                settingsDragYRef.current = 0;
+                if (committed) {
+                  closeSettings();
+                } else {
+                  Animated.spring(settingsY, {
+                    toValue: 0,
+                    speed: 18,
+                    bounciness: 2,
+                    useNativeDriver: true,
+                  }).start();
+                }
+              },
+              onPanResponderTerminate: () => {
+                settingsDragYRef.current = 0;
+                Animated.spring(settingsY, {
+                  toValue: 0,
+                  speed: 18,
+                  bounciness: 2,
+                  useNativeDriver: true,
+                }).start();
+              },
+            });
+            return (
+              <Animated.View
+                style={[
+                  StyleSheet.absoluteFill,
+                  styles.settingsSheet,
+                  { transform: [{ translateY: settingsY }] },
                 ]}
-                showsVerticalScrollIndicator={false}
-                showsHorizontalScrollIndicator={false}
-                scrollEnabled
-                scrollEventThrottle={16}
+                {...settingsPanResponder.panHandlers}
               >
-                <View
-                  style={styles.advancedSection}
-                  onLayout={event => {
-                    advancedYRef.current = event.nativeEvent.layout.y;
+                {/* Gradient leading edge — fades from transparent as sheet sweeps up */}
+                <LinearGradient
+                  colors={['transparent', colors.bg]}
+                  style={styles.settingsSheetEdge}
+                  pointerEvents="none"
+                />
+                {/* Drag handle */}
+                <Pressable style={styles.settingsDragHandle} onPress={closeSettings}>
+                  <View style={styles.settingsDragPill} />
+                </Pressable>
+
+                <ScrollView
+                  ref={setupScrollRef}
+                  style={styles.settingsScroll}
+                  contentContainerStyle={[
+                    styles.settingsScrollContent,
+                    { paddingBottom: 32 + sheet.panelHeight },
+                  ]}
+                  showsVerticalScrollIndicator={false}
+                  showsHorizontalScrollIndicator={false}
+                  scrollEnabled
+                  scrollEventThrottle={16}
+                  bounces={false}
+                  onScroll={e => {
+                    settingsScrollOffsetRef.current = e.nativeEvent.contentOffset.y;
                   }}
                 >
-                  <Text style={styles.gameSettingsTitle}>GAME SETTINGS</Text>
-
-                  <Text style={styles.label}>Animations</Text>
-                  <Pressable
-                    style={styles.toggleBox}
-                    onPress={() =>
-                      props.onAnimationsChange?.(!(props.animationsEnabled ?? true))
-                    }
+                  <View
+                    style={styles.advancedSection}
+                    onLayout={event => {
+                      advancedYRef.current = event.nativeEvent.layout.y;
+                    }}
                   >
-                    <Text
-                      style={[
-                        styles.toggleText,
-                        !(props.animationsEnabled ?? true) && styles.toggleTextOff,
-                      ]}
-                    >
-                      {(props.animationsEnabled ?? true) ? 'On' : 'Off'}
-                    </Text>
-                  </Pressable>
+                    <Text style={styles.gameSettingsTitle}>GAME SETTINGS</Text>
 
-                  <Text style={[styles.label, styles.stackedLabel]}>Categories Displayed</Text>
-                  <View style={styles.catCountRow}>
-                    {([4, 5, 6] as const).map(n => {
-                      const active = (props.visibleCategories ?? 6) === n;
-                      return (
+                    <Text style={styles.label}>Animations</Text>
+                    <Pressable
+                      style={styles.toggleBox}
+                      onPress={() =>
+                        props.onAnimationsChange?.(!(props.animationsEnabled ?? true))
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.toggleText,
+                          !(props.animationsEnabled ?? true) && styles.toggleTextOff,
+                        ]}
+                      >
+                        {(props.animationsEnabled ?? true) ? 'On' : 'Off'}
+                      </Text>
+                    </Pressable>
+
+                    <Text style={[styles.label, styles.stackedLabel]}>Categories Displayed</Text>
+                    <View style={styles.catCountRow}>
+                      {([4, 5, 6] as const).map(n => {
+                        const active = (props.visibleCategories ?? 6) === n;
+                        return (
+                          <Pressable
+                            key={n}
+                            style={[styles.catCountBtn, active && styles.catCountBtnActive]}
+                            onPress={() => props.onVisibleCategoriesChange?.(n)}
+                          >
+                            <Text style={[styles.catCountText, active && styles.catCountTextActive]}>
+                              {n}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+
+                    <Text style={[styles.label, styles.stackedLabel]}>Game #</Text>
+                    <Pressable
+                      style={styles.input}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Game number ${props.gameId || 'random'}`}
+                      onLayout={event => {
+                        gameIdLayoutRef.current = {
+                          y: advancedYRef.current + event.nativeEvent.layout.y,
+                          height: event.nativeEvent.layout.height,
+                        };
+                      }}
+                      onPress={sheet.open}
+                    >
+                      <Text style={[styles.inputText, !props.gameId && styles.inputPlaceholder]}>
+                        {props.gameId || 'Random'}
+                      </Text>
+                    </Pressable>
+
+                    {gameInfoStatus === 'loading' && (
+                      <Text style={styles.gameInfoNote}>Loading...</Text>
+                    )}
+                    {gameInfoStatus === 'not-found' && (
+                      <Text style={styles.gameInfoNote}>Game not found</Text>
+                    )}
+
+                    {round1Categories && (
+                      <>
+                        {seasonNumber != null && (
+                          <Text style={styles.gameMetadata}>Season {seasonNumber}</Text>
+                        )}
+                        {airDate && (
+                          <Text style={styles.gameMetadata}>
+                            {new Date(airDate + 'T12:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                          </Text>
+                        )}
+
                         <Pressable
-                          key={n}
-                          style={[styles.catCountBtn, active && styles.catCountBtnActive]}
-                          onPress={() => props.onVisibleCategoriesChange?.(n)}
+                          style={styles.roundToggle}
+                          onPress={() => setShowRound1(v => !v)}
                         >
-                          <Text style={[styles.catCountText, active && styles.catCountTextActive]}>
-                            {n}
+                          <Text style={styles.roundToggleText}>
+                            {showRound1 ? '▾ ' : '▸ '}
+                            Jeopardy!
+                            {round1Categories.some(c => c.clueCount < 5) && (
+                              <Text style={styles.clueCount}> *</Text>
+                            )}
                           </Text>
                         </Pressable>
-                      );
-                    })}
+                        {showRound1 && (
+                          <ScrollView
+                            style={styles.categoryList}
+                            nestedScrollEnabled
+                            showsVerticalScrollIndicator={false}
+                            showsHorizontalScrollIndicator={false}
+                          >
+                            {round1Categories.map(({ name, clueCount }) => (
+                              <View key={name} style={styles.categoryRow}>
+                                <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
+                                {clueCount < 5 && (
+                                  <Text style={styles.clueCount}>{clueCount}/5</Text>
+                                )}
+                              </View>
+                            ))}
+                          </ScrollView>
+                        )}
+
+                        <Pressable
+                          style={styles.roundToggle}
+                          onPress={() => setShowRound2(v => !v)}
+                        >
+                          <Text style={styles.roundToggleText}>
+                            {showRound2 ? '▾ ' : '▸ '}
+                            Double Jeopardy!
+                            {round2Categories?.some(c => c.clueCount < 5) && (
+                              <Text style={styles.clueCount}> *</Text>
+                            )}
+                          </Text>
+                        </Pressable>
+                        {showRound2 && round2Categories && (
+                          <ScrollView
+                            style={styles.categoryList}
+                            nestedScrollEnabled
+                            showsVerticalScrollIndicator={false}
+                            showsHorizontalScrollIndicator={false}
+                          >
+                            {round2Categories.map(({ name, clueCount }) => (
+                              <View key={name} style={styles.categoryRow}>
+                                <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
+                                {clueCount < 5 && (
+                                  <Text style={styles.clueCount}>{clueCount}/5</Text>
+                                )}
+                              </View>
+                            ))}
+                          </ScrollView>
+                        )}
+                      </>
+                    )}
                   </View>
-
-                  <Text style={[styles.label, styles.stackedLabel]}>Game #</Text>
-                  <Pressable
-                    style={styles.input}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Game number ${props.gameId || 'random'}`}
-                    onLayout={event => {
-                      gameIdLayoutRef.current = {
-                        y: advancedYRef.current + event.nativeEvent.layout.y,
-                        height: event.nativeEvent.layout.height,
-                      };
-                    }}
-                    onPress={sheet.open}
-                  >
-                    <Text style={[styles.inputText, !props.gameId && styles.inputPlaceholder]}>
-                      {props.gameId || 'Random'}
-                    </Text>
-                  </Pressable>
-
-                  {gameInfoStatus === 'loading' && (
-                    <Text style={styles.gameInfoNote}>Loading...</Text>
-                  )}
-                  {gameInfoStatus === 'not-found' && (
-                    <Text style={styles.gameInfoNote}>Game not found</Text>
-                  )}
-
-                  {round1Categories && (
-                    <>
-                      {seasonNumber != null && (
-                        <Text style={styles.gameMetadata}>Season {seasonNumber}</Text>
-                      )}
-                      {airDate && (
-                        <Text style={styles.gameMetadata}>
-                          {new Date(airDate + 'T12:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                        </Text>
-                      )}
-
-                      <Pressable
-                        style={styles.roundToggle}
-                        onPress={() => setShowRound1(v => !v)}
-                      >
-                        <Text style={styles.roundToggleText}>
-                          {showRound1 ? '▾ ' : '▸ '}
-                          Jeopardy!
-                          {round1Categories.some(c => c.clueCount < 5) && (
-                            <Text style={styles.clueCount}> *</Text>
-                          )}
-                        </Text>
-                      </Pressable>
-                      {showRound1 && (
-                        <ScrollView
-                          style={styles.categoryList}
-                          nestedScrollEnabled
-                          showsVerticalScrollIndicator={false}
-                          showsHorizontalScrollIndicator={false}
-                        >
-                          {round1Categories.map(({ name, clueCount }) => (
-                            <View key={name} style={styles.categoryRow}>
-                              <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
-                              {clueCount < 5 && (
-                                <Text style={styles.clueCount}>{clueCount}/5</Text>
-                              )}
-                            </View>
-                          ))}
-                        </ScrollView>
-                      )}
-
-                      <Pressable
-                        style={styles.roundToggle}
-                        onPress={() => setShowRound2(v => !v)}
-                      >
-                        <Text style={styles.roundToggleText}>
-                          {showRound2 ? '▾ ' : '▸ '}
-                          Double Jeopardy!
-                          {round2Categories?.some(c => c.clueCount < 5) && (
-                            <Text style={styles.clueCount}> *</Text>
-                          )}
-                        </Text>
-                      </Pressable>
-                      {showRound2 && round2Categories && (
-                        <ScrollView
-                          style={styles.categoryList}
-                          nestedScrollEnabled
-                          showsVerticalScrollIndicator={false}
-                          showsHorizontalScrollIndicator={false}
-                        >
-                          {round2Categories.map(({ name, clueCount }) => (
-                            <View key={name} style={styles.categoryRow}>
-                              <Text style={styles.categoryName}>{sanitizeText(name)}</Text>
-                              {clueCount < 5 && (
-                                <Text style={styles.clueCount}>{clueCount}/5</Text>
-                              )}
-                            </View>
-                          ))}
-                        </ScrollView>
-                      )}
-                    </>
-                  )}
-                </View>
-              </ScrollView>
-            </View>
-          )}
+                </ScrollView>
+              </Animated.View>
+            );
+          })()}
 
           {/* Error status line */}
           {props.error && (
@@ -957,28 +1046,35 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 3 },
     textShadowRadius: 10,
   },
-  // ── Settings overlay ────────────────────────────────────────────────────
-  settingsBackdrop: {
+  // ── Settings bottom sheet ───────────────────────────────────────────────
+  settingsSheet: {
+    backgroundColor: colors.bg,
+  },
+  settingsSheetEdge: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    height: 80,
+  },
+  settingsDragHandle: {
+    alignItems: 'center',
+    paddingTop: 14,
+    paddingBottom: 10,
+  },
+  settingsDragPill: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.25)',
   },
   settingsScroll: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    flex: 1,
   },
   settingsScrollContent: {
-    flexGrow: 1,
     alignItems: 'center',
-    justifyContent: 'center',
     paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingTop: 8,
   },
   // ── Advanced settings section ───────────────────────────────────────────
   advancedSection: {
