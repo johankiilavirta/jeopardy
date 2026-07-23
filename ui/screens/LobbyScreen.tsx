@@ -661,7 +661,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                 {props.roomCode > 0 ? props.roomCode : ''}
               </Text>
               <Text style={styles.codeLabel} allowFontScaling={false} numberOfLines={1}>
-                {'SHARE ' + (props.sessionMode ?? 'ONLINE').toUpperCase() + ' LOBBY CODE WITH YOUR FRIEND'}
+                {'SHARE THIS ' + (props.sessionMode ?? 'ONLINE').toUpperCase() + ' ROOM CODE'}
               </Text>
             </Animated.View>
 
@@ -940,19 +940,19 @@ const styles = StyleSheet.create({
   codeBlock: {
     alignItems: 'center',
     marginBottom: 12,
-    paddingTop: 16,  // Anton ascenders clip without breathing room
+    paddingTop: 8,  // Anton ascenders clip without breathing room
   },
   codeLabel: {
     fontFamily: typeTokens.board,
-    fontSize: 13,
+    fontSize: 14,
     color: colors.categoryText,
     marginTop: 2,
   },
   codeValue: {
     fontFamily: typeTokens.board,
-    fontSize: 42,
+    fontSize: 38,
     color: colors.gold,
-    lineHeight: 49,
+    lineHeight: 44,
     textShadowColor: 'rgba(229,178,13,0.15)',
     textShadowOffset: { width: 0, height: 3 },
     textShadowRadius: 10,
