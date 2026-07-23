@@ -18,7 +18,7 @@ import { loadGameInfo, type GameInfo } from '../../data/gameLoader';
 import type { SessionMode } from '../../app/sessionProvider';
 import { KeyboardSheet, useKeyboardSheet } from '../components/KeyboardSheet';
 import { NumberKeyboard } from '../components/NumberKeyboard';
-import { colors, type as typeTokens } from '../theme/tokens';
+import { colors, grid, type as typeTokens } from '../theme/tokens';
 import { Board } from '../components/Board';
 import { demoBoard, type BoardDefinition } from '../fixtures/board';
 
@@ -377,15 +377,56 @@ export function LobbyScreen(props: LobbyScreenProps) {
     }
     const count = Math.min(round1Categories.length, props.visibleCategories ?? 6);
     return {
-      categories: round1Categories.slice(0, count).map((cat, col) => ({
-        name: cat.name,
-        clues: LOBBY_VALUES.map((value, row) => ({
-          id: col * 5 + row,
-          value,
-        })),
-      })),
+      categories: round1Categories.slice(0, count).map((cat, col) => {
+        // Append * (1 missing) or *N (N > 1 missing) to category name.
+        const missing = Math.max(0, 5 - cat.clueCount);
+        const suffix = missing === 0 ? '' : missing === 1 ? '*' : `*${missing}`;
+        return {
+          name: cat.name + suffix,
+          clues: LOBBY_VALUES.map((value, row) => ({
+            id: col * 5 + row,
+            value,
+          })),
+        };
+      }),
     };
   }, [round1Categories, props.visibleCategories]);
+
+  // ── R1/R2 category toggle ─────────────────────────────────────────────────
+  // Tapping a category header fades in the Double Jeopardy category name.
+
+  const catAnimsRef = useRef<Animated.Value[]>([]);
+  const toggledColsRef = useRef<Set<number>>(new Set());
+
+  // Keep per-column anims array in sync with column count.
+  const colCount = lobbyBoard.categories.length;
+  if (catAnimsRef.current.length !== colCount) {
+    catAnimsRef.current = Array.from({ length: colCount }, (_, i) =>
+      catAnimsRef.current[i] ?? new Animated.Value(0),
+    );
+  }
+
+  // Reset toggles whenever a new game is loaded.
+  useEffect(() => {
+    toggledColsRef.current = new Set();
+    catAnimsRef.current.forEach(a => a.setValue(0));
+  }, [round1Categories]);
+
+  const handleCategoryPress = useCallback((col: number) => {
+    if (!round2Categories || !round2Categories[col]) return;
+    const nowOn = !toggledColsRef.current.has(col);
+    if (nowOn) toggledColsRef.current.add(col);
+    else toggledColsRef.current.delete(col);
+    const anim = catAnimsRef.current[col];
+    if (anim) {
+      Animated.timing(anim, {
+        toValue: nowOn ? 1 : 0,
+        duration: 220,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [round2Categories]);
 
   // ── Sorted player slots (host always first) ───────────────────────────────
 
@@ -512,6 +553,57 @@ export function LobbyScreen(props: LobbyScreenProps) {
             locked={true}
           />
         </View>
+
+        {/* 1b. Clickable category-toggle overlay (positioned over the board's category header row) */}
+        {round2Categories && (() => {
+          // Reproduce Board's flex layout to find the category row bounds.
+          const totalFlexH = 6.25; // 1.25 cat + 5 clue rows
+          const totalGapH = 5 * grid.lineWidth;
+          const catRowH = (height - totalGapH) * 1.25 / totalFlexH;
+          const colGap = grid.lineWidth;
+          const colW = (width - (colCount - 1) * colGap) / colCount;
+          return (
+            <View
+              style={[styles.catOverlayRow, { height: catRowH }]}
+              pointerEvents="box-none"
+            >
+              {lobbyBoard.categories.map((cat, col) => {
+                const r2Cat = round2Categories[col];
+                if (!r2Cat) return null;
+                const r2Missing = Math.max(0, 5 - r2Cat.clueCount);
+                const r2Suffix = r2Missing === 0 ? '' : r2Missing === 1 ? '*' : `*${r2Missing}`;
+                const r2Name = (r2Cat.name + r2Suffix).toUpperCase();
+                const anim = catAnimsRef.current[col];
+                if (!anim) return null;
+                return (
+                  <Pressable
+                    key={col}
+                    style={[styles.catOverlayCol, { width: colW, left: col * (colW + colGap) }]}
+                    onPress={() => handleCategoryPress(col)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Toggle Double Jeopardy category: ${r2Name}`}
+                  >
+                    {/* R2 name fades in over the R1 name when toggled */}
+                    <Animated.View
+                      style={[StyleSheet.absoluteFill, styles.catOverlayPanel, { opacity: anim }]}
+                      pointerEvents="none"
+                    >
+                      <Text
+                        style={styles.catOverlayText}
+                        numberOfLines={3}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.2}
+                        allowFontScaling={false}
+                      >
+                        {r2Name}
+                      </Text>
+                    </Animated.View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          );
+        })()}
 
         {/* 2. Gradient: fades board into the background colour */}
         <LinearGradient
@@ -747,7 +839,11 @@ const styles = StyleSheet.create({
   },
   // Board fills entire page as backdrop
   boardBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   // Gradient overlay anchored to bottom, top set dynamically
   boardGradient: {
@@ -802,7 +898,11 @@ const styles = StyleSheet.create({
   },
   // ── Settings overlay ────────────────────────────────────────────────────
   settingsBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.55)',
   },
   settingsScroll: {
@@ -957,5 +1057,33 @@ const styles = StyleSheet.create({
     fontSize: 13,
     letterSpacing: 0.5,
     color: 'rgba(255,255,255,0.65)',
+  },
+  // ── Category R1/R2 toggle overlay ───────────────────────────────────────
+  catOverlayRow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+  },
+  catOverlayCol: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+  },
+  // Full-cell overlay panel: same blue as board cells, fades in over R1 name
+  catOverlayPanel: {
+    backgroundColor: colors.cell,
+    borderRadius: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    paddingVertical: 4,
+  },
+  catOverlayText: {
+    fontFamily: typeTokens.board,
+    fontSize: 44,
+    color: colors.categoryText,
+    textAlign: 'center',
+    transform: [{ scaleX: 0.85 }],
   },
 });
