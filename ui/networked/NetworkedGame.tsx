@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { sendAction } from '../../src/client';
 import { createKeystrokeThrottle, type KeystrokeThrottle } from '../../src/answerThrottle';
 import { computeReadingMs } from '../../src/readingTime';
@@ -11,14 +11,12 @@ import { CategoryIntro } from '../components/CategoryIntro';
 import { ExpandingClueOverlay } from '../components/ExpandingClueOverlay';
 import { PLAYER_BAR_HEIGHT, PlayerHeader } from '../components/PlayerHeader';
 import { JudgementTray } from '../components/JudgementTray';
-import { SwipeUpMenu } from '../components/SwipeUpMenu';
 import { UndoRedoSwipe } from '../components/UndoRedoSwipe';
 import { demoBoard } from '../fixtures/board';
 import { getClueContent } from '../fixtures/clues';
 import { toBoardDefinition, makeClueGetter, getVisibleBoard } from '../../data/gameLoader';
 import type { GameData, RoundNumber } from '../../data/gameLoader';
 import type { MatchResult } from '../../app/matchHistory';
-import { MainMenuScreen } from '../screens/MainMenuScreen';
 import { InGameSettingsScreen } from '../screens/InGameSettingsScreen';
 import { ChooseClueScreen } from '../screens/ChooseClueScreen';
 import { ScoreChart } from '../components/ScoreChart';
@@ -71,6 +69,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // down as initialState (updated on every STATE_UPDATE from the server).
   const [gameState, setGameState] = useState<GameState | null>(initialState?.state ?? null);
   const [showLastClueButton, setShowLastClueButton] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const fadeToBlackAnim = useRef(new Animated.Value(0)).current;
   const currentVisibleStateRef = useRef<GameState | null>(initialState?.state ?? null);
   // The newest server state, always — the fade below holds the *visible*
@@ -409,6 +408,37 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   };
   yKeyHandlerRef.current = skipToLastClue;
 
+  // ── Swipe-up to open settings ─────────────────────────────────────────────
+  const settingsDisabled = !!gameState.activeClue || gameState.status === 'GAME_OVER';
+  const settingsOpenRef = useRef(settingsOpen);
+  settingsOpenRef.current = settingsOpen;
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.addEventListener) return;
+    const handler = (e: KeyboardEvent) => {
+      if (settingsDisabled) return;
+      if (!settingsOpenRef.current && (e.key === 'm' || e.key === 'M' || e.key === 'ArrowUp')) {
+        if (e.key === 'ArrowUp') e.preventDefault();
+        setSettingsOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [settingsDisabled]);
+
+  const swipeUpResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_e, g) =>
+      !settingsDisabled && !settingsOpenRef.current &&
+      g.dy < -12 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5,
+    onPanResponderRelease: (_e, g) => {
+      if (!settingsDisabled && !settingsOpenRef.current && -g.dy > 60) {
+        setSettingsOpen(true);
+      }
+    },
+    onPanResponderTerminate: () => {},
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [settingsDisabled]);
+
   // Names for the fly-by: categories beyond visibleCategories are reserve
   // categories (marked " *") that will backfill as columns clear.
   // When visibleCategories >= 6, nothing is hidden so no "*" is needed.
@@ -433,35 +463,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       }}
     >
     <View style={styles.root}>
-    <SwipeUpMenu
-      disabled={!!gameState.activeClue || gameState.status === 'GAME_OVER'}
-      renderMenu={showSettings => (
-        <MainMenuScreen
-          onNewGame={onNewGame ?? onLeave ?? (() => {})}
-          onJoinGame={onJoinGame ?? onLeave ?? (() => {})}
-          onSettings={showSettings}
-        />
-      )}
-      renderSettings={(_goBack, close) => (
-        <InGameSettingsScreen
-          onClose={close}
-          animationsEnabled={animationsEnabled}
-          onAnimationsChange={onAnimationsChange ?? (() => {})}
-          visibleCategories={visibleCategories}
-          onVisibleCategoriesChange={onVisibleCategoriesChange ?? (() => {})}
-          showLastClueButton={showLastClueButton}
-          onShowLastClueButtonChange={setShowLastClueButton}
-          playerName={playerName ?? ''}
-          onNameChange={onNameChange ?? (() => {})}
-          relayHost={relayHostSetting ?? relayHost ?? 'localhost'}
-          onRelayHostChange={onRelayHostChange ?? (() => {})}
-          relayPort={relayPortSetting ?? relayPort ?? '8787'}
-          onRelayPortChange={onRelayPortChange ?? (() => {})}
-          roomCode={roomCode}
-        />
-      )}
-    >
-      <View style={styles.root}>
+      <View style={styles.root} {...swipeUpResponder.panHandlers}>
         <Animated.View
           style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg, opacity: fadeToBlackAnim, zIndex: 9999 }]}
           pointerEvents="none"
@@ -713,7 +715,26 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         })()}
 
       </View>
-    </SwipeUpMenu>
+
+      {settingsOpen && (
+        <InGameSettingsScreen
+          onClose={() => setSettingsOpen(false)}
+          onQuit={onLeave ?? (() => {})}
+          animationsEnabled={animationsEnabled}
+          onAnimationsChange={onAnimationsChange ?? (() => {})}
+          visibleCategories={visibleCategories}
+          onVisibleCategoriesChange={onVisibleCategoriesChange ?? (() => {})}
+          showLastClueButton={showLastClueButton}
+          onShowLastClueButtonChange={setShowLastClueButton}
+          playerName={playerName ?? ''}
+          onNameChange={onNameChange ?? (() => {})}
+          relayHost={relayHostSetting ?? relayHost ?? 'localhost'}
+          onRelayHostChange={onRelayHostChange ?? (() => {})}
+          relayPort={relayPortSetting ?? relayPort ?? '8787'}
+          onRelayPortChange={onRelayPortChange ?? (() => {})}
+          roomCode={roomCode}
+        />
+      )}
     </View>
     </UndoRedoSwipe>
   );

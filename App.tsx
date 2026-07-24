@@ -1199,7 +1199,7 @@ export default function App() {
     setConnectionMode(mode);
     if (PERSISTENCE_ENABLED) void savePreferredConnectionMode(mode);
   }, []);
-  const handleSettings = useCallback(() => setScreen({ type: 'settings' }), []);
+  // Settings now live inside MainMenuScreen (gradient panel); no separate route needed.
   const handleHistory = useCallback(() => {
     transitionAnim.stopAnimation();
     Animated.timing(transitionAnim, {
@@ -1372,8 +1372,15 @@ export default function App() {
           <MainMenuScreen
             onNewGame={handleNewGame}
             onJoinGame={handleJoinNav}
-            onSettings={handleSettings}
             onHistory={handleHistory}
+            playerName={playerName}
+            onNameChange={handleNameChange}
+            relayHost={relayHost}
+            onRelayHostChange={setRelayHost}
+            relayPort={relayPort}
+            onRelayPortChange={setRelayPort}
+            connectionMode={connectionMode}
+            onConnectionModeChange={handleConnectionModeChange}
           />
         );
       case 'reconnecting':
@@ -1390,7 +1397,6 @@ export default function App() {
               <MainMenuScreen
                 onNewGame={handleNewGame}
                 onJoinGame={handleJoinNav}
-                onSettings={handleSettings}
                 onHistory={handleHistory}
               />
             </View>
@@ -1417,7 +1423,6 @@ export default function App() {
               <MainMenuScreen
                 onNewGame={handleNewGame}
                 onJoinGame={handleJoinNav}
-                onSettings={handleSettings}
                 onHistory={handleHistory}
               />
             </View>
@@ -1489,19 +1494,8 @@ export default function App() {
           />
         ) : null;
       case 'settings':
-        return (
-          <SettingsScreen
-            playerName={playerName}
-            onNameChange={handleNameChange}
-            relayHost={relayHost}
-            onRelayHostChange={setRelayHost}
-            relayPort={relayPort}
-            onRelayPortChange={setRelayPort}
-            connectionMode={connectionMode}
-            onConnectionModeChange={handleConnectionModeChange}
-            onBack={() => setScreen({ type: 'menu' })}
-          />
-        );
+        // Settings now live inside MainMenuScreen; redirect to menu.
+        return null;
       case 'history':
         return (
           <MatchHistoryScreen

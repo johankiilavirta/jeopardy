@@ -1,29 +1,272 @@
-import { useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
+  Easing,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { AnswerKeyboard } from '../components/AnswerKeyboard';
+import { KeyboardSheet, useKeyboardSheet } from '../components/KeyboardSheet';
+import { NumberKeyboard } from '../components/NumberKeyboard';
 import type { CellRect } from '../components/BoardCell';
 import { colors, type as typeTokens } from '../theme/tokens';
+import type { PreferredConnectionMode } from '../../app/sessionStore';
 
 const SCREEN_TOP_PADDING = 64;
 const SCREEN_SIDE_PADDING = 32;
 const TITLE_TO_CONTENT_GAP = 40;
+const SETTINGS_COMMIT = 60;
+const BUILD_TAG = 'board recovery-2026-07-18';
+
+type SettingsField = 'playerName' | 'relayHost' | 'relayPort';
+
+const HOST_ROWS = [
+  ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+  ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
+  ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
+  ['Z', 'X', 'C', 'V', 'B', 'N', 'M'],
+  ['.', '-', ':', '⌫'],
+];
+
+function HostKeyboard({ onInsert, onBackspace }: { onInsert: (char: string) => void; onBackspace: () => void }) {
+  return (
+    <View style={styles.hostKeyboard}>
+      {HOST_ROWS.map((row, rowIndex) => (
+        <View key={rowIndex} style={styles.hostKeyboardRow}>
+          {row.map(label => (
+            <Pressable
+              key={label}
+              style={({ pressed }) => [styles.hostKey, pressed && styles.hostKeyPressed]}
+              onPress={() => {
+                if (label === '⌫') onBackspace();
+                else onInsert(label.toLowerCase());
+              }}
+            >
+              <Text style={styles.hostKeyText} allowFontScaling={false}>
+                {label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
 
 interface MainMenuScreenProps {
   onNewGame: () => void;
   onJoinGame: (sourceRect?: CellRect) => void;
-  onSettings: () => void;
   onHistory?: (() => void) | undefined;
+  // Settings props — passed through so settings panel lives here
+  playerName?: string;
+  onNameChange?: (name: string) => void;
+  relayHost?: string;
+  onRelayHostChange?: (host: string) => void;
+  relayPort?: string;
+  onRelayPortChange?: (port: string) => void;
+  connectionMode?: PreferredConnectionMode | undefined;
+  onConnectionModeChange?: ((mode: PreferredConnectionMode) => void) | undefined;
 }
 
 export function MainMenuScreen(props: MainMenuScreenProps) {
+  const { height } = useWindowDimensions();
   const rootRef = useRef<View>(null);
   const joinButtonRef = useRef<View>(null);
 
+  // ── Settings panel state ──────────────────────────────────────────────────
+  const [showSettings, setShowSettings] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [activeField, setActiveField] = useState<SettingsField | null>(null);
+  const settingsClosingRef = useRef(false);
+  const gradientH = useRef(new Animated.Value(0)).current;
+  const settingsContentOpacity = useRef(new Animated.Value(0)).current;
+  const settingsDragX = useRef(new Animated.Value(0)).current;
+  const settingsDragY = useRef(new Animated.Value(0)).current;
+  const settingsAxisRef = useRef<'horizontal' | 'vertical' | null>(null);
+  const scrollOffsetRef = useRef(0);
+  const settingsScrollRef = useRef<ScrollView | null>(null);
+  const advancedYRef = useRef(0);
+  const fieldLayoutRef = useRef<Record<SettingsField, { y: number; height: number }>>({
+    playerName: { y: 0, height: 0 },
+    relayHost: { y: 0, height: 0 },
+    relayPort: { y: 0, height: 0 },
+  });
+
+  // ── Keyboard sheet ────────────────────────────────────────────────────────
+  const sheet = useKeyboardSheet(
+    undefined,
+    () => setActiveField(null),
+  );
+
+  const scrollFieldIntoKeyboardWindow = useCallback((field: SettingsField) => {
+    const layout = fieldLayoutRef.current[field];
+    if (!layout.height) return;
+    const keyboardTop = height - sheet.panelHeight;
+    const targetTop = (keyboardTop - layout.height) / 2;
+    const y = Math.max(0, layout.y - targetTop);
+    requestAnimationFrame(() => {
+      settingsScrollRef.current?.scrollTo({ y, animated: true });
+    });
+  }, [height, sheet.panelHeight]);
+
+  const openKeyboard = useCallback((field: SettingsField) => {
+    setActiveField(field);
+    sheet.open();
+    scrollFieldIntoKeyboardWindow(field);
+  }, [sheet, scrollFieldIntoKeyboardWindow]);
+
+  const insertChar = useCallback((char: string) => {
+    if (activeField === 'playerName') {
+      props.onNameChange?.(`${props.playerName ?? ''}${char}`.slice(0, 24));
+    } else if (activeField === 'relayHost') {
+      props.onRelayHostChange?.(`${props.relayHost ?? ''}${char}`.slice(0, 64));
+    } else if (activeField === 'relayPort') {
+      props.onRelayPortChange?.(`${props.relayPort ?? ''}${char}`.replace(/\D/g, '').slice(0, 5));
+    }
+  }, [activeField, props]);
+
+  const backspaceChar = useCallback(() => {
+    if (activeField === 'playerName') {
+      props.onNameChange?.((props.playerName ?? '').slice(0, -1));
+    } else if (activeField === 'relayHost') {
+      props.onRelayHostChange?.((props.relayHost ?? '').slice(0, -1));
+    } else if (activeField === 'relayPort') {
+      props.onRelayPortChange?.((props.relayPort ?? '').slice(0, -1));
+    }
+  }, [activeField, props]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.addEventListener) return;
+    const handler = (e: KeyboardEvent) => {
+      if (!activeField) return;
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        backspaceChar();
+      } else if (e.key === 'Escape' || e.key === 'Enter' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        sheet.close();
+      } else if (activeField === 'relayPort' && /^\d$/.test(e.key)) {
+        e.preventDefault();
+        insertChar(e.key);
+      } else if (activeField === 'relayHost' && /^[a-zA-Z0-9.:-]$/.test(e.key)) {
+        e.preventDefault();
+        insertChar(e.key.toLowerCase());
+      } else if (activeField === 'playerName' && (/^[a-zA-Z]$/.test(e.key) || e.key === ' ')) {
+        e.preventDefault();
+        insertChar(e.key === ' ' ? ' ' : e.key.toUpperCase());
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [activeField, backspaceChar, sheet, insertChar]);
+
+  // ── Open / close settings ─────────────────────────────────────────────────
+  const openSettings = useCallback(() => {
+    sheet.close();
+    settingsClosingRef.current = false;
+    gradientH.setValue(0);
+    settingsContentOpacity.setValue(0);
+    setShowSettings(true);
+    Animated.timing(gradientH, {
+      toValue: height,
+      duration: 380,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start(({ finished }) => {
+      if (!finished) return;
+      Animated.timing(settingsContentOpacity, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    });
+  }, [gradientH, settingsContentOpacity, height, sheet]);
+
+  const closeSettings = useCallback(() => {
+    if (settingsClosingRef.current) return;
+    settingsClosingRef.current = true;
+    sheet.close();
+    Animated.timing(settingsContentOpacity, {
+      toValue: 0,
+      duration: 140,
+      easing: Easing.in(Easing.ease),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (!finished) return;
+      Animated.timing(gradientH, {
+        toValue: 0,
+        duration: 300,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: false,
+      }).start(({ finished: f }) => {
+        if (f) setShowSettings(false);
+        else settingsClosingRef.current = false;
+      });
+    });
+  }, [gradientH, settingsContentOpacity, sheet]);
+
+  // ── Settings drag-to-dismiss ──────────────────────────────────────────────
+  const settingsPanResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_e, gesture) => {
+      const isDown =
+        gesture.dy > 10 &&
+        Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.5 &&
+        scrollOffsetRef.current <= 0;
+      const isHorizontal =
+        Math.abs(gesture.dx) > 10 &&
+        Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5;
+      return isDown || isHorizontal;
+    },
+    onPanResponderGrant: () => {
+      settingsAxisRef.current = null;
+      settingsDragX.setValue(0);
+      settingsDragY.setValue(0);
+    },
+    onPanResponderMove: (_e, gesture) => {
+      if (!settingsAxisRef.current) {
+        if (Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5) {
+          settingsAxisRef.current = 'horizontal';
+        } else if (gesture.dy > 0) {
+          settingsAxisRef.current = 'vertical';
+        }
+      }
+      if (settingsAxisRef.current === 'horizontal') {
+        settingsDragX.setValue(gesture.dx);
+      } else if (settingsAxisRef.current === 'vertical') {
+        settingsDragY.setValue(Math.max(0, gesture.dy));
+      }
+    },
+    onPanResponderRelease: (_e, gesture) => {
+      const committed =
+        (settingsAxisRef.current === 'horizontal' && (Math.abs(gesture.dx) > SETTINGS_COMMIT || Math.abs(gesture.vx) > 0.7)) ||
+        (settingsAxisRef.current === 'vertical' && (gesture.dy > SETTINGS_COMMIT || gesture.vy > 0.7));
+      settingsAxisRef.current = null;
+      settingsDragX.setValue(0);
+      settingsDragY.setValue(0);
+      if (committed) closeSettings();
+    },
+    onPanResponderTerminate: () => {
+      settingsAxisRef.current = null;
+      settingsDragX.setValue(0);
+      settingsDragY.setValue(0);
+    },
+  }), [closeSettings, settingsDragX, settingsDragY]);
+
+  const leftChevOpacity  = settingsDragX.interpolate({ inputRange: [-SETTINGS_COMMIT, -20, 0], outputRange: [1, 0.4, 0], extrapolate: 'clamp' });
+  const leftChevTransX   = settingsDragX.interpolate({ inputRange: [-SETTINGS_COMMIT, 0], outputRange: [0, 68], extrapolate: 'clamp' });
+  const rightChevOpacity = settingsDragX.interpolate({ inputRange: [0, 20, SETTINGS_COMMIT], outputRange: [0, 0.4, 1], extrapolate: 'clamp' });
+  const rightChevTransX  = settingsDragX.interpolate({ inputRange: [0, SETTINGS_COMMIT], outputRange: [-68, 0], extrapolate: 'clamp' });
+  const downChevOpacity  = settingsDragY.interpolate({ inputRange: [0, 20, SETTINGS_COMMIT], outputRange: [0, 0.4, 1], extrapolate: 'clamp' });
+  const downChevTransY   = settingsDragY.interpolate({ inputRange: [0, SETTINGS_COMMIT], outputRange: [-68, 0], extrapolate: 'clamp' });
+
+  // ── Join game with source rect ────────────────────────────────────────────
   const openJoinGame = () => {
     const root = rootRef.current;
     const button = joinButtonRef.current;
@@ -81,12 +324,182 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
           )}
           <Pressable
             style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-            onPress={props.onSettings}
+            onPress={openSettings}
           >
             <Text style={styles.buttonText}>SETTINGS</Text>
           </Pressable>
         </View>
       </ScrollView>
+
+      {/* Settings panel — gradient grows from bottom, content fades in */}
+      {showSettings && (
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+          {/* Phase 1: dark gradient grows upward */}
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.settingsGradientWrap, { height: gradientH }]}
+          >
+            <LinearGradient
+              colors={[colors.backgroundTransparent, colors.background]}
+              style={styles.settingsGradientEdge}
+              pointerEvents="none"
+            />
+            <View style={styles.settingsGradientSolid} />
+          </Animated.View>
+
+          {/* Phase 2: content fades in */}
+          <Animated.View
+            style={[StyleSheet.absoluteFill, { opacity: settingsContentOpacity }]}
+            {...settingsPanResponder.panHandlers}
+          >
+            {/* Drag handle */}
+            <Pressable style={styles.settingsDragHandle} onPress={closeSettings}>
+              <View style={styles.settingsDragPill} />
+            </Pressable>
+
+            {/* Drag-left → right chevron */}
+            <Animated.View pointerEvents="none" style={[styles.chevIcon, styles.chevIconRight, { opacity: leftChevOpacity, transform: [{ translateX: leftChevTransX }] }]}>
+              <View style={styles.chev}>
+                <View style={[styles.chevStroke, styles.chevTop]} />
+                <View style={[styles.chevStroke, styles.chevBot]} />
+              </View>
+            </Animated.View>
+            {/* Drag-right → left chevron */}
+            <Animated.View pointerEvents="none" style={[styles.chevIcon, styles.chevIconLeft, { opacity: rightChevOpacity, transform: [{ translateX: rightChevTransX }] }]}>
+              <View style={[styles.chev, styles.chevFlipped]}>
+                <View style={[styles.chevStroke, styles.chevTop]} />
+                <View style={[styles.chevStroke, styles.chevBot]} />
+              </View>
+            </Animated.View>
+            {/* Drag-down → top chevron */}
+            <Animated.View pointerEvents="none" style={[styles.chevIconTop, { opacity: downChevOpacity, transform: [{ translateY: downChevTransY }] }]}>
+              <View style={[styles.chev, styles.chevDown]}>
+                <View style={[styles.chevStroke, styles.chevTop]} />
+                <View style={[styles.chevStroke, styles.chevBot]} />
+              </View>
+            </Animated.View>
+
+            <ScrollView
+              ref={settingsScrollRef}
+              style={styles.settingsScroll}
+              contentContainerStyle={[
+                styles.settingsScrollContent,
+                { paddingBottom: 32 + (sheet.visible ? sheet.panelHeight : 0) },
+              ]}
+              showsVerticalScrollIndicator={false}
+              showsHorizontalScrollIndicator={false}
+              scrollEventThrottle={16}
+              bounces={false}
+              onScrollBeginDrag={() => { if (sheet.visible) sheet.close(); }}
+              onScroll={e => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y; }}
+              onTouchStart={() => { if (sheet.visible) sheet.close(); }}
+            >
+              <Text style={styles.settingsTitle}>SETTINGS</Text>
+
+              <Text style={styles.label}>Player Name</Text>
+              <Pressable
+                style={styles.input}
+                accessibilityRole="button"
+                accessibilityLabel={`Player name ${props.playerName || 'empty'}`}
+                onLayout={event => {
+                  fieldLayoutRef.current.playerName = {
+                    y: event.nativeEvent.layout.y,
+                    height: event.nativeEvent.layout.height,
+                  };
+                }}
+                onPress={() => openKeyboard('playerName')}
+              >
+                <Text style={[styles.inputText, !props.playerName && styles.inputPlaceholder]}>
+                  {props.playerName || 'Your name'}
+                </Text>
+              </Pressable>
+
+              {props.connectionMode != null && props.onConnectionModeChange && (
+                <>
+                  <Text style={[styles.label, styles.stackedLabel]}>Bluetooth Mode</Text>
+                  <Pressable
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: props.connectionMode === 'bluetooth' }}
+                    style={styles.toggleBox}
+                    onPress={() => props.onConnectionModeChange?.(
+                      props.connectionMode === 'bluetooth' ? 'online' : 'bluetooth',
+                    )}
+                  >
+                    <Text style={[styles.toggleText, props.connectionMode === 'online' && styles.toggleTextOff]}>
+                      {props.connectionMode === 'bluetooth' ? 'On' : 'Off'}
+                    </Text>
+                  </Pressable>
+                </>
+              )}
+
+              <Pressable
+                style={styles.advancedToggle}
+                onPress={() => {
+                  sheet.close();
+                  setShowAdvanced(!showAdvanced);
+                }}
+              >
+                <Text style={styles.advancedToggleText}>
+                  {showAdvanced ? '▾ Advanced' : '▸ Advanced'}
+                </Text>
+              </Pressable>
+
+              {showAdvanced && (
+                <View
+                  style={styles.advancedSection}
+                  onLayout={event => {
+                    advancedYRef.current = event.nativeEvent.layout.y;
+                  }}
+                >
+                  <Text style={styles.label}>Relay Host</Text>
+                  <Pressable
+                    style={styles.input}
+                    accessibilityRole="button"
+                    onLayout={event => {
+                      fieldLayoutRef.current.relayHost = {
+                        y: advancedYRef.current + event.nativeEvent.layout.y,
+                        height: event.nativeEvent.layout.height,
+                      };
+                    }}
+                    onPress={() => openKeyboard('relayHost')}
+                  >
+                    <Text style={[styles.inputText, !props.relayHost && styles.inputPlaceholder]}>
+                      {props.relayHost || 'localhost'}
+                    </Text>
+                  </Pressable>
+                  <Text style={[styles.label, styles.stackedLabel]}>Relay Port</Text>
+                  <Pressable
+                    style={styles.input}
+                    accessibilityRole="button"
+                    onLayout={event => {
+                      fieldLayoutRef.current.relayPort = {
+                        y: advancedYRef.current + event.nativeEvent.layout.y,
+                        height: event.nativeEvent.layout.height,
+                      };
+                    }}
+                    onPress={() => openKeyboard('relayPort')}
+                  >
+                    <Text style={[styles.inputText, !props.relayPort && styles.inputPlaceholder]}>
+                      {props.relayPort || '8787'}
+                    </Text>
+                  </Pressable>
+                  <Text style={styles.buildTag}>{BUILD_TAG}</Text>
+                </View>
+              )}
+            </ScrollView>
+
+            <KeyboardSheet controls={sheet}>
+              {activeField === 'relayPort' ? (
+                <NumberKeyboard dark onInsert={insertChar} onBackspace={backspaceChar} />
+              ) : activeField === 'relayHost' ? (
+                <HostKeyboard onInsert={insertChar} onBackspace={backspaceChar} />
+              ) : (
+                <AnswerKeyboard onInsert={insertChar} onBackspace={backspaceChar} final />
+              )}
+            </KeyboardSheet>
+          </Animated.View>
+        </View>
+      )}
     </View>
   );
 }
@@ -94,7 +507,7 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: colors.background,
   },
   scroll: {
     flex: 1,
@@ -130,5 +543,159 @@ const styles = StyleSheet.create({
     fontFamily: typeTokens.ui700,
     fontSize: 18,
     color: colors.gold,
+  },
+  // ── Settings gradient backdrop ───────────────────────────────────────────
+  settingsGradientWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  settingsGradientEdge: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 72,
+  },
+  settingsGradientSolid: {
+    position: 'absolute',
+    top: 72,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.background,
+  },
+  // ── Drag handle ──────────────────────────────────────────────────────────
+  settingsDragHandle: {
+    alignItems: 'center',
+    paddingTop: 14,
+    paddingBottom: 10,
+  },
+  settingsDragPill: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+  },
+  // ── Dismiss chevrons ─────────────────────────────────────────────────────
+  chevIcon: {
+    position: 'absolute',
+    top: '45%',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.cellRecessed,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chevIconLeft: { left: 8 },
+  chevIconRight: { right: 8 },
+  chevIconTop: {
+    position: 'absolute',
+    top: 24,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.cellRecessed,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+  },
+  chev: { width: 24, height: 24 },
+  chevFlipped: { transform: [{ scaleX: -1 }] },
+  chevDown: { transform: [{ rotate: '90deg' }] },
+  chevStroke: {
+    position: 'absolute',
+    left: 4,
+    width: 14,
+    height: 3.5,
+    borderRadius: 2,
+    backgroundColor: '#FFFFFF',
+  },
+  chevTop: { top: 5.25, transform: [{ rotate: '-45deg' }] },
+  chevBot: { top: 15.25, transform: [{ rotate: '45deg' }] },
+  // ── Settings content ─────────────────────────────────────────────────────
+  settingsScroll: { flex: 1 },
+  settingsScrollContent: {
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    width: '100%',
+  },
+  settingsTitle: {
+    fontFamily: typeTokens.board,
+    fontSize: 28,
+    color: colors.categoryText,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  label: {
+    alignSelf: 'flex-start',
+    fontFamily: typeTokens.ui500,
+    fontSize: 13,
+    color: '#888',
+    marginBottom: 4,
+    width: '100%',
+    maxWidth: 400,
+  },
+  stackedLabel: { marginTop: 14 },
+  input: {
+    borderWidth: 1,
+    borderColor: '#444',
+    borderRadius: 6,
+    padding: 10,
+    minHeight: 42,
+    justifyContent: 'center',
+    width: '100%',
+    maxWidth: 400,
+  },
+  inputText: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 16,
+    color: '#fff',
+  },
+  inputPlaceholder: { color: '#666' },
+  toggleBox: {
+    borderWidth: 1,
+    borderColor: '#444',
+    borderRadius: 6,
+    padding: 10,
+    width: '100%',
+    maxWidth: 400,
+  },
+  toggleText: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 16,
+    color: '#fff',
+  },
+  toggleTextOff: { color: '#666' },
+  advancedToggle: { marginTop: 24, alignSelf: 'flex-start' },
+  advancedToggleText: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 14,
+    color: '#555',
+  },
+  advancedSection: { marginTop: 8, width: '100%', maxWidth: 400 },
+  buildTag: {
+    marginTop: 8,
+    fontFamily: typeTokens.ui500,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.16)',
+  },
+  hostKeyboard: { flex: 1, gap: 5 },
+  hostKeyboardRow: { flex: 1, minHeight: 28, flexDirection: 'row', gap: 5 },
+  hostKey: {
+    flex: 1,
+    backgroundColor: colors.cellFinal,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hostKeyPressed: { backgroundColor: colors.activeOutline },
+  hostKeyText: {
+    fontFamily: typeTokens.ui500,
+    fontSize: 16,
+    color: '#FFFFFF',
   },
 });
