@@ -5,6 +5,7 @@ import { colors, grid, type as typeTokens } from '../theme/tokens';
 import { fit as computeFit } from './AutoFitText';
 import { BoardCell, type CellRect } from './BoardCell';
 import { CategoryCell, CAT_PAD_X, CAT_PAD_Y } from './CategoryCell';
+import { sanitizeText } from '../../src/sanitizeText';
 
 interface BoardProps {
   board: BoardDefinition;
@@ -34,6 +35,46 @@ const VALUE_FILL = 0.9;
 const WAVE_MS = 455;
 const WAVE_OFFSET = 350;
 
+function balancedGroups(widths: number[], spaceWidth: number, maxLines: number): { groups: [number, number][]; maxWidth: number } {
+  const lineCount = Math.min(maxLines, widths.length);
+  const lineWidth = (start: number, end: number) =>
+    widths.slice(start, end + 1).reduce((sum, width) => sum + width, 0) + spaceWidth * (end - start);
+  const linesFor = (limit: number) => {
+    let lines = 1;
+    let current = 0;
+    for (const width of widths) {
+      if (current === 0) current = width;
+      else if (current + spaceWidth + width <= limit + 0.01) current += spaceWidth + width;
+      else { lines++; current = width; }
+    }
+    return lines;
+  };
+
+  let low = Math.max(...widths);
+  let high = widths.reduce((sum, width) => sum + width, 0) + spaceWidth * Math.max(0, widths.length - 1);
+  for (let i = 0; i < 28; i++) {
+    const mid = (low + high) / 2;
+    if (linesFor(mid) <= lineCount) high = mid;
+    else low = mid;
+  }
+
+  const groups: [number, number][] = [];
+  let start = 0;
+  let current = 0;
+  for (let i = 0; i < widths.length; i++) {
+    const width = widths[i]!;
+    if (current === 0) current = width;
+    else if (current + spaceWidth + width <= high + 0.01) current += spaceWidth + width;
+    else {
+      groups.push([start, i - 1]);
+      start = i;
+      current = width;
+    }
+  }
+  groups.push([start, widths.length - 1]);
+  return { groups, maxWidth: Math.max(...groups.map(([start, end]) => lineWidth(start, end))) };
+}
+
 function shuffle(n: number): number[] {
   const a = Array.from({ length: n }, (_, i) => i);
   for (let i = n - 1; i > 0; i--) {
@@ -44,14 +85,24 @@ function shuffle(n: number): number[] {
 }
 
 function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boardAnimKey = 0, onReady }: BoardProps) {
+  // Lobby metadata can arrive directly from the relay rather than through
+  // gameLoader, so normalize it here as well. Fitting and rendering must use
+  // the same display string or escaped quotes/backslashes can cause ellipses.
+  const categories = useMemo(
+    () => board.categories.map(category => ({ ...category, name: sanitizeText(category.name) })),
+    [board.categories],
+  );
   const burned = new Set(burnedClueIds);
-  const baseValue = board.categories.find(c => c.clues.length > 0)?.clues[0]?.value ?? 200;
+  const baseValue = categories.find(c => c.clues.length > 0)?.clues[0]?.value ?? 200;
   const [boardSize, setBoardSize] = useState<{ w: number; h: number } | null>(null);
   const [probe, setProbe] = useState<{ w: number; h: number } | null>(null);
-  // Native fallback: measured single-line widths of each category at PROBE_FONT.
-  const [catProbes, setCatProbes] = useState<Record<string, number>>({});
+  // Native fallback: measured single-word widths at PROBE_FONT. Explicit word
+  // measurements let us choose safe line breaks instead of splitting a long
+  // word when React Native lays out the final category text.
+  const [wordProbes, setWordProbes] = useState<Record<string, number>>({});
+  const [spaceProbe, setSpaceProbe] = useState<number | null>(null);
 
-  const colCount = board.categories.length;
+  const colCount = categories.length;
 
   // waves = max(cols, rows); cells-per-wave = min(cols, rows).
   // When cols >= rows: cycle columns — wave w, row r → col (r+w) % cols.
@@ -122,7 +173,7 @@ function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boa
     const innerH = catRowH - 2 * CAT_PAD_Y;
     if (innerW <= 0 || innerH <= 0) return null;
 
-    const names = board.categories.map(c => c.name.toUpperCase());
+    const names = categories.map(c => c.name.toUpperCase());
 
     // --- Web path: canvas measurement with balanced line breaks ---
     const webFits = names.map(n =>
@@ -135,34 +186,43 @@ function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boa
       );
     }
 
-    // --- Native fallback: derive sizing from layout-measured probe widths ---
-    if (!board.categories.every(c => catProbes[c.name] != null)) return null;
+    // --- Native fallback: derive sizing and line breaks from word probes ---
+    const allWords = categories.flatMap(category => category.name.toUpperCase().split(/\s+/).filter(Boolean));
+    if (spaceProbe == null || !allWords.every(word => wordProbes[word] != null)) return null;
 
     const WIDTH_FILL = 0.92;
     const HEIGHT_FILL = 0.88;
-    const widthBudget = innerW / 0.85; // account for scaleX
+    // scaleX is applied after layout; wrapping still has to fit the real cell.
+    const widthBudget = innerW;
+
+    const nativeFit = (name: string, maxFont: number) => {
+      const words = name.toUpperCase().split(/\s+/).filter(Boolean);
+      const widths = words.map(word => wordProbes[word]!);
+      let best: { fontSize: number; text: string } | null = null;
+      for (let lines = 1; lines <= Math.min(3, words.length); lines++) {
+        const layout = balancedGroups(widths, spaceProbe, lines);
+        const byWidth = (WIDTH_FILL * widthBudget * PROBE_FONT) / layout.maxWidth;
+        const byHeight = (HEIGHT_FILL * innerH) / (layout.groups.length * 1.28);
+        const fontSize = Math.min(byWidth, byHeight, maxFont);
+        if (!best || fontSize > best.fontSize * 1.06) {
+          best = {
+            fontSize,
+            text: layout.groups
+              .map(([start, end]) => words.slice(start, end + 1).join(' '))
+              .join('\n'),
+          };
+        }
+      }
+      return best ?? { fontSize: 8, text: name };
+    };
 
     let minFontSize = 44;
-    for (const cat of board.categories) {
-      const textW = catProbes[cat.name]!;
-      const wordCount = cat.name.toUpperCase().split(/\s+/).filter(Boolean).length;
-      const maxL = Math.min(3, wordCount);
-
-      let bestSize = 0;
-      for (let L = 1; L <= maxL; L++) {
-        // Conservative line-width estimate: even split with a 25% penalty
-        // for uneven word lengths at break boundaries.
-        const estMaxLine = (textW / L) * 1.25;
-        const byWidth = (WIDTH_FILL * widthBudget * PROBE_FONT) / estMaxLine;
-        const byHeight = (HEIGHT_FILL * innerH) / (L * 1.28);
-        const fontSize = Math.min(byWidth, byHeight, 44);
-        if (fontSize > bestSize * 1.06) bestSize = fontSize;
-      }
-      minFontSize = Math.min(minFontSize, Math.max(8, bestSize));
+    for (const cat of categories) {
+      minFontSize = Math.min(minFontSize, nativeFit(cat.name, 44).fontSize);
     }
 
-    return names.map(n => ({ fontSize: minFontSize, text: n }));
-  }, [boardSize, board.categories, colCount, catProbes]);
+    return names.map(n => nativeFit(n, minFontSize));
+  }, [boardSize, categories, colCount, spaceProbe, wordProbes]);
 
   // Font sizing is measurement-driven (onLayout probes land over several
   // frames), so a freshly mounted board visibly assembles itself: values at
@@ -198,27 +258,38 @@ function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boa
         $1000
       </Text>
 
-      {/* Category probes: measure each name's single-line width at PROBE_FONT
-          so the native fallback path can compute a shared font size. */}
-      {board.categories.map(cat => (
+      {/* Word probes: measure each token at PROBE_FONT so native layout can
+          choose explicit word boundaries for up to three lines. */}
+      {Array.from(new Set(categories.flatMap(category => category.name.toUpperCase().split(/\s+/).filter(Boolean)))).map(word => (
         <Text
-          key={`cat-probe-${cat.name}`}
+          key={`word-probe-${word}`}
           style={styles.catProbe}
           numberOfLines={1}
           allowFontScaling={false}
           onLayout={e => {
             const w = e.nativeEvent.layout.width;
-            setCatProbes(prev => prev[cat.name] === w ? prev : { ...prev, [cat.name]: w });
+            setWordProbes(prev => prev[word] === w ? prev : { ...prev, [word]: w });
           }}
         >
-          {cat.name.toUpperCase()}
+          {word}
         </Text>
       ))}
+      <Text
+        style={styles.catProbe}
+        numberOfLines={1}
+        allowFontScaling={false}
+        onLayout={e => {
+          const w = e.nativeEvent.layout.width;
+          setSpaceProbe(prev => prev === w ? prev : w);
+        }}
+      >
+        {' '}
+      </Text>
 
       <View style={styles.categoryRow}>
-        {board.categories.map((category, i) => (
+        {categories.map((category, i) => (
           <CategoryCell
-            key={category.name}
+            key={`category-${i}`}
             name={category.name}
             flashDelay={cellDelays ? catFlashDelay : undefined}
             precomputedFit={categoryFits?.[i] ?? undefined}
@@ -228,7 +299,7 @@ function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boa
 
       {Array.from({ length: ROW_COUNT }, (_, row) => (
         <View key={row} style={styles.row}>
-          {board.categories.map((category, col) => {
+          {categories.map((category, col) => {
             const clue = category.clues[row];
             const dead = clue ? burned.has(clue.id) : true;
             const cellIdx = col * ROW_COUNT + row;

@@ -82,21 +82,47 @@ interface LobbySlotBugProps {
 function LobbySlotBug({ player, slotIndex, localIsHost, settingsOpen, onSettings, onKick }: LobbySlotBugProps) {
   const isHostSlot = slotIndex === 0;
   const filled = player != null;
+  const nameOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!filled) {
+      nameOpacity.setValue(0);
+      return;
+    }
+    // On the host's screen, the arriving guest fades into the existing host
+    // bug. The guest's own lobby uses the same instant name handoff as the
+    // rest of the join screen.
+    if (localIsHost && !isHostSlot) {
+      nameOpacity.setValue(0);
+      Animated.timing(nameOpacity, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    } else {
+      nameOpacity.setValue(1);
+    }
+  }, [filled, isHostSlot, localIsHost, nameOpacity, player?.peerId]);
 
   return (
     <View style={bugStyles.bug}>
-      <Text style={bugStyles.roleLabel} allowFontScaling={false}>
-        {isHostSlot ? 'HOST' : 'PLAYER 2'}
-      </Text>
-      <Text
-        style={[bugStyles.name, !filled && bugStyles.nameWaiting]}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.5}
-        allowFontScaling={false}
-      >
-        {filled ? player.name.toUpperCase() : 'WAITING…'}
-      </Text>
+      {(isHostSlot || filled) && (
+        <Text style={[bugStyles.roleLabel, !isHostSlot && bugStyles.roleLabelHidden]} allowFontScaling={false}>
+          {isHostSlot ? 'HOST' : ''}
+        </Text>
+      )}
+      {filled && (
+        <Animated.Text
+          style={[bugStyles.name, { opacity: nameOpacity }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.5}
+          allowFontScaling={false}
+        >
+          {player.name.toUpperCase()}
+        </Animated.Text>
+      )}
 
       {/* Settings gear — only on host slot, only visible to the host */}
       {isHostSlot && localIsHost && (
@@ -138,6 +164,10 @@ const bugStyles = StyleSheet.create({
     color: colors.gold,
     opacity: 0.75,
     marginBottom: 3,
+    height: 11,
+  },
+  roleLabelHidden: {
+    opacity: 0,
   },
   name: {
     fontFamily: typeTokens.board,
@@ -171,10 +201,10 @@ const bugStyles = StyleSheet.create({
     color: colors.categoryText,
   },
   kickBtn: {
-    borderRadius: 4,
-    width: 'auto',
-    paddingHorizontal: 8,
-    height: 26,
+    borderRadius: 16,
+    width: 32,
+    height: 32,
+    paddingHorizontal: 0,
     top: undefined,
     bottom: 10,
     right: 10,
@@ -347,12 +377,22 @@ export function LobbyScreen(props: LobbyScreenProps) {
   // Stable random game number ≥ 7500 used when no specific game is chosen.
   // Picked once on mount so the board doesn't re-randomise on every render.
   const fallbackGameId = useRef<number>(0);
+  const randomGameAssignedRef = useRef(false);
   if (fallbackGameId.current === 0) {
     const index = loadGameIndex();
     const min = 7500;
     const max = index.totalGames;
     fallbackGameId.current = min + Math.floor(Math.random() * (max - min + 1));
   }
+
+  // Resolve the random choice once for the host. Keeping it in the shared
+  // gameId state makes the number visible in settings and ensures START uses
+  // the same game that the lobby preview loaded.
+  useEffect(() => {
+    if (!props.isHost || props.gameId || randomGameAssignedRef.current) return;
+    randomGameAssignedRef.current = true;
+    props.onGameIdChange?.(String(fallbackGameId.current));
+  }, [props.gameId, props.isHost, props.onGameIdChange]);
 
   useEffect(() => {
     const id = props.gameId;
@@ -381,8 +421,14 @@ export function LobbyScreen(props: LobbyScreenProps) {
     setGameInfoStatus('loading');
     const timer = setTimeout(async () => {
       const applyInfo = (data: GameInfo) => {
-        setRound1Categories(data.round1 ?? null);
-        setRound2Categories(data.round2 ?? null);
+        setRound1Categories(data.round1?.map(category => ({
+          ...category,
+          name: sanitizeText(category.name),
+        })) ?? null);
+        setRound2Categories(data.round2?.map(category => ({
+          ...category,
+          name: sanitizeText(category.name),
+        })) ?? null);
         setAirDate(data.airDate ?? null);
         setSeasonNumber(data.season ?? null);
         setGameInfoStatus(data.round1 ? 'idle' : 'not-found');
@@ -844,9 +890,9 @@ export function LobbyScreen(props: LobbyScreenProps) {
             // Drag RIGHT → left-side  "<" chevron slides in from the left
             const settingsRightDragChevOpacity = settingsDragX.interpolate({ inputRange: [0, 20, SETTINGS_COMMIT], outputRange: [0, 0.4, 1], extrapolate: 'clamp' });
             const settingsRightDragChevTransX = settingsDragX.interpolate({ inputRange: [0, SETTINGS_COMMIT], outputRange: [-68, 0], extrapolate: 'clamp' });
-            // Drag DOWN  → bottom-centre "v" chevron slides up into position
+            // Drag DOWN  → top-centre "v" chevron follows the finger down
             const settingsDownChevOpacity = settingsDragY.interpolate({ inputRange: [0, 20, SETTINGS_COMMIT], outputRange: [0, 0.4, 1], extrapolate: 'clamp' });
-            const settingsDownChevTransY = settingsDragY.interpolate({ inputRange: [0, SETTINGS_COMMIT], outputRange: [68, 0], extrapolate: 'clamp' });
+            const settingsDownChevTransY = settingsDragY.interpolate({ inputRange: [0, SETTINGS_COMMIT], outputRange: [-68, 0], extrapolate: 'clamp' });
             return (
               <View style={StyleSheet.absoluteFill} {...settingsPanResponder.panHandlers}>
                 {/* Phase 1: dark gradient grows upward from the very bottom */}
@@ -887,8 +933,8 @@ export function LobbyScreen(props: LobbyScreenProps) {
                     <View style={[styles.chevronStroke, styles.chevronBottom]} />
                   </View>
                 </Animated.View>
-                {/* Drag-down → bottom-centre "v" chevron */}
-                <Animated.View pointerEvents="none" style={[styles.exitIconBottom, { opacity: settingsDownChevOpacity, transform: [{ translateY: settingsDownChevTransY }] }]}>
+                {/* Drag-down → top-centre "v" chevron */}
+                <Animated.View pointerEvents="none" style={[styles.exitIconTop, { opacity: settingsDownChevOpacity, transform: [{ translateY: settingsDownChevTransY }] }]}>
                   <View style={[styles.chevron, styles.chevronDown]}>
                     <View style={[styles.chevronStroke, styles.chevronTop]} />
                     <View style={[styles.chevronStroke, styles.chevronBottom]} />
@@ -1372,9 +1418,9 @@ const styles = StyleSheet.create({
   },
   exitIconLeft: { left: 8 },
   exitIconRight: { right: 8 },
-  exitIconBottom: {
+  exitIconTop: {
     position: 'absolute',
-    bottom: 24,
+    top: 24,
     width: 48,
     height: 48,
     borderRadius: 24,

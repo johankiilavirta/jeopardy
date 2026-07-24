@@ -113,7 +113,9 @@ export function fit(
   ctx.font = `${weight} ${R}px ${family}`;
   const wordW = words.map(w => ctx.measureText(w).width);
   const spaceW = ctx.measureText(' ').width;
-  const widthBudget = boxW / widthScale;
+  // scaleX is a visual transform applied after text layout. It does not make
+  // the native line box wider, so wrapping must fit the actual box width.
+  const widthBudget = boxW;
 
   // Categories read like the broadcast: fill most of the WIDTH, with height
   // only as a safety clamp (leave a little margin on each so text never touches

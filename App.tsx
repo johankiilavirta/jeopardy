@@ -223,6 +223,7 @@ export default function App() {
   const devAutoStartedRef = useRef(false);
   // Black overlay driven from 0 (transparent) to 1 (opaque) for screen transitions.
   const transitionAnim = useRef(new Animated.Value(0)).current;
+  const transitionHeldRef = useRef(false);
 
   // Match history: a stable per-game id (survives reconnects, cleared on
   // leave/new room) so re-finishing after an undo upserts instead of
@@ -673,6 +674,10 @@ export default function App() {
       } else {
         setLobbyError(err);
       }
+      if (transitionHeldRef.current) {
+        transitionHeldRef.current = false;
+        transitionAnim.setValue(0);
+      }
     });
 
     transport.onPeerDisconnected(handlePeerDisconnected);
@@ -693,6 +698,10 @@ export default function App() {
         setJoinError(err);
       } else {
         setLobbyError(err);
+      }
+      if (transitionHeldRef.current) {
+        transitionHeldRef.current = false;
+        transitionAnim.setValue(0);
       }
       transport.stop();
     }, options.timeoutMs ?? CONNECTION_TIMEOUT_MS);
@@ -735,6 +744,15 @@ export default function App() {
               isHost: true,
             });
           }
+          if (transitionHeldRef.current) {
+            transitionHeldRef.current = false;
+            Animated.timing(transitionAnim, {
+              toValue: 0,
+              duration: 320,
+              easing: Easing.out(Easing.ease),
+              useNativeDriver: true,
+            }).start();
+          }
           setLobbyError(null);
           if (options.autoStart && pendingResumeRef.current) {
             transport.startGame({
@@ -756,6 +774,15 @@ export default function App() {
             const roomCode = typeof action === 'object' ? action.join : 0;
             setJoinSearching(false);
             setScreen({ type: 'lobby', roomCode, isHost: false });
+            if (transitionHeldRef.current) {
+              transitionHeldRef.current = false;
+              Animated.timing(transitionAnim, {
+                toValue: 0,
+                duration: 320,
+                easing: Easing.out(Easing.ease),
+                useNativeDriver: true,
+              }).start();
+            }
           }
           break;
         case 'game-started': {
@@ -895,6 +922,10 @@ export default function App() {
         setJoinSearching(false);
         setJoinError(message);
       }
+      if (transitionHeldRef.current) {
+        transitionHeldRef.current = false;
+        transitionAnim.setValue(0);
+      }
     });
   }, [relayHost, relayPort, playerName, disconnect, cancelReconnect, refreshResumeAvailable, handleStateUpdate, handleSocketLost, handlePeerDisconnected]);
 
@@ -1017,8 +1048,10 @@ export default function App() {
     if (next && screenRef.current.type === 'lobby') setScreen(next);
   }, []);
 
-  /** Fade the screen to black, run `action`, then fade back to clear. */
-  const fadeToBlackAndThen = useCallback((action: () => void) => {
+  /** Fade to black and keep the destination covered until its room payload
+   * arrives. This lets the join screen remain visible during the handoff. */
+  const fadeToBlackAndHold = useCallback((action: () => void) => {
+    transitionHeldRef.current = true;
     Animated.timing(transitionAnim, {
       toValue: 1,
       duration: 200,
@@ -1026,20 +1059,12 @@ export default function App() {
       useNativeDriver: true,
     }).start(() => {
       action();
-      setTimeout(() => {
-        Animated.timing(transitionAnim, {
-          toValue: 0,
-          duration: 320,
-          easing: Easing.out(Easing.ease),
-          useNativeDriver: true,
-        }).start();
-      }, 80);
     });
   }, [transitionAnim]);
 
   const handleNewGame = useCallback(() => {
-    fadeToBlackAndThen(() => connectAndDo('create', undefined, connectionMode));
-  }, [connectAndDo, connectionMode, fadeToBlackAndThen]);
+    fadeToBlackAndHold(() => connectAndDo('create', undefined, connectionMode));
+  }, [connectAndDo, connectionMode, fadeToBlackAndHold]);
 
   /** RESUME GAME: host a fresh room seeded with the snapshot on this device. */
   const handleResumeGame = useCallback(() => {
@@ -1067,6 +1092,8 @@ export default function App() {
 
   const cancelJoinAttempt = useCallback(() => {
     joinAttemptRef.current += 1;
+    transitionHeldRef.current = false;
+    transitionAnim.setValue(0);
     if (screenRef.current.type === 'join') {
       transportRef.current?.stop();
       transportRef.current = null;
@@ -1091,12 +1118,14 @@ export default function App() {
     const attempt = joinAttemptRef.current + 1;
     joinAttemptRef.current = attempt;
     setJoinError(null);
-    setJoinSearching(true);
-    connectAndDo({ join: code }, undefined, connectionMode, {
-      timeoutMs: 8000,
-      isCancelled: () => joinAttemptRef.current !== attempt,
+    fadeToBlackAndHold(() => {
+      setJoinSearching(true);
+      connectAndDo({ join: code }, undefined, connectionMode, {
+        timeoutMs: 8000,
+        isCancelled: () => joinAttemptRef.current !== attempt,
+      });
     });
-  }, [connectAndDo, connectionMode]);
+  }, [connectAndDo, connectionMode, fadeToBlackAndHold]);
   const handleConnectionModeChange = useCallback((mode: PreferredConnectionMode) => {
     setConnectionMode(mode);
     if (PERSISTENCE_ENABLED) void savePreferredConnectionMode(mode);
@@ -1120,8 +1149,20 @@ export default function App() {
 
   /** Lobby swipe-to-leave: fade to black, tear down session, fade back in. */
   const handleLobbyLeaveWithFade = useCallback(() => {
-    fadeToBlackAndThen(() => handleLeave());
-  }, [fadeToBlackAndThen, handleLeave]);
+    Animated.timing(transitionAnim, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      handleLeave();
+      Animated.timing(transitionAnim, {
+        toValue: 0,
+        duration: 320,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    });
+  }, [handleLeave, transitionAnim]);
 
   const handleStartGame = useCallback(() => {
     const resume = pendingResumeRef.current;
@@ -1145,10 +1186,12 @@ export default function App() {
 
   // Menu-overlay actions: abandon the current session, then do the action.
   const handleOverlayNewGame = useCallback(() => {
-    cancelReconnect();
-    disconnect();
-    connectAndDo('create', undefined, connectionMode);
-  }, [cancelReconnect, connectAndDo, connectionMode, disconnect]);
+    fadeToBlackAndHold(() => {
+      cancelReconnect();
+      disconnect();
+      connectAndDo('create', undefined, connectionMode);
+    });
+  }, [cancelReconnect, connectAndDo, connectionMode, disconnect, fadeToBlackAndHold]);
 
   const handleOverlayJoinGame = useCallback((sourceRect?: CellRect) => {
     cancelReconnect();
