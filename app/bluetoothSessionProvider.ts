@@ -315,7 +315,12 @@ export class BluetoothSessionProvider implements SessionProvider {
   advertise(_displayName: string): void {}
   discover(): void { BluetoothNetwork?.browse(); }
   send(peerId: string, message: string): void {
-    if (this.role === 'host') this.localEndpoint?.send(peerId, message);
+    if (this.role === 'host') {
+      if (this.localEndpoint) this.localEndpoint.send(peerId, message);
+      // The lobby has no in-process game endpoint yet. Kicks and other
+      // lobby messages still need to use the native link directly.
+      else if (BluetoothNetwork && this.remotePeerId === peerId) BluetoothNetwork.send(peerId, message);
+    }
     else if (BluetoothNetwork && this.remotePeerId && peerId === SERVER_PEER_ID) BluetoothNetwork.send(this.remotePeerId, message);
   }
   broadcast(message: string): void {
