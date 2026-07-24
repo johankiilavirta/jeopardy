@@ -15,6 +15,7 @@ import { relayUrls } from '../../app/relayUrl';
 import { DEFAULT_RELAY_HOST } from '../../app/relayDefaults';
 import { sanitizeText } from '../../src/sanitizeText';
 import { loadGameInfo, loadGameIndex, type GameInfo } from '../../data/gameLoader';
+import { nextCompleteGameNumber } from '../../data/gameSelection';
 import type { SessionMode } from '../../app/sessionProvider';
 import { KeyboardSheet, useKeyboardSheet } from '../components/KeyboardSheet';
 import { NumberKeyboard } from '../components/NumberKeyboard';
@@ -278,6 +279,9 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const setupScrollRef = useRef<ScrollView | null>(null);
   const advancedYRef = useRef(0);
   const gameIdLayoutRef = useRef({ y: 0, height: 0 });
+  const gameIdSwipeStartRef = useRef(0);
+  const gameIdSwipeActiveRef = useRef(false);
+  const completeGameCacheRef = useRef(new Map<number, GameInfo | null>());
   const fadeStartedRef = useRef(false);
   const pageX = useRef(new Animated.Value(0)).current;
   const gestureAxisRef = useRef<'horizontal' | 'vertical' | null>(null);
@@ -321,6 +325,63 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const backspaceGameId = useCallback(() => {
     props.onGameIdChange?.((props.gameId ?? '').slice(0, -1));
   }, [props]);
+
+  const getCachedGameInfo = useCallback((gameNumber: number) => {
+    const cached = completeGameCacheRef.current;
+    if (cached.has(gameNumber)) return cached.get(gameNumber) ?? null;
+    const info = loadGameInfo(gameNumber);
+    cached.set(gameNumber, info);
+    return info;
+  }, []);
+
+  const updateGameIdFromSwipe = useCallback((dy: number, vy: number) => {
+    const start = gameIdSwipeStartRef.current;
+    const direction: -1 | 1 = dy < 0 ? 1 : -1;
+    // Distance gives deliberate steps; velocity adds momentum while the
+    // finger is still down, so a faster swipe visibly advances faster.
+    const distanceSteps = Math.floor(Math.abs(dy) / 28);
+    // PanResponder velocities are expressed in roughly px/ms (the same
+    // scale used by the sheet's 0.7 swipe threshold). A quick flick therefore
+    // adds several valid-game steps while a slow drag stays distance-driven.
+    const momentumSteps = Math.floor(Math.abs(vy) * 4);
+    const steps = Math.max(1, distanceSteps + momentumSteps);
+    const next = nextCompleteGameNumber(
+      start,
+      direction,
+      steps,
+      loadGameIndex().totalGames,
+      getCachedGameInfo,
+    );
+    if (String(next) !== props.gameId) props.onGameIdChange?.(String(next));
+  }, [getCachedGameInfo, props]);
+
+  const gameIdResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_event, gesture) =>
+      Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.35,
+    onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+      Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.35,
+    onPanResponderGrant: () => {
+      const current = Number(props.gameId);
+      gameIdSwipeStartRef.current = Number.isFinite(current) && current > 0
+        ? current
+        : fallbackGameId.current;
+      gameIdSwipeActiveRef.current = false;
+    },
+    onPanResponderMove: (_event, gesture) => {
+      gameIdSwipeActiveRef.current = true;
+      updateGameIdFromSwipe(gesture.dy, gesture.vy);
+    },
+    onPanResponderRelease: () => {
+      // Let a Pressable release that follows this responder event know that
+      // it was a swipe, not a tap. Clear shortly afterward for the next tap.
+      gameIdSwipeActiveRef.current = true;
+      setTimeout(() => { gameIdSwipeActiveRef.current = false; }, 100);
+    },
+    onPanResponderTerminate: () => {
+      gameIdSwipeActiveRef.current = true;
+      setTimeout(() => { gameIdSwipeActiveRef.current = false; }, 100);
+    },
+  }), [props.gameId, updateGameIdFromSwipe]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.addEventListener) return;
@@ -1009,7 +1070,8 @@ export function LobbyScreen(props: LobbyScreenProps) {
                       {/* ── Right column: game selection ── */}
                       <View style={styles.settingsColRight}>
                         <Text style={styles.label}>GAME #</Text>
-                        <Pressable
+                        <View {...gameIdResponder.panHandlers}>
+                          <Pressable
                           style={styles.input}
                           accessibilityRole="button"
                           accessibilityLabel={`Game number ${props.gameId || 'random'}`}
@@ -1019,12 +1081,19 @@ export function LobbyScreen(props: LobbyScreenProps) {
                               height: event.nativeEvent.layout.height,
                             };
                           }}
-                          onPress={sheet.open}
-                        >
-                          <Text style={[styles.inputText, !props.gameId && styles.inputPlaceholder]}>
-                            {props.gameId || 'Random'}
-                          </Text>
-                        </Pressable>
+                          onPress={() => {
+                            if (gameIdSwipeActiveRef.current) {
+                              gameIdSwipeActiveRef.current = false;
+                              return;
+                            }
+                            sheet.open();
+                          }}
+                          >
+                            <Text style={[styles.inputText, !props.gameId && styles.inputPlaceholder]}>
+                              {props.gameId || 'Random'}
+                            </Text>
+                          </Pressable>
+                        </View>
 
                         {gameInfoStatus === 'loading' && (
                           <Text style={styles.gameInfoNote}>Loading…</Text>
