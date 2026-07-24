@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentRef,
+} from 'react';
 import {
   Animated,
   Easing,
@@ -11,6 +18,7 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import type { ActiveClue } from '../../src/types';
+import type { CellRect } from '../components/BoardCell';
 import { sanitizeText } from '../../src/sanitizeText';
 import { ActivationLights, LIGHTS_REST_BOTTOM, LIGHTS_WIDTH_PCT } from '../components/ActivationLights';
 import { AnswerKeyboard } from '../components/AnswerKeyboard';
@@ -121,6 +129,18 @@ interface ClueScreenProps {
   inputPrefix?: string;
   /** Placeholder when answer is empty */
   placeholder?: string;
+  /** Extend the answer tray through a parent safe-area bottom inset. */
+  keyboardBottomInset?: number;
+  /** Reports the rendered clue-card frame for shared-element transitions. */
+  onCardLayout?: (rect: CellRect) => void;
+  /** Reports the rendered clue-copy frame for shared-element transitions. */
+  onClueTextLayout?: (rect: CellRect) => void;
+  /** Places the blinking caret before or after the answer text. */
+  caretPosition?: 'start' | 'end';
+  /** Optional externally driven fade for the central clue copy. */
+  clueTextOpacity?: Animated.Value;
+  /** Optional blinking-caret color override. */
+  caretColor?: string | undefined;
 }
 
 export function ClueScreen({
@@ -145,6 +165,12 @@ export function ClueScreen({
   onMaxWager,
   inputPrefix = '',
   placeholder = 'TYPE YOUR ANSWER',
+  keyboardBottomInset = 0,
+  onCardLayout,
+  onClueTextLayout,
+  caretPosition = 'end',
+  clueTextOpacity,
+  caretColor,
 }: ClueScreenProps) {
   const isFinalJeopardy = clue.id === -1;
   // Wagers stay numeric. Regular answer entry can switch between the two
@@ -152,6 +178,8 @@ export function ClueScreen({
   const [activeKeyboardType, setActiveKeyboardType] = useState<'text' | 'number'>(keyboardType);
   const { width, height } = useWindowDimensions();
   const pan = useRef(new Animated.Value(0)).current;
+  const rootRef = useRef<ComponentRef<typeof View>>(null);
+  const clueTextRef = useRef<ComponentRef<typeof Text>>(null);
   const skipDrag = useRef(new Animated.Value(0)).current;
   const skipDistanceRef = useRef(0);
   const verticalGestureRef = useRef<VerticalClueGesture>(null);
@@ -210,7 +238,20 @@ export function ClueScreen({
   const handleClueTextLayout = useCallback((event: LayoutChangeEvent) => {
     const renderedHeight = Math.ceil(event.nativeEvent.layout.height);
     setRenderedClueHeight(current => current === renderedHeight ? current : renderedHeight);
-  }, []);
+    if (!onClueTextLayout) return;
+    requestAnimationFrame(() => {
+      rootRef.current?.measureInWindow((rootX, rootY) => {
+        clueTextRef.current?.measureInWindow((x, y, textWidth, textHeight) => {
+          onClueTextLayout({
+            x: x - rootX,
+            y: y - rootY,
+            width: textWidth,
+            height: textHeight,
+          });
+        });
+      });
+    });
+  }, [onClueTextLayout]);
 
   const revealAnim = useRef(new Animated.Value(0)).current;
 
@@ -280,9 +321,15 @@ export function ClueScreen({
   // styled minimum before then. The keys stretch to fill the minimum, so
   // the estimate is exact in practice — which matters for the final-wager
   // category, anchored to the sheet's top edge before any keyboard exists.
-  const minSheetHeight = Math.round(height * SHEET_MIN_HEIGHT_PCT);
+  const minSheetHeight = Math.round(height * SHEET_MIN_HEIGHT_PCT) + keyboardBottomInset;
   const [measuredPanelHeight, setMeasuredPanelHeight] = useState<number | null>(null);
-  const panelHeight = measuredPanelHeight ?? minSheetHeight;
+  const measuredPanelHeightRef = useRef<number | null>(null);
+  const panelHeightFrozenRef = useRef(false);
+  const measurementTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const panelHeight = Math.max(
+    0,
+    (measuredPanelHeight ?? minSheetHeight) - keyboardBottomInset,
+  );
   const kb = useRef(new Animated.Value(0)).current;
   // Live downward drag on the panel (swipe-to-lock follows the finger).
   const kbDrag = useRef(new Animated.Value(0)).current;
@@ -293,24 +340,49 @@ export function ClueScreen({
     extrapolate: 'clamp',
   }), [kbDrag]);
 
+  const handleSheetLayout = useCallback((event: LayoutChangeEvent) => {
+    if (panelHeightFrozenRef.current) return;
+    measuredPanelHeightRef.current = event.nativeEvent.layout.height;
+    if (measurementTimerRef.current) clearTimeout(measurementTimerRef.current);
+    // Key rows can resolve over multiple layout passes in landscape. Wait
+    // until the height has been quiet for two frames, then freeze that
+    // value for the entire spring so its interpolation cannot rubberband.
+    measurementTimerRef.current = setTimeout(() => {
+      measurementTimerRef.current = null;
+      panelHeightFrozenRef.current = true;
+      setMeasuredPanelHeight(measuredPanelHeightRef.current);
+    }, 34);
+  }, []);
+
+  useEffect(() => () => {
+    if (measurementTimerRef.current) clearTimeout(measurementTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    panelHeightFrozenRef.current = false;
+    measuredPanelHeightRef.current = null;
+    setMeasuredPanelHeight(null);
+  }, [height, keyboardBottomInset]);
+
   useEffect(() => {
     if (keyboardVisible) {
       kbDrag.setValue(0); // fresh summon — forget any half-drag
       setKbMounted(true);
+      // Mount once to learn the tray's real height before starting the
+      // spring. Replacing the estimated interpolation mid-flight causes a
+      // visible hitch, especially on wide landscape number keyboards.
+      if (measuredPanelHeight == null) return;
+      Animated.timing(answerOpacity, {
+        toValue: 1,
+        duration: 120,
+        useNativeDriver: true,
+      }).start();
       Animated.spring(kb, {
         toValue: 1,
         speed: 16,
         bounciness: 4,
         useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (finished) {
-          Animated.timing(answerOpacity, {
-            toValue: 1,
-            duration: 150,
-            useNativeDriver: true,
-          }).start();
-        }
-      });
+      }).start();
     } else {
       Animated.timing(answerOpacity, {
         toValue: 0,
@@ -328,7 +400,7 @@ export function ClueScreen({
         if (finished) setKbMounted(false);
       });
     }
-  }, [keyboardVisible, kb, kbDrag, answerOpacity]);
+  }, [keyboardVisible, measuredPanelHeight, kb, kbDrag, answerOpacity]);
 
   // The sheet slides up from fully below the screen's bottom edge into place.
   const panelRise = kb.interpolate({
@@ -692,7 +764,7 @@ export function ClueScreen({
   });
 
   return (
-    <View style={styles.root} {...screenPanResponder.panHandlers}>
+    <View ref={rootRef} collapsable={false} style={styles.root} {...screenPanResponder.panHandlers}>
       {/* Verdict backgrounds revealed as the card slides away */}
       <Animated.View
         style={[StyleSheet.absoluteFill, styles.bgCorrect, { opacity: correctOpacity }]}
@@ -719,6 +791,15 @@ export function ClueScreen({
           styles.cardWrap,
           { transform: [{ translateX: pan }] }
         ]}
+        onLayout={event => {
+          const { x, y, width: cardWidth, height: cardHeight } = event.nativeEvent.layout;
+          onCardLayout?.({
+            x,
+            y,
+            width: cardWidth,
+            height: cardHeight,
+          });
+        }}
         {...(panResponder ? panResponder.panHandlers : {})}
       >
         {/* Tapping anywhere on the card is the buzzer (only live while the
@@ -781,9 +862,11 @@ export function ClueScreen({
                 transform: [{ translateY: clueRise }, { scale: clueScale }],
                 alignItems: 'center',
                 position: 'relative',
+                opacity: clueTextOpacity ?? 1,
               }}
             >
               <Text
+                ref={clueTextRef}
                 style={[
                   styles.clueText,
                   isFinalJeopardyWager
@@ -849,6 +932,8 @@ export function ClueScreen({
           pointerEvents="box-none"
           style={[
             styles.sheetWrap,
+            { bottom: -keyboardBottomInset },
+            { opacity: measuredPanelHeight == null ? 0 : 1 },
             { transform: [{ translateY: Animated.add(panelRise, kbDrag) }] },
           ]}
         >
@@ -858,18 +943,38 @@ export function ClueScreen({
               isFinalJeopardy && styles.sheetFinal,
               { minHeight: minSheetHeight },
             ]}
-            onLayout={e => setMeasuredPanelHeight(e.nativeEvent.layout.height)}
+            onLayout={handleSheetLayout}
           >
             <Pressable onPress={() => {}} style={styles.sheetInner}>
               <Animated.View style={[styles.answerZone, { opacity: Animated.multiply(answerOpacity, dragFade) }]}>
+                {caretPosition === 'start' && (
+                  <Animated.View
+                    style={[
+                      styles.caret,
+                      caretColor ? { backgroundColor: caretColor } : undefined,
+                      { opacity: caretBlink },
+                    ]}
+                  />
+                )}
                 <Text
-                  style={[styles.answerLine, !answer && styles.answerPlaceholder]}
+                  style={[
+                    styles.answerLine,
+                    !answer && styles.answerPlaceholder,
+                  ]}
                   numberOfLines={1}
                   allowFontScaling={false}
                 >
                   {answer ? `${inputPrefix}${answer}` : placeholder}
                 </Text>
-                <Animated.View style={[styles.caret, { opacity: caretBlink }]} />
+                {caretPosition === 'end' && (
+                  <Animated.View
+                    style={[
+                      styles.caret,
+                      caretColor ? { backgroundColor: caretColor } : undefined,
+                      { opacity: caretBlink },
+                    ]}
+                  />
+                )}
               </Animated.View>
               <View style={styles.keyDeck}>
                 <View style={styles.keyDeckInner}>

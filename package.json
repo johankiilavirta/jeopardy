@@ -16,7 +16,8 @@
     "ui:long-clue": "npm run ui -- --screen=long-clue",
     "convert-data": "tsx scripts/convert-jeopardy-data.ts",
     "generate-registry": "tsx scripts/generate-season-registry.ts",
-    "ios:fast": "tsx scripts/test-ios.ts"
+    "ios:fast": "tsx scripts/test-ios.ts",
+    "mac": "bash scripts/build-mac.sh"
   },
   "keywords": [],
   "author": "",
@@ -30,6 +31,7 @@
     "expo-blur": "~56.0.3",
     "expo-constants": "~56.0.18",
     "expo-font": "~56.0.5",
+    "expo-linear-gradient": "~56.0.4",
     "expo-status-bar": "~56.0.4",
     "nearby-network": "file:modules/nearby-network",
     "react": "19.2.3",
