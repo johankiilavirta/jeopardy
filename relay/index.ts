@@ -426,7 +426,28 @@ function startServer(portIndex: number): void {
           const roomCode = peerToRoom.get(peerId);
           if (roomCode == null) return;
           const room = rooms.get(roomCode);
-          if (!room || room.phase !== 'playing' || !room.serverTransport) return;
+          if (!room) return;
+
+          // Lobby control messages (currently KICK) travel through the same
+          // targeted transport API as gameplay messages. Only the host may
+          // send them, and removing the player makes the lobby state match
+          // what both clients see.
+          if (room.phase === 'lobby') {
+            if (room.hostPeerId !== peerId || typeof msg.to !== 'string') return;
+            const target = room.players.find(p => p.peerId === msg.to);
+            if (!target || target.peerId === peerId) return;
+            const payload = String(msg.payload ?? '');
+            try {
+              if ((JSON.parse(payload) as { type?: string }).type !== 'LOBBY_KICK') return;
+            } catch {
+              return;
+            }
+            relaySend(target.ws, { type: 'message', from: peerId, payload });
+            removeFromRoom(target.peerId);
+            return;
+          }
+
+          if (room.phase !== 'playing' || !room.serverTransport) return;
 
           if (msg.to === 'server') {
             room.serverTransport.deliverMessage(peerId, String(msg.payload));

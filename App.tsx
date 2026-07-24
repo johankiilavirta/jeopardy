@@ -259,6 +259,7 @@ export default function App() {
     timer: ReturnType<typeof setTimeout> | null;
     promoteTimer: ReturnType<typeof setTimeout> | null;
   } | null>(null);
+  const leaveRef = useRef<() => void>(() => {});
   const startReconnectRef = useRef<(session: SavedSession, options?: { keepGameMounted?: boolean; promoteDelayMs?: number }) => void>(() => {});
   const promoteLocalSessionRef = useRef<(session: SavedSession) => void>(() => {});
 
@@ -333,6 +334,12 @@ export default function App() {
   }, []);
 
   const handlePeerDisconnected = useCallback(() => {
+    // A guest cannot remain in a lobby without its host. Return it to the
+    // menu immediately; the host simply receives a lobby update and stays.
+    if (screenRef.current.type === 'lobby' && !screenRef.current.isHost) {
+      leaveRef.current();
+      return;
+    }
     const session = sessionRef.current;
     if (
       PERSISTENCE_ENABLED &&
@@ -669,6 +676,10 @@ export default function App() {
     transport.onError((err) => {
       if (isCancelled()) return;
       if (abandonKeptMountedRecovery(err)) return;
+      if (screenRef.current.type === 'lobby' && !screenRef.current.isHost) {
+        leaveRef.current();
+        return;
+      }
       // Mid-game socket loss is handled by the rejoin loop, not an error label.
       if (screenRef.current.type === 'game') {
         handleSocketLost();
@@ -892,6 +903,10 @@ export default function App() {
           roomSettled = true;
           clearTimeout(timeout);
           if (abandonKeptMountedRecovery(msg.message as string)) return;
+          if (screenRef.current.type === 'lobby' && !screenRef.current.isHost) {
+            leaveRef.current();
+            return;
+          }
           if (action !== 'create') {
             setJoinSearching(false);
             setJoinError(msg.message as string);
@@ -1152,6 +1167,7 @@ export default function App() {
     refreshResumeAvailable();
     setScreen({ type: 'menu' });
   }, [cancelReconnect, disconnect, refreshResumeAvailable]);
+  leaveRef.current = handleLeave;
 
   /** Lobby swipe-to-leave: fade to black, tear down session, fade back in. */
   const handleLobbyLeaveWithFade = useCallback(() => {

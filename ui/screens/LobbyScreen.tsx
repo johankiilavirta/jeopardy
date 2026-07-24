@@ -211,8 +211,7 @@ const bugStyles = StyleSheet.create({
     width: 32,
     height: 32,
     paddingHorizontal: 0,
-    top: undefined,
-    bottom: 10,
+    top: 10,
     right: 10,
   },
   kickText: {
