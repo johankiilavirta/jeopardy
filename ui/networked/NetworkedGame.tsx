@@ -173,21 +173,25 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // usable. We track which rounds have already shown theirs so the intro never
   // replays (e.g. on a reconnect / state update).
   const introShownRef = useRef<Set<number>>(new Set());
-  const [introRound, setIntroRound] = useState<number | null>(() => {
-    // If we are connecting to a game already in progress (e.g., clues burned or active clue is open),
-    // skip the category intro animation.
-    const initialGame = initialState?.state;
-    const hasProgress = isResume || (initialGame && (initialGame.burnedClueIds.length > 0 || initialGame.activeClue != null));
-    if (animationsEnabled && !hasProgress && !introShownRef.current.has(1)) {
-      introShownRef.current.add(1);
-      return 1;
-    }
-    // Mark round 1 as shown if skipping
+  const [introRound, setIntroRound] = useState<number | null>(null);
+
+  // Do not start the category fly-by against demoBoard while the real board
+  // payload is still arriving. A fast host can deliver STATE_UPDATE before
+  // React has applied the separate boardData update; waiting here guarantees
+  // the intro is built from the actual game number/categories. New games
+  // still animate even when that payload is ready immediately.
+  useEffect(() => {
+    if (introRound != null || !boardData || !gameState) return;
+    const hasProgress = isResume || gameState.burnedClueIds.length > 0 || gameState.activeClue != null;
     if (hasProgress) {
       introShownRef.current.add(1);
+      return;
     }
-    return null;
-  });
+    if (animationsEnabled && !introShownRef.current.has(1)) {
+      introShownRef.current.add(1);
+      setIntroRound(1);
+    }
+  }, [animationsEnabled, boardData, gameState, introRound, isResume]);
   // Latch to 1 the first time round 2 is reached — triggers the DJ board flash.
   // If we connect directly into round 2, initialize to 1 so we skip the flash.
   const boardAnimKeyRef = useRef(0);

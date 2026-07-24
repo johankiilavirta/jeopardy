@@ -34,6 +34,8 @@ export function CategoryCell({ name, flashDelay, precomputedFit }: CategoryCellP
             <Text
               style={[styles.text, { fontSize: precomputedFit.fontSize, lineHeight: precomputedFit.fontSize * 1.28 }]}
               numberOfLines={3}
+              adjustsFontSizeToFit
+              minimumFontScale={0.2}
               allowFontScaling={false}
             >
               {precomputedFit.text}
