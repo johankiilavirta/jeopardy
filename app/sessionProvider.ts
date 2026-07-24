@@ -15,7 +15,7 @@ export interface SessionProvider extends Transport {
 
   createRoom(playerName: string, requestedRoomCode?: number, authority?: SessionAuthority, options?: { candidate?: boolean }): void;
   joinRoom(roomCode: number, playerName: string, authority?: SessionAuthority): void;
-  startGame(options?: { gameId?: number; resume?: object }): void;
+  startGame(options?: { gameId?: number; buzzerDelay?: number; resume?: object }): void;
   stop(): void;
 
   onControlMessage(cb: (message: SessionControlMessage) => void): void;

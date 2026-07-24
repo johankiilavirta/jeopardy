@@ -41,15 +41,20 @@ export function validateResumeState(state: unknown): GameState | null {
 export function buildServerOptions(
   gameData: SetupGameData | null,
   resumeState: GameState | null,
-): { totalClues: number; finalClue: { category: string; text: string; answer: string } | null; initialState?: GameState } {
+  buzzerDelay?: number,
+): { totalClues: number; finalClue: { category: string; text: string; answer: string } | null; readingMs?: number; initialState?: GameState } {
   const totalClues = resumeState
     ? resumeState.totalClues
     : gameData
       ? countClues(gameData.round1) + countClues(gameData.round2)
       : TOTAL_CLUES_DEMO;
+  const readingMs = buzzerDelay != null && Number.isFinite(buzzerDelay) && buzzerDelay >= 0
+    ? Math.round(buzzerDelay * 1000)
+    : undefined;
   return {
     totalClues,
     finalClue: gameData?.final ?? null,
+    ...(readingMs != null ? { readingMs } : {}),
     ...(resumeState ? { initialState: resumeState } : {}),
   };
 }

@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -47,6 +48,8 @@ interface LobbyScreenProps {
   sessionMode?: SessionMode | undefined;
   gameId?: string;
   onGameIdChange?: (id: string) => void;
+  buzzerDelay?: string;
+  onBuzzerDelayChange?: (delay: string) => void;
   /** Master toggle for in-game animations (default on). */
   animationsEnabled?: boolean;
   onAnimationsChange?: (enabled: boolean) => void;
@@ -306,6 +309,12 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const [settingsContentH, setSettingsContentH] = useState(0);
   const [settingsScrollH, setSettingsScrollH] = useState(0);
   const [gameIdGestureActive, setGameIdGestureActive] = useState(false);
+  const [buzzerDelayGestureActive, setBuzzerDelayGestureActive] = useState(false);
+  const buzzerDelayStartRef = useRef(-1);
+  const buzzerDelayValueRef = useRef(props.buzzerDelay ?? '-1');
+  buzzerDelayValueRef.current = props.buzzerDelay ?? '-1';
+  const buzzerDelayChangeRef = useRef(props.onBuzzerDelayChange);
+  buzzerDelayChangeRef.current = props.onBuzzerDelayChange;
   const gameIdTouchReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gameIdValueRef = useRef(props.gameId);
   gameIdValueRef.current = props.gameId;
@@ -412,6 +421,27 @@ export function LobbyScreen(props: LobbyScreenProps) {
       setTimeout(() => { gameIdSwipeActiveRef.current = false; }, 100);
     },
   }), [beginGameIdTouch, endGameIdTouch, updateGameIdFromSwipe]);
+
+  const buzzerDelayResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_event, gesture) =>
+      Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.35,
+    onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+      Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.35,
+    onPanResponderGrant: () => {
+      setBuzzerDelayGestureActive(true);
+      const current = Number(buzzerDelayValueRef.current);
+      buzzerDelayStartRef.current = Number.isFinite(current) && current >= -1 ? current : -1;
+    },
+    onPanResponderMove: (_event, gesture) => {
+      const start = buzzerDelayStartRef.current;
+      const direction = gesture.dy < 0 ? 1 : -1;
+      const steps = Math.max(1, Math.floor(Math.abs(gesture.dy) / 28));
+      const next = Math.max(-1, Math.round((start + direction * steps * 0.5) * 2) / 2);
+      buzzerDelayChangeRef.current?.(String(next));
+    },
+    onPanResponderRelease: () => setBuzzerDelayGestureActive(false),
+    onPanResponderTerminate: () => setBuzzerDelayGestureActive(false),
+  }), []);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.addEventListener) return;
@@ -1042,7 +1072,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                   ]}
                   showsVerticalScrollIndicator={false}
                   showsHorizontalScrollIndicator={false}
-                  scrollEnabled={settingsContentH > settingsScrollH && !gameIdGestureActive}
+                  scrollEnabled={settingsContentH > settingsScrollH && !gameIdGestureActive && !buzzerDelayGestureActive}
                   scrollEventThrottle={16}
                   bounces={false}
                   onLayout={e => setSettingsScrollH(e.nativeEvent.layout.height)}
@@ -1095,6 +1125,30 @@ export function LobbyScreen(props: LobbyScreenProps) {
                               </Pressable>
                             );
                           })}
+                        </View>
+                        <Text style={[styles.label, styles.stackedLabel]}>BUZZER DELAY</Text>
+                        <View
+                          style={styles.buzzerDelayTouchArea}
+                          {...buzzerDelayResponder.panHandlers}
+                          onTouchStart={() => setBuzzerDelayGestureActive(true)}
+                          onTouchEnd={() => setBuzzerDelayGestureActive(false)}
+                          onTouchCancel={() => setBuzzerDelayGestureActive(false)}
+                        >
+                          <TextInput
+                            style={styles.buzzerDelayInput}
+                            value={props.buzzerDelay === '-1' ? '' : (props.buzzerDelay ?? '')}
+                            placeholder="DEFAULT (-1)"
+                            placeholderTextColor="#333"
+                            keyboardType="decimal-pad"
+                            onChangeText={value => {
+                              const cleaned = value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+                              props.onBuzzerDelayChange?.(cleaned || '-1');
+                            }}
+                            onBlur={() => {
+                              const value = Number(props.buzzerDelay);
+                              if (!Number.isFinite(value) || value < 0) props.onBuzzerDelayChange?.('-1');
+                            }}
+                          />
                         </View>
                       </View>
 
@@ -1423,6 +1477,17 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingHorizontal: 10,
     paddingBottom: 56,
+  },
+  buzzerDelayTouchArea: {
+    minHeight: 34,
+    justifyContent: 'center',
+  },
+  buzzerDelayInput: {
+    fontFamily: typeTokens.board,
+    fontSize: 22,
+    color: '#fff',
+    padding: 0,
+    minHeight: 30,
   },
   categoryTwoCol: {
     flexDirection: 'row',

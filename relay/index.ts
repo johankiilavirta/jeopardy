@@ -374,7 +374,12 @@ function startServer(portIndex: number): void {
           const gameData = resumeState
             ? (resume?.board ?? null)
             : gameId ? lookupFullGame(gameId) : null;
-          const serverOptions = buildServerOptions(gameData, resumeState);
+          const buzzerDelay = Number(msg.buzzerDelay);
+          const serverOptions = buildServerOptions(
+            gameData,
+            resumeState,
+            Number.isFinite(buzzerDelay) && buzzerDelay >= 0 ? buzzerDelay : undefined,
+          );
 
           room.phase = 'playing';
           room.gameData = gameData ?? null;
