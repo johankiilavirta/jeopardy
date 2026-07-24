@@ -85,8 +85,10 @@ export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
         useNativeDriver: true,
       }),
     );
-    Animated.sequence(steps).start(({ finished }) => {
-      if (finished) finish();
+    requestAnimationFrame(() => {
+      Animated.sequence(steps).start(({ finished }) => {
+        if (finished) finish();
+      });
     });
   }, [w, categories.length, finish, tx, contentOpacity, containerOpacity]);
 

@@ -62,11 +62,13 @@ export function ChooseClueScreen({
   const barHidden = state.status === 'FINAL_JEOPARDY_ANSWER';
   const barSlide = useRef(new Animated.Value(barHidden ? 1 : 0)).current;
   useEffect(() => {
-    Animated.timing(barSlide, {
-      toValue: barHidden ? 1 : 0,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
+    requestAnimationFrame(() => {
+      Animated.timing(barSlide, {
+        toValue: barHidden ? 1 : 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    });
   }, [barHidden, barSlide]);
 
   // Remount the board whenever its measured size changes (rotation, initial
@@ -86,8 +88,10 @@ export function ChooseClueScreen({
   const handleBoardReady = useCallback(() => {
     if (revealedRef.current) return;
     revealedRef.current = true;
-    Animated.timing(revealOpacity, { toValue: 1, duration: 220, useNativeDriver: true }).start(({ finished }) => {
-      if (finished) onBoardVisible?.();
+    requestAnimationFrame(() => {
+      Animated.timing(revealOpacity, { toValue: 1, duration: 220, useNativeDriver: true }).start(({ finished }) => {
+        if (finished) onBoardVisible?.();
+      });
     });
   }, [onBoardVisible, revealOpacity]);
 

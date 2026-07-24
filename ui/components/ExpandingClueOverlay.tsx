@@ -42,13 +42,15 @@ export function ExpandingClueOverlay({ fromRect, animate, bottomInset = 0, child
   useEffect(() => {
     if (willAnimate) {
       progress.setValue(0);
-      Animated.timing(progress, {
-        toValue: 1,
-        duration: EXPAND_MS,
-        // Linear: the box grows at a constant rate, matching the broadcast.
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }).start();
+      requestAnimationFrame(() => {
+        Animated.timing(progress, {
+          toValue: 1,
+          duration: EXPAND_MS,
+          // Linear: the box grows at a constant rate, matching the broadcast.
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }).start();
+      });
     }
   }, [willAnimate, progress]);
 
