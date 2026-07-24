@@ -4,7 +4,7 @@ import Constants from 'expo-constants';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, StyleSheet, View } from 'react-native';
+import { Animated, AppState, Easing, StyleSheet, View } from 'react-native';
 import {
   initialWindowMetrics,
   SafeAreaProvider,
@@ -221,6 +221,8 @@ export default function App() {
   const joinAttemptRef = useRef(0);
   const myPeerIdRef = useRef<string | null>(null);
   const devAutoStartedRef = useRef(false);
+  // Black overlay driven from 0 (transparent) to 1 (opaque) for screen transitions.
+  const transitionAnim = useRef(new Animated.Value(0)).current;
 
   // Match history: a stable per-game id (survives reconnects, cleared on
   // leave/new room) so re-finishing after an undo upserts instead of
@@ -695,6 +697,18 @@ export default function App() {
       transport.stop();
     }, options.timeoutMs ?? CONNECTION_TIMEOUT_MS);
 
+    // Handle lobby kick: when a guest receives LOBBY_KICK, leave immediately.
+    transport.onMessage((_peerId, message) => {
+      try {
+        const msg = JSON.parse(message) as { type?: string };
+        if (msg.type === 'LOBBY_KICK' && screenRef.current.type === 'lobby') {
+          handleLeave();
+        }
+      } catch {
+        // not a JSON lobby control message — ignore
+      }
+    });
+
     transport.onControlMessage((msg) => {
       if (isCancelled()) return;
       switch (msg.type) {
@@ -1003,9 +1017,29 @@ export default function App() {
     if (next && screenRef.current.type === 'lobby') setScreen(next);
   }, []);
 
+  /** Fade the screen to black, run `action`, then fade back to clear. */
+  const fadeToBlackAndThen = useCallback((action: () => void) => {
+    Animated.timing(transitionAnim, {
+      toValue: 1,
+      duration: 200,
+      easing: Easing.in(Easing.ease),
+      useNativeDriver: true,
+    }).start(() => {
+      action();
+      setTimeout(() => {
+        Animated.timing(transitionAnim, {
+          toValue: 0,
+          duration: 320,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }).start();
+      }, 80);
+    });
+  }, [transitionAnim]);
+
   const handleNewGame = useCallback(() => {
-    connectAndDo('create', undefined, connectionMode);
-  }, [connectAndDo, connectionMode]);
+    fadeToBlackAndThen(() => connectAndDo('create', undefined, connectionMode));
+  }, [connectAndDo, connectionMode, fadeToBlackAndThen]);
 
   /** RESUME GAME: host a fresh room seeded with the snapshot on this device. */
   const handleResumeGame = useCallback(() => {
@@ -1084,6 +1118,11 @@ export default function App() {
     setScreen({ type: 'menu' });
   }, [cancelReconnect, disconnect, refreshResumeAvailable]);
 
+  /** Lobby swipe-to-leave: fade to black, tear down session, fade back in. */
+  const handleLobbyLeaveWithFade = useCallback(() => {
+    fadeToBlackAndThen(() => handleLeave());
+  }, [fadeToBlackAndThen, handleLeave]);
+
   const handleStartGame = useCallback(() => {
     const resume = pendingResumeRef.current;
     if (resume) {
@@ -1097,6 +1136,12 @@ export default function App() {
   }, [gameId]);
 
   const handleGameLeave = handleLeave;
+
+  /** Host kicks a player from the lobby by sending them a leave message. */
+  const handleKickPlayer = useCallback((peerId: string) => {
+    transportRef.current?.send(peerId, JSON.stringify({ type: 'LOBBY_KICK' }));
+    setLobbyPlayers(prev => prev.filter(p => p.peerId !== peerId));
+  }, []);
 
   // Menu-overlay actions: abandon the current session, then do the action.
   const handleOverlayNewGame = useCallback(() => {
@@ -1217,31 +1262,45 @@ export default function App() {
         );
       case 'lobby':
         return (
-          <LobbyScreen
-            roomCode={screen.roomCode}
-            players={lobbyPlayers}
-            isHost={screen.isHost}
-            onStart={handleStartGame}
-            onLeave={handleLeave}
-            onNewGame={handleOverlayNewGame}
-            onJoinGame={handleOverlayJoinGame}
-            playerName={playerName}
-            onNameChange={handleNameChange}
-            relayHost={relayHost}
-            onRelayHostChange={setRelayHost}
-            relayPort={relayPort}
-            onRelayPortChange={setRelayPort}
-            sessionMode={transportRef.current?.mode}
-            gameId={gameId}
-            onGameIdChange={setGameId}
-            animationsEnabled={animationsEnabled}
-            onAnimationsChange={setAnimationsEnabled}
-            visibleCategories={visibleCategories}
-            onVisibleCategoriesChange={setVisibleCategories}
-            error={lobbyError}
-            fadeOut={lobbyFadingOut}
-            onFadeOutDone={handleLobbyFadeOutDone}
-          />
+          <View style={styles.screenStack}>
+            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+              <MainMenuScreen
+                onNewGame={handleNewGame}
+                onJoinGame={handleJoinNav}
+                onSettings={handleSettings}
+                onHistory={() => setScreen({ type: 'history' })}
+                onResumeGame={resumeAvailable ? handleResumeGame : undefined}
+              />
+            </View>
+            <View style={StyleSheet.absoluteFill}>
+              <LobbyScreen
+                roomCode={screen.roomCode}
+                players={lobbyPlayers}
+                isHost={screen.isHost}
+                onStart={handleStartGame}
+                onLeave={handleLobbyLeaveWithFade}
+                onNewGame={handleOverlayNewGame}
+                onJoinGame={handleOverlayJoinGame}
+                playerName={playerName}
+                onNameChange={handleNameChange}
+                relayHost={relayHost}
+                onRelayHostChange={setRelayHost}
+                relayPort={relayPort}
+                onRelayPortChange={setRelayPort}
+                sessionMode={transportRef.current?.mode}
+                gameId={gameId}
+                onGameIdChange={setGameId}
+                animationsEnabled={animationsEnabled}
+                onAnimationsChange={setAnimationsEnabled}
+                visibleCategories={visibleCategories}
+                onVisibleCategoriesChange={setVisibleCategories}
+                onKickPlayer={handleKickPlayer}
+                error={lobbyError}
+                fadeOut={lobbyFadingOut}
+                onFadeOutDone={handleLobbyFadeOutDone}
+              />
+            </View>
+          </View>
         );
       case 'game':
         return transportRef.current ? (
@@ -1311,6 +1370,10 @@ export default function App() {
       {fontsLoaded ? (
         <SafeAreaView style={styles.root}>
           {renderScreen()}
+          <Animated.View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, styles.transitionOverlay, { opacity: transitionAnim }]}
+          />
         </SafeAreaView>
       ) : (
         <View style={styles.root} />
@@ -1327,5 +1390,8 @@ const styles = StyleSheet.create({
   screenStack: {
     flex: 1,
     backgroundColor: colors.bg,
+  },
+  transitionOverlay: {
+    backgroundColor: '#000',
   },
 });

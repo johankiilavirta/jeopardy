@@ -50,6 +50,9 @@ export function JoinGameScreen(props: JoinGameScreenProps) {
   const contentOpacity = useRef(new Animated.Value(0)).current;
   const clueTextOpacity = useRef(new Animated.Value(1)).current;
   const pageX = useRef(new Animated.Value(0)).current;
+  // Flipped to 0 the instant a committed swipe fires so chevrons vanish
+  // immediately rather than staying lit through the slide-out animation.
+  const chevronVisible = useRef(new Animated.Value(1)).current;
   const exitDragRef = useRef(0);
   const exitDirectionRef = useRef<-1 | 1 | null>(null);
   const lastSubmittedCode = useRef<string | null>(null);
@@ -304,15 +307,20 @@ export function JoinGameScreen(props: JoinGameScreenProps) {
   });
 
   const returnToMenu = useCallback((direction: -1 | 1) => {
+    // Hide chevrons immediately so they don't stay lit through the slide-out.
+    chevronVisible.setValue(0);
     Animated.timing(pageX, {
       toValue: direction * width,
       duration: 220,
       easing: Easing.inOut(Easing.cubic),
       useNativeDriver: true,
     }).start(({ finished }) => {
-      if (finished) props.onBack();
+      if (finished) {
+        chevronVisible.setValue(1);
+        props.onBack();
+      }
     });
-  }, [pageX, props, width]);
+  }, [chevronVisible, pageX, props, width]);
 
   const exitResponder = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_event, gesture) =>
@@ -432,37 +440,42 @@ export function JoinGameScreen(props: JoinGameScreenProps) {
 
       {expanded && (
         <>
+          {/* Wrapper zeroed immediately on commit so chevrons vanish before the
+              slide-out animation runs (avoids clamped-opacity flash). */}
           <Animated.View
             pointerEvents="none"
-            style={[
-              styles.exitIcon,
-              styles.exitIconRight,
-              {
-                opacity: exitIconOpacity,
-                transform: [{ translateX: exitIconTranslateX }],
-              },
-            ]}
+            style={[StyleSheet.absoluteFill, { opacity: chevronVisible }]}
           >
-            <View style={styles.chevron}>
-              <View style={[styles.chevronStroke, styles.chevronTop]} />
-              <View style={[styles.chevronStroke, styles.chevronBottom]} />
-            </View>
-          </Animated.View>
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.exitIcon,
-              styles.exitIconLeft,
-              {
-                opacity: oppositeExitIconOpacity,
-                transform: [{ translateX: oppositeExitIconTranslateX }],
-              },
-            ]}
-          >
-            <View style={[styles.chevron, styles.chevronFlipped]}>
-              <View style={[styles.chevronStroke, styles.chevronTop]} />
-              <View style={[styles.chevronStroke, styles.chevronBottom]} />
-            </View>
+            <Animated.View
+              style={[
+                styles.exitIcon,
+                styles.exitIconRight,
+                {
+                  opacity: exitIconOpacity,
+                  transform: [{ translateX: exitIconTranslateX }],
+                },
+              ]}
+            >
+              <View style={styles.chevron}>
+                <View style={[styles.chevronStroke, styles.chevronTop]} />
+                <View style={[styles.chevronStroke, styles.chevronBottom]} />
+              </View>
+            </Animated.View>
+            <Animated.View
+              style={[
+                styles.exitIcon,
+                styles.exitIconLeft,
+                {
+                  opacity: oppositeExitIconOpacity,
+                  transform: [{ translateX: oppositeExitIconTranslateX }],
+                },
+              ]}
+            >
+              <View style={[styles.chevron, styles.chevronFlipped]}>
+                <View style={[styles.chevronStroke, styles.chevronTop]} />
+                <View style={[styles.chevronStroke, styles.chevronBottom]} />
+              </View>
+            </Animated.View>
           </Animated.View>
         </>
       )}
