@@ -295,6 +295,18 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const dragYRef = useRef(0);
   const leavingRef = useRef(false);
   const startRequestedRef = useRef(false);
+  const startDragY = useRef(new Animated.Value(0)).current;
+
+  // ── Code label text: swaps when canStart changes ────────────────────────
+  const [codeLabelText, setCodeLabelText] = useState('');
+  const codeLabelOpacity = useRef(new Animated.Value(1)).current;
+  // True once the cohesive initial reveal has run; guards the canStart swap.
+  const initialRevealDoneRef = useRef(false);
+  // Stable refs so the reveal callback doesn't go stale.
+  const canStartRef = useRef(canStart);
+  canStartRef.current = canStart;
+  const sessionModeRef = useRef(props.sessionMode);
+  sessionModeRef.current = props.sessionMode;
 
   // Settings: phase-1 = gradient grows from bottom; phase-2 = content fades in.
   const categoriesVisible = useRef(new Animated.Value(0)).current;
@@ -493,6 +505,28 @@ export function LobbyScreen(props: LobbyScreenProps) {
     return () => window.removeEventListener('keydown', handler);
   }, [backspaceGameId, sheet, insertGameIdDigit]);
 
+  // ── Code label fade-swap on canStart (only after initial reveal) ─────────
+  useEffect(() => {
+    if (!initialRevealDoneRef.current) return;
+    const newText = canStart
+      ? 'SWIPE UP TO START GAME'
+      : 'SHARE THIS ' + (props.sessionMode ?? 'ONLINE').toUpperCase() + ' ROOM CODE';
+    Animated.timing(codeLabelOpacity, {
+      toValue: 0,
+      duration: 170,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (!finished) return;
+      setCodeLabelText(newText);
+      Animated.timing(codeLabelOpacity, {
+        toValue: 1,
+        duration: 170,
+        useNativeDriver: true,
+      }).start();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canStart]);
+
   // ── Fade out when game starts ─────────────────────────────────────────────
 
   useEffect(() => {
@@ -509,22 +543,6 @@ export function LobbyScreen(props: LobbyScreenProps) {
     }).start(() => props.onFadeOutDone?.());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.fadeOut]);
-
-  // ── Room code fade-in ─────────────────────────────────────────────────────
-  // Code block (number + share label) is invisible until the relay assigns a
-  // room code, then fades in so the black-overlay reveal looks clean.
-
-  useEffect(() => {
-    if (props.roomCode <= 0) return;
-    requestAnimationFrame(() => {
-      Animated.timing(codeVisible, {
-        toValue: 1,
-        duration: 350,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }).start();
-    });
-  }, [props.roomCode, codeVisible]);
 
   // ── Game info loading ─────────────────────────────────────────────────────
 
@@ -641,21 +659,75 @@ export function LobbyScreen(props: LobbyScreenProps) {
   // lobbyBoard is used by the overlay and column-count logic; falls back to demoBoard.
   const lobbyBoard = realBoard ?? demoBoard;
 
-  // Fade real board in when categories load, reset when they clear.
+  // ── Cohesive initial reveal ───────────────────────────────────────────────
+  // Room code, label, and board categories all fade in as one unit.
+  // Strategy: roomCode effect arms a ref + sets label text (still invisible).
+  //           realBoard effect fires the parallel animation once both are ready.
+  //           A fallback timer in the roomCode effect ensures the code block
+  //           always appears even if categories never load.
+
+  const roomCodeArmedRef = useRef(false);
+  const revealFiredRef = useRef(false);
+  const revealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (props.roomCode <= 0) return;
+    // Arm: set label text while the block is still invisible.
+    roomCodeArmedRef.current = true;
+    setCodeLabelText(
+      canStartRef.current
+        ? 'SWIPE UP TO START GAME'
+        : 'SHARE THIS ' + (sessionModeRef.current ?? 'ONLINE').toUpperCase() + ' ROOM CODE',
+    );
+    // Fallback: if categories never arrive, reveal the code block alone after 800ms.
+    revealTimerRef.current = setTimeout(() => {
+      if (revealFiredRef.current) return;
+      revealFiredRef.current = true;
+      initialRevealDoneRef.current = true;
+      requestAnimationFrame(() => {
+        Animated.timing(codeVisible, {
+          toValue: 1, duration: 350, easing: Easing.out(Easing.ease), useNativeDriver: true,
+        }).start();
+      });
+    }, 800);
+    return () => {
+      if (revealTimerRef.current) { clearTimeout(revealTimerRef.current); revealTimerRef.current = null; }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.roomCode]);
+
   useEffect(() => {
     if (!realBoard) {
-      categoriesVisible.setValue(0);
+      if (revealFiredRef.current) {
+        // Post-reveal category reload (host changed game # mid-lobby).
+        categoriesVisible.setValue(0);
+      }
       return;
     }
-    requestAnimationFrame(() => {
-      Animated.timing(categoriesVisible, {
-        toValue: 1,
-        duration: 350,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }).start();
-    });
-  }, [realBoard, categoriesVisible]);
+    if (roomCodeArmedRef.current && !revealFiredRef.current) {
+      // Both are ready — fire cohesive reveal.
+      revealFiredRef.current = true;
+      initialRevealDoneRef.current = true;
+      if (revealTimerRef.current) { clearTimeout(revealTimerRef.current); revealTimerRef.current = null; }
+      requestAnimationFrame(() => {
+        Animated.parallel([
+          Animated.timing(codeVisible, {
+            toValue: 1, duration: 350, easing: Easing.out(Easing.ease), useNativeDriver: true,
+          }),
+          Animated.timing(categoriesVisible, {
+            toValue: 1, duration: 350, easing: Easing.out(Easing.ease), useNativeDriver: true,
+          }),
+        ]).start();
+      });
+    } else if (revealFiredRef.current) {
+      // Post-reveal category reload.
+      requestAnimationFrame(() => {
+        Animated.timing(categoriesVisible, {
+          toValue: 1, duration: 350, easing: Easing.out(Easing.ease), useNativeDriver: true,
+        }).start();
+      });
+    }
+  }, [realBoard, codeVisible, categoriesVisible]);
 
   // ── R1/R2 category toggle ─────────────────────────────────────────────────
   // Tapping a category header fades in the Double Jeopardy category name.
@@ -717,7 +789,13 @@ export function LobbyScreen(props: LobbyScreenProps) {
       bounciness: 3,
       useNativeDriver: true,
     }).start();
-  }, [pageX]);
+    Animated.spring(startDragY, {
+      toValue: 0,
+      speed: 18,
+      bounciness: 3,
+      useNativeDriver: true,
+    }).start();
+  }, [pageX, startDragY]);
 
   const openSettings = useCallback(() => {
     sheet.close();
@@ -823,6 +901,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
           ? distance
           : START_COMMIT_DISTANCE + (distance - START_COMMIT_DISTANCE) * 0.18;
       dragYRef.current = -resisted;
+      startDragY.setValue(-resisted);
     },
     onPanResponderRelease: (_event, gesture) => {
       if (gestureAxisRef.current === 'horizontal') {
@@ -873,6 +952,18 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const dragRightChevronTranslateX = pageX.interpolate({
     inputRange: [0, EXIT_COMMIT_DISTANCE],
     outputRange: [-68, 0],
+    extrapolate: 'clamp',
+  });
+
+  // ── Start pill interpolations (mirrors horizontal chevrons off pageX) ───
+  const startPillOpacity = startDragY.interpolate({
+    inputRange: [-START_COMMIT_DISTANCE, -20, 0],
+    outputRange: [1, 0.4, 0],
+    extrapolate: 'clamp',
+  });
+  const startPillTranslateY = startDragY.interpolate({
+    inputRange: [-START_COMMIT_DISTANCE, 0],
+    outputRange: [0, 68],
     extrapolate: 'clamp',
   });
 
@@ -966,9 +1057,9 @@ export function LobbyScreen(props: LobbyScreenProps) {
               <Text style={styles.codeValue} allowFontScaling={false}>
                 {props.roomCode > 0 ? props.roomCode : ''}
               </Text>
-              <Text style={styles.codeLabel} allowFontScaling={false} numberOfLines={1}>
-                {'SHARE THIS ' + (props.sessionMode ?? 'ONLINE').toUpperCase() + ' ROOM CODE'}
-              </Text>
+              <Animated.Text style={[styles.codeLabel, { opacity: codeLabelOpacity }]} allowFontScaling={false} numberOfLines={1}>
+                {codeLabelText}
+              </Animated.Text>
             </Animated.View>
 
             <View style={styles.playerRow}>
@@ -1338,6 +1429,23 @@ export function LobbyScreen(props: LobbyScreenProps) {
           </View>
         </Animated.View>
 
+        {/* Swipe-up → green START pill at bottom-center */}
+        {canStart && (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.startPill,
+              { opacity: startPillOpacity, transform: [{ translateY: startPillTranslateY }] },
+            ]}
+          >
+            <View style={[styles.chevron, styles.chevronUp]}>
+              <View style={[styles.chevronStroke, styles.chevronTop, styles.chevronStrokeWhite]} />
+              <View style={[styles.chevronStroke, styles.chevronBottom, styles.chevronStrokeWhite]} />
+            </View>
+            <Text style={styles.startPillText} allowFontScaling={false}>START</Text>
+          </Animated.View>
+        )}
+
       </Animated.View>
     </View>
   );
@@ -1675,6 +1783,12 @@ const styles = StyleSheet.create({
   chevronDown: {
     transform: [{ rotate: '90deg' }],
   },
+  chevronUp: {
+    transform: [{ rotate: '-90deg' }],
+  },
+  chevronStrokeWhite: {
+    backgroundColor: '#FFFFFF',
+  },
   chevronStroke: {
     position: 'absolute',
     left: 4,
@@ -1690,5 +1804,24 @@ const styles = StyleSheet.create({
   chevronBottom: {
     top: 15.25,
     transform: [{ rotate: '45deg' }],
+  },
+  // ── Start pill ──────────────────────────────────────────────────────────
+  startPill: {
+    position: 'absolute',
+    bottom: 100,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#2E7D32',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 28,
+  },
+  startPillText: {
+    fontFamily: typeTokens.ui700,
+    fontSize: 15,
+    letterSpacing: 2,
+    color: '#FFFFFF',
   },
 });
