@@ -306,10 +306,29 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const [settingsContentH, setSettingsContentH] = useState(0);
   const [settingsScrollH, setSettingsScrollH] = useState(0);
   const [gameIdGestureActive, setGameIdGestureActive] = useState(false);
+  const gameIdTouchReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gameIdValueRef = useRef(props.gameId);
   gameIdValueRef.current = props.gameId;
   const gameIdChangeRef = useRef(props.onGameIdChange);
   gameIdChangeRef.current = props.onGameIdChange;
+
+  const beginGameIdTouch = useCallback(() => {
+    if (gameIdTouchReleaseTimerRef.current) {
+      clearTimeout(gameIdTouchReleaseTimerRef.current);
+      gameIdTouchReleaseTimerRef.current = null;
+    }
+    setGameIdGestureActive(true);
+  }, []);
+
+  const endGameIdTouch = useCallback(() => {
+    if (gameIdTouchReleaseTimerRef.current) clearTimeout(gameIdTouchReleaseTimerRef.current);
+    // Keep the ScrollView locked through the responder handoff and Pressable
+    // release so it cannot steal the tail of a vertical picker gesture.
+    gameIdTouchReleaseTimerRef.current = setTimeout(() => {
+      gameIdTouchReleaseTimerRef.current = null;
+      setGameIdGestureActive(false);
+    }, 120);
+  }, []);
 
   // ── Keyboard sheet for game # entry ──────────────────────────────────────
 
@@ -369,7 +388,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
     onMoveShouldSetPanResponderCapture: (_event, gesture) =>
       Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.35,
     onPanResponderGrant: () => {
-      setGameIdGestureActive(true);
+      beginGameIdTouch();
       const current = Number(gameIdValueRef.current);
       gameIdSwipeStartRef.current = Number.isFinite(current) && current > 0
         ? current
@@ -384,15 +403,15 @@ export function LobbyScreen(props: LobbyScreenProps) {
       // Let a Pressable release that follows this responder event know that
       // it was a swipe, not a tap. Clear shortly afterward for the next tap.
       gameIdSwipeActiveRef.current = true;
-      setGameIdGestureActive(false);
+      endGameIdTouch();
       setTimeout(() => { gameIdSwipeActiveRef.current = false; }, 100);
     },
     onPanResponderTerminate: () => {
       gameIdSwipeActiveRef.current = true;
-      setGameIdGestureActive(false);
+      endGameIdTouch();
       setTimeout(() => { gameIdSwipeActiveRef.current = false; }, 100);
     },
-  }), [updateGameIdFromSwipe]);
+  }), [beginGameIdTouch, endGameIdTouch, updateGameIdFromSwipe]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.addEventListener) return;
@@ -1082,7 +1101,12 @@ export function LobbyScreen(props: LobbyScreenProps) {
                       {/* ── Right column: game selection ── */}
                       <View style={styles.settingsColRight}>
                         <Text style={styles.label}>GAME #</Text>
-                        <View {...gameIdResponder.panHandlers}>
+                        <View
+                          {...gameIdResponder.panHandlers}
+                          onTouchStart={beginGameIdTouch}
+                          onTouchEnd={endGameIdTouch}
+                          onTouchCancel={endGameIdTouch}
+                        >
                           <Pressable
                           style={styles.input}
                           accessibilityRole="button"
@@ -1093,6 +1117,8 @@ export function LobbyScreen(props: LobbyScreenProps) {
                               height: event.nativeEvent.layout.height,
                             };
                           }}
+                          onPressIn={beginGameIdTouch}
+                          onPressOut={endGameIdTouch}
                           onPress={() => {
                             if (gameIdSwipeActiveRef.current) {
                               gameIdSwipeActiveRef.current = false;
