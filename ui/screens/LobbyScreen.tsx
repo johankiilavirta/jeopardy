@@ -66,6 +66,9 @@ const EXIT_COMMIT_DISTANCE = 100;
 const EXIT_COMMIT_VELOCITY = 0.5;
 const START_COMMIT_DISTANCE = 90;
 const START_COMMIT_VELOCITY = 0.5;
+// Keep the implementation below intact for a future re-enable, but do not
+// let the settings panel compete with the GAME # picker for vertical drags.
+const ENABLE_SETTINGS_VERTICAL_DISMISS = false;
 const EMPTY_BURNED: number[] = [];
 const LOBBY_VALUES = [200, 400, 600, 800, 1000] as const;
 
@@ -302,6 +305,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const settingsClosingRef = useRef(false);
   const [settingsContentH, setSettingsContentH] = useState(0);
   const [settingsScrollH, setSettingsScrollH] = useState(0);
+  const [gameIdGestureActive, setGameIdGestureActive] = useState(false);
 
   // ── Keyboard sheet for game # entry ──────────────────────────────────────
 
@@ -361,6 +365,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
     onMoveShouldSetPanResponderCapture: (_event, gesture) =>
       Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.35,
     onPanResponderGrant: () => {
+      setGameIdGestureActive(true);
       const current = Number(props.gameId);
       gameIdSwipeStartRef.current = Number.isFinite(current) && current > 0
         ? current
@@ -375,10 +380,12 @@ export function LobbyScreen(props: LobbyScreenProps) {
       // Let a Pressable release that follows this responder event know that
       // it was a swipe, not a tap. Clear shortly afterward for the next tap.
       gameIdSwipeActiveRef.current = true;
+      setGameIdGestureActive(false);
       setTimeout(() => { gameIdSwipeActiveRef.current = false; }, 100);
     },
     onPanResponderTerminate: () => {
       gameIdSwipeActiveRef.current = true;
+      setGameIdGestureActive(false);
       setTimeout(() => { gameIdSwipeActiveRef.current = false; }, 100);
     },
   }), [props.gameId, updateGameIdFromSwipe]);
@@ -897,6 +904,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
             const settingsPanResponder = PanResponder.create({
               onMoveShouldSetPanResponder: (_e, gesture) => {
                 const isDown =
+                  ENABLE_SETTINGS_VERTICAL_DISMISS &&
                   gesture.dy > 10 &&
                   Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.5 &&
                   settingsScrollOffsetRef.current <= 0;
@@ -915,13 +923,13 @@ export function LobbyScreen(props: LobbyScreenProps) {
                 if (!settingsAxisRef.current) {
                   if (Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5) {
                     settingsAxisRef.current = 'horizontal';
-                  } else if (gesture.dy > 0) {
+                  } else if (ENABLE_SETTINGS_VERTICAL_DISMISS && gesture.dy > 0) {
                     settingsAxisRef.current = 'vertical';
                   }
                 }
                 if (settingsAxisRef.current === 'horizontal') {
                   settingsDragX.setValue(gesture.dx);
-                } else if (settingsAxisRef.current === 'vertical') {
+                } else if (ENABLE_SETTINGS_VERTICAL_DISMISS && settingsAxisRef.current === 'vertical') {
                   settingsDragYRef.current = Math.max(0, gesture.dy);
                   settingsDragY.setValue(Math.max(0, gesture.dy));
                 }
@@ -929,7 +937,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
               onPanResponderRelease: (_e, gesture) => {
                 const committed =
                   (settingsAxisRef.current === 'horizontal' && (Math.abs(gesture.dx) > SETTINGS_COMMIT || Math.abs(gesture.vx) > 0.7)) ||
-                  (settingsAxisRef.current === 'vertical' && (gesture.dy > SETTINGS_COMMIT || gesture.vy > 0.7));
+                  (ENABLE_SETTINGS_VERTICAL_DISMISS && settingsAxisRef.current === 'vertical' && (gesture.dy > SETTINGS_COMMIT || gesture.vy > 0.7));
                 settingsAxisRef.current = null;
                 settingsDragYRef.current = 0;
                 settingsDragX.setValue(0);
@@ -1011,7 +1019,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                   ]}
                   showsVerticalScrollIndicator={false}
                   showsHorizontalScrollIndicator={false}
-                  scrollEnabled={settingsContentH > settingsScrollH}
+                  scrollEnabled={settingsContentH > settingsScrollH && !gameIdGestureActive}
                   scrollEventThrottle={16}
                   bounces={false}
                   onLayout={e => setSettingsScrollH(e.nativeEvent.layout.height)}
