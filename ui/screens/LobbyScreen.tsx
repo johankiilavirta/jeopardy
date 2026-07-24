@@ -306,6 +306,10 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const [settingsContentH, setSettingsContentH] = useState(0);
   const [settingsScrollH, setSettingsScrollH] = useState(0);
   const [gameIdGestureActive, setGameIdGestureActive] = useState(false);
+  const gameIdValueRef = useRef(props.gameId);
+  gameIdValueRef.current = props.gameId;
+  const gameIdChangeRef = useRef(props.onGameIdChange);
+  gameIdChangeRef.current = props.onGameIdChange;
 
   // ── Keyboard sheet for game # entry ──────────────────────────────────────
 
@@ -356,8 +360,8 @@ export function LobbyScreen(props: LobbyScreenProps) {
       loadGameIndex().totalGames,
       getCachedGameInfo,
     );
-    if (String(next) !== props.gameId) props.onGameIdChange?.(String(next));
-  }, [getCachedGameInfo, props]);
+    if (String(next) !== gameIdValueRef.current) gameIdChangeRef.current?.(String(next));
+  }, [getCachedGameInfo]);
 
   const gameIdResponder = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_event, gesture) =>
@@ -366,7 +370,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
       Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.35,
     onPanResponderGrant: () => {
       setGameIdGestureActive(true);
-      const current = Number(props.gameId);
+      const current = Number(gameIdValueRef.current);
       gameIdSwipeStartRef.current = Number.isFinite(current) && current > 0
         ? current
         : fallbackGameId.current;
@@ -388,7 +392,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
       setGameIdGestureActive(false);
       setTimeout(() => { gameIdSwipeActiveRef.current = false; }, 100);
     },
-  }), [props.gameId, updateGameIdFromSwipe]);
+  }), [updateGameIdFromSwipe]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.addEventListener) return;
