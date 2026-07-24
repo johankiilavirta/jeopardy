@@ -293,7 +293,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: colors.background,
   },
   scrollContent: {
     alignItems: 'center',

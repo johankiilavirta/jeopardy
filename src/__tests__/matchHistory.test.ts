@@ -12,8 +12,10 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 
 import {
   computeWinnerNames,
+  isOngoingMatch,
   loadMatchHistory,
   recordMatch,
+  recordOngoingMatch,
   type MatchResult,
 } from '../../app/matchHistory';
 
@@ -79,6 +81,19 @@ describe('recordMatch / loadMatchHistory', () => {
 
     expect(updated.map(m => m.id)).toEqual(['game-1', 'a']);
     expect(updated[0]!.winnerNames).toEqual(['Bob']);
+  });
+
+  it('stores ongoing games and preserves a completed replay with another id', async () => {
+    const ongoing = match('game-instance', { status: 'ongoing', gameKey: '42|Alice|Bob', finishedAt: 0 });
+    await recordOngoingMatch(ongoing);
+    await recordOngoingMatch({ ...ongoing, id: 'disconnect-duplicate' });
+    expect((await loadMatchHistory()).filter(isOngoingMatch)).toHaveLength(1);
+    await recordMatch(match('completed-instance', { status: 'completed', gameKey: '42|Alice|Bob' }));
+
+    const history = await loadMatchHistory();
+    expect(history).toHaveLength(1);
+    expect(history.filter(isOngoingMatch)).toHaveLength(0);
+    expect(history[0]!.id).toBe('completed-instance');
   });
 
   it('caps the history at 200 matches', async () => {

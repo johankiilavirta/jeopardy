@@ -18,8 +18,6 @@ interface MainMenuScreenProps {
   onJoinGame: (sourceRect?: CellRect) => void;
   onSettings: () => void;
   onHistory?: (() => void) | undefined;
-  /** Present when an unfinished game snapshot is saved on this device. */
-  onResumeGame?: (() => void) | undefined;
 }
 
 export function MainMenuScreen(props: MainMenuScreenProps) {
@@ -59,14 +57,6 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
       >
         <Text style={styles.title}>JEOPARDY</Text>
         <View style={styles.buttons}>
-          {props.onResumeGame && (
-            <Pressable
-              style={({ pressed }) => [styles.button, styles.resumeButton, pressed && styles.buttonPressed]}
-              onPress={props.onResumeGame}
-            >
-              <Text style={styles.buttonText}>RESUME GAME</Text>
-            </Pressable>
-          )}
           <Pressable
             style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
             onPress={props.onNewGame}
@@ -135,10 +125,6 @@ const styles = StyleSheet.create({
   },
   buttonPressed: {
     backgroundColor: colors.activeOutline,
-  },
-  resumeButton: {
-    borderWidth: 1,
-    borderColor: colors.gold,
   },
   buttonText: {
     fontFamily: typeTokens.ui700,

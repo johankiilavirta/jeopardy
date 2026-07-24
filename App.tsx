@@ -44,7 +44,7 @@ import {
   type SavedSnapshot,
   type PreferredConnectionMode,
 } from './app/sessionStore';
-import { computeWinnerNames, loadMatchHistory, recordMatch, type MatchResult } from './app/matchHistory';
+import { buildGameKey, computeWinnerNames, isOngoingMatch, loadMatchHistory, recordMatch, recordOngoingMatch, type MatchResult } from './app/matchHistory';
 import { SettingsScreen } from './ui/screens/SettingsScreen';
 import { MatchHistoryScreen } from './ui/screens/MatchHistoryScreen';
 import { colors } from './ui/theme/tokens';
@@ -195,10 +195,6 @@ function isStaleAuthorityForSession(authority: SessionAuthority, session: SavedS
   return authority.roomId !== session.roomId || compareAuthority(authority, sessionAuthority(session)) < 0;
 }
 
-function newMatchId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
 export default function App() {
   const [fontsLoaded] = useFonts({
     Anton_400Regular,
@@ -221,6 +217,7 @@ export default function App() {
   const [joinSearching, setJoinSearching] = useState(false);
   const [initialGameState, setInitialGameState] = useState<{ state: GameState; playerId: string | null; canUndo?: boolean; canRedo?: boolean } | null>(null);
   const [boardData, setBoardData] = useState<GameData | null>(null);
+  const boardDataRef = useRef<GameData | null>(null);
   const [peerConnectionStatus, setPeerConnectionStatus] = useState<PeerConnectionStatus>('connected');
   const [localRecovery, setLocalRecovery] = useState<LocalRecoveryState>('none');
   const transportRef = useRef<SessionProvider | null>(null);
@@ -235,6 +232,8 @@ export default function App() {
   // leave/new room) so re-finishing after an undo upserts instead of
   // duplicating. Refs because the []-dep handleStateUpdate reads them.
   const matchIdRef = useRef<string | null>(null);
+  const matchStartedAtRef = useRef<number>(Date.now());
+  const pendingMatchIdentityRef = useRef<{ gameKey: string; startedAt: number } | null>(null);
   const gameNumberRef = useRef<number | null>(null);
   const [recentMatches, setRecentMatches] = useState<MatchResult[]>([]);
 
@@ -297,7 +296,7 @@ export default function App() {
       setResumeAvailable(false);
       void clearSession();
       void clearSnapshot();
-      if (matchIdRef.current) {
+      {
         const players = Object.values(state.players).map(p => ({
           name: p.name,
           score: p.score,
@@ -309,8 +308,12 @@ export default function App() {
           scoreHistory: p.scoreHistory,
           finalWager: state.finalWagers?.[p.id],
         }));
+        const gameKey = buildGameKey(gameNumberRef.current, players);
         void recordMatch({
-          id: matchIdRef.current,
+          id: `${gameKey}|completed`,
+          status: 'completed',
+          gameKey,
+          startedAt: matchStartedAtRef.current,
           finishedAt: Date.now(),
           gameNumber: gameNumberRef.current,
           players,
@@ -319,6 +322,35 @@ export default function App() {
       }
     } else {
       saveSnapshotState(state);
+      {
+        const players = Object.values(state.players).map(p => ({
+          name: p.name,
+          score: p.score,
+          correct: p.correct,
+          incorrect: p.incorrect,
+          buzzCount: p.buzzCount,
+          firstBuzzCount: p.firstBuzzCount,
+          reactionMsTotal: p.reactionMsTotal,
+          scoreHistory: p.scoreHistory,
+        }));
+        const gameKey = buildGameKey(gameNumberRef.current, players);
+        if (!matchIdRef.current) {
+          matchIdRef.current = `${gameKey}|ongoing`;
+          matchStartedAtRef.current = Date.now();
+        }
+        void recordOngoingMatch({
+          id: matchIdRef.current,
+          gameKey,
+          startedAt: matchStartedAtRef.current,
+          finishedAt: 0,
+          gameNumber: gameNumberRef.current,
+          players,
+          winnerNames: [],
+          state,
+          board: boardDataRef.current,
+          mode: sessionRef.current?.mode ?? 'online',
+        }).then(setRecentMatches);
+      }
     }
   }, []);
 
@@ -529,10 +561,10 @@ export default function App() {
             const board = (msg.board as GameData) ?? null;
             if (board) {
               setBoardData(board);
+              boardDataRef.current = board;
               void saveSnapshotBoard(board, joinedSession.mode);
             }
             // Keep the match id across a reconnect — it's the same game.
-            if (!matchIdRef.current) matchIdRef.current = newMatchId();
             gameNumberRef.current = board?.gameNumber ?? null;
             sessionRef.current = joinedSession;
             void saveSession(joinedSession);
@@ -628,7 +660,10 @@ export default function App() {
     pendingGameScreenRef.current = null;
     setLobbyFadingOut(false);
     sessionRef.current = null;
-    matchIdRef.current = null;
+    const resumedIdentity = resume ? pendingMatchIdentityRef.current : null;
+    pendingMatchIdentityRef.current = null;
+    matchIdRef.current = resumedIdentity ? `${resumedIdentity.gameKey}|ongoing` : null;
+    matchStartedAtRef.current = resumedIdentity?.startedAt ?? Date.now();
     if (PERSISTENCE_ENABLED) void clearSession();
     setLobbyError(null);
     setJoinError(null);
@@ -833,7 +868,7 @@ export default function App() {
           });
           const board = (msg.board as GameData) ?? null;
           setBoardData(board);
-          if (!matchIdRef.current) matchIdRef.current = newMatchId();
+          boardDataRef.current = board;
           gameNumberRef.current = board?.gameNumber ?? null;
           if (PERSISTENCE_ENABLED) {
             roomAuthority = authorityFromMessage(msg) ?? roomAuthority ?? { roomId: createRoomId(), epoch: 1, leaderId: createLeaderId() };
@@ -1035,7 +1070,7 @@ export default function App() {
           });
           const board = (msg.board as GameData) ?? null;
           setBoardData(board);
-          if (!matchIdRef.current) matchIdRef.current = newMatchId();
+          boardDataRef.current = board;
           gameNumberRef.current = board?.gameNumber ?? null;
           setScreen({ type: 'game', serverPeerId: msg.serverPeerId as string, roomCode: DEV_ROOM });
           break;
@@ -1087,17 +1122,30 @@ export default function App() {
     fadeToBlackAndHold(() => connectAndDo('create', undefined, connectionMode));
   }, [connectAndDo, connectionMode, fadeToBlackAndHold]);
 
-  /** RESUME GAME: host a fresh room seeded with the snapshot on this device. */
-  const handleResumeGame = useCallback(() => {
-    void loadSnapshot().then((snapshot) => {
-      if (!snapshot) {
-        setResumeAvailable(false);
-        return;
-      }
-      // Either device may become the new host — both hold snapshots.
-      connectAndDo('create', snapshot, snapshot.mode);
+  const handleResumeMatch = useCallback((match: MatchResult) => {
+    if (!match.state || !isOngoingMatch(match)) return;
+    const gameKey = match.gameKey ?? buildGameKey(match.gameNumber, match.players);
+    pendingMatchIdentityRef.current = { gameKey, startedAt: match.startedAt ?? Date.now() };
+    const snapshot: SavedSnapshot = {
+      state: match.state,
+      board: match.board ?? null,
+      mode: match.mode ?? connectionMode,
+      savedAt: match.updatedAt ?? Date.now(),
+    };
+    // The room-created handler owns the single reveal animation. Finish the
+    // black fade before changing screens so the lobby handoff cannot race a
+    // second fade animation and flash NEW GAME underneath it.
+    transitionHeldRef.current = true;
+    transitionAnim.stopAnimation();
+    Animated.timing(transitionAnim, {
+      toValue: 1,
+      duration: 300,
+      easing: Easing.in(Easing.ease),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) connectAndDo('create', snapshot, snapshot.mode);
     });
-  }, [connectAndDo]);
+  }, [connectAndDo, connectionMode, transitionAnim]);
 
   const handleNameChange = useCallback((name: string) => {
     setPlayerName(name);
@@ -1152,6 +1200,40 @@ export default function App() {
     if (PERSISTENCE_ENABLED) void savePreferredConnectionMode(mode);
   }, []);
   const handleSettings = useCallback(() => setScreen({ type: 'settings' }), []);
+  const handleHistory = useCallback(() => {
+    transitionAnim.stopAnimation();
+    Animated.timing(transitionAnim, {
+      toValue: 1,
+      duration: 200,
+      easing: Easing.in(Easing.ease),
+      useNativeDriver: true,
+    }).start(() => {
+      setScreen({ type: 'history' });
+      Animated.timing(transitionAnim, {
+        toValue: 0,
+        duration: 320,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    });
+  }, [transitionAnim]);
+  const handleHistoryBack = useCallback(() => {
+    transitionAnim.stopAnimation();
+    Animated.timing(transitionAnim, {
+      toValue: 1,
+      duration: 200,
+      easing: Easing.in(Easing.ease),
+      useNativeDriver: true,
+    }).start(() => {
+      setScreen({ type: 'menu' });
+      Animated.timing(transitionAnim, {
+        toValue: 0,
+        duration: 320,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    });
+  }, [transitionAnim]);
 
   /** Deliberately walk away from the current room (also cancels a pending
    *  reconnect). The snapshot survives — that's what RESUME GAME is for. */
@@ -1291,8 +1373,7 @@ export default function App() {
             onNewGame={handleNewGame}
             onJoinGame={handleJoinNav}
             onSettings={handleSettings}
-            onHistory={() => setScreen({ type: 'history' })}
-            onResumeGame={resumeAvailable ? handleResumeGame : undefined}
+            onHistory={handleHistory}
           />
         );
       case 'reconnecting':
@@ -1310,8 +1391,7 @@ export default function App() {
                 onNewGame={handleNewGame}
                 onJoinGame={handleJoinNav}
                 onSettings={handleSettings}
-                onHistory={() => setScreen({ type: 'history' })}
-                onResumeGame={resumeAvailable ? handleResumeGame : undefined}
+                onHistory={handleHistory}
               />
             </View>
             <View style={StyleSheet.absoluteFill}>
@@ -1338,8 +1418,7 @@ export default function App() {
                 onNewGame={handleNewGame}
                 onJoinGame={handleJoinNav}
                 onSettings={handleSettings}
-                onHistory={() => setScreen({ type: 'history' })}
-                onResumeGame={resumeAvailable ? handleResumeGame : undefined}
+                onHistory={handleHistory}
               />
             </View>
             <View style={StyleSheet.absoluteFill}>
@@ -1428,7 +1507,8 @@ export default function App() {
           <MatchHistoryScreen
             matches={recentMatches}
             playerName={playerName}
-            onBack={() => setScreen({ type: 'menu' })}
+            onBack={handleHistoryBack}
+            onResumeMatch={handleResumeMatch}
           />
         );
       case 'demo':
@@ -1457,13 +1537,13 @@ export default function App() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: colors.background,
   },
   screenStack: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: colors.background,
   },
   transitionOverlay: {
-    backgroundColor: '#000',
+    backgroundColor: colors.background,
   },
 });

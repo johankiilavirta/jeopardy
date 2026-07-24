@@ -24,6 +24,8 @@ interface BoardProps {
    * to reveal.
    */
   onReady?: (() => void) | undefined;
+  /** Optional cap for category text; useful for short labels like dates. */
+  categoryMaxFontSize?: number | undefined;
 }
 
 const ROW_COUNT = 5;
@@ -84,7 +86,7 @@ function shuffle(n: number): number[] {
   return a;
 }
 
-function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boardAnimKey = 0, onReady }: BoardProps) {
+function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boardAnimKey = 0, onReady, categoryMaxFontSize = 44 }: BoardProps) {
   // Lobby metadata can arrive directly from the relay rather than through
   // gameLoader, so normalize it here as well. Fitting and rendering must use
   // the same display string or escaped quotes/backslashes can cause ellipses.
@@ -174,15 +176,19 @@ function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boa
     if (innerW <= 0 || innerH <= 0) return null;
 
     const names = categories.map(c => c.name.toUpperCase());
+    const nonEmptyNames = names.filter(Boolean);
+    if (nonEmptyNames.length === 0) {
+      return names.map(() => ({ fontSize: categoryMaxFontSize, text: '' }));
+    }
 
     // --- Web path: canvas measurement with balanced line breaks ---
-    const webFits = names.map(n =>
-      computeFit(n, innerW, innerH, typeTokens.board, '400', 0.85, 1.28, 3, 8, 44),
+    const webFits = nonEmptyNames.map(n =>
+      computeFit(n, innerW, innerH, typeTokens.board, '400', 0.85, 1.28, 3, 8, categoryMaxFontSize),
     );
     if (!webFits.some(f => f === null)) {
       const minSize = Math.min(...webFits.map(f => f!.fontSize));
       return names.map(n =>
-        computeFit(n, innerW, innerH, typeTokens.board, '400', 0.85, 1.28, 3, 8, minSize),
+        n ? computeFit(n, innerW, innerH, typeTokens.board, '400', 0.85, 1.28, 3, 8, minSize) : { fontSize: minSize, text: '' },
       );
     }
 
@@ -216,13 +222,13 @@ function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boa
       return best ?? { fontSize: 8, text: name };
     };
 
-    let minFontSize = 44;
-    for (const cat of categories) {
-      minFontSize = Math.min(minFontSize, nativeFit(cat.name, 44).fontSize);
+    let minFontSize = categoryMaxFontSize;
+    for (const cat of categories.filter(category => category.name.trim().length > 0)) {
+      minFontSize = Math.min(minFontSize, nativeFit(cat.name, categoryMaxFontSize).fontSize);
     }
 
-    return names.map(n => nativeFit(n, minFontSize));
-  }, [boardSize, categories, colCount, spaceProbe, wordProbes]);
+    return names.map(n => n ? nativeFit(n, minFontSize) : { fontSize: minFontSize, text: '' });
+  }, [boardSize, categories, categoryMaxFontSize, colCount, spaceProbe, wordProbes]);
 
   // Font sizing is measurement-driven (onLayout probes land over several
   // frames), so a freshly mounted board visibly assembles itself: values at
@@ -293,6 +299,7 @@ function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boa
             name={category.name}
             flashDelay={cellDelays ? catFlashDelay : undefined}
             precomputedFit={categoryFits?.[i] ?? undefined}
+            maxFontSize={categoryMaxFontSize}
           />
         ))}
       </View>
@@ -334,6 +341,7 @@ export const Board = memo(BoardImpl, (a, b) =>
   a.onSkipClue === b.onSkipClue &&
   a.boardAnimKey === b.boardAnimKey &&
   a.onReady === b.onReady &&
+  a.categoryMaxFontSize === b.categoryMaxFontSize &&
   a.burnedClueIds.length === b.burnedClueIds.length &&
   a.burnedClueIds.every((id, i) => id === b.burnedClueIds[i]),
 );
@@ -342,7 +350,7 @@ const styles = StyleSheet.create({
   board: {
     flex: 1,
     width: '100%',
-    backgroundColor: colors.grid,
+    backgroundColor: colors.background,
     gap: grid.lineWidth,
   },
   categoryRow: {

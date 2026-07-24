@@ -9,6 +9,9 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { GameData } from '../data/gameLoader';
+import type { SessionMode } from './sessionProvider';
+import type { GameState } from '../src/types';
 
 const MATCH_HISTORY_KEY = 'jeopardy/match-history';
 const MAX_MATCHES = 200;
@@ -27,14 +30,38 @@ export interface MatchPlayerResult {
 }
 
 export interface MatchResult {
-  /** Stable per-game id (assigned at game start) — recording twice upserts. */
+  /** Stable per-game instance id — recording twice upserts. */
   id: string;
+  /** Same board and player combination, useful for identifying replays. */
+  gameKey?: string;
+  /** Older records have no status and are completed by definition. */
+  status?: 'ongoing' | 'completed';
+  startedAt?: number;
+  updatedAt?: number;
   finishedAt: number;
   /** J!Archive game number, when known. */
   gameNumber: number | null;
   players: MatchPlayerResult[];
   /** All names sharing the top score (more than one on a tie). */
   winnerNames: string[];
+  /** Present only while a game is ongoing; used to seed a new lobby. */
+  state?: GameState;
+  board?: GameData | null;
+  mode?: SessionMode;
+}
+
+export function isOngoingMatch(match: MatchResult): boolean {
+  return match.status === 'ongoing';
+}
+
+/** Canonical identity for one board and one pair of players. */
+export function buildGameKey(gameNumber: number | null, players: Pick<MatchPlayerResult, 'name'>[]): string {
+  const names = players.map(player => player.name.trim().toLowerCase()).sort();
+  return `${gameNumber ?? 'demo'}|${names.join('|')}`;
+}
+
+function gameKeyForMatch(match: MatchResult): string {
+  return match.gameKey ?? buildGameKey(match.gameNumber, match.players);
 }
 
 export function computeWinnerNames(players: MatchPlayerResult[]): string[] {
@@ -58,11 +85,45 @@ export async function loadMatchHistory(): Promise<MatchResult[]> {
 
 /** Upsert a finished game and return the updated list (newest first),
  *  so callers never race a read against the write. */
-export async function recordMatch(match: MatchResult): Promise<MatchResult[]> {
-  const history = await loadMatchHistory();
-  const updated = [match, ...history.filter(m => m.id !== match.id)].slice(0, MAX_MATCHES);
-  try {
-    await AsyncStorage.setItem(MATCH_HISTORY_KEY, JSON.stringify(updated));
-  } catch {}
-  return updated;
+let historyWriteQueue: Promise<MatchResult[]> = Promise.resolve([]);
+
+export function recordMatch(match: MatchResult): Promise<MatchResult[]> {
+  historyWriteQueue = historyWriteQueue.then(async () => {
+    const history = await loadMatchHistory();
+    const completed = !isOngoingMatch(match);
+    const gameKey = gameKeyForMatch(match);
+    const updated = [match, ...history.filter(item =>
+      item.id !== match.id && !(completed && isOngoingMatch(item) && gameKeyForMatch(item) === gameKey),
+    )].slice(0, MAX_MATCHES);
+    try {
+      await AsyncStorage.setItem(MATCH_HISTORY_KEY, JSON.stringify(updated));
+    } catch {}
+    return updated;
+  });
+  return historyWriteQueue;
+}
+
+/** Save the latest playable state without disturbing a completed replay with
+ * the same board/player key. The caller gives each game instance its own id. */
+export async function recordOngoingMatch(match: MatchResult): Promise<MatchResult[]> {
+  const gameKey = gameKeyForMatch(match);
+  const ongoing = {
+    ...match,
+    id: `${gameKey}|ongoing`,
+    gameKey,
+    status: 'ongoing',
+    updatedAt: Date.now(),
+    finishedAt: 0,
+  } satisfies MatchResult;
+  historyWriteQueue = historyWriteQueue.then(async () => {
+    const history = await loadMatchHistory();
+    const updated = [ongoing, ...history.filter(item =>
+      !isOngoingMatch(item) || gameKeyForMatch(item) !== gameKey,
+    )].slice(0, MAX_MATCHES);
+    try {
+      await AsyncStorage.setItem(MATCH_HISTORY_KEY, JSON.stringify(updated));
+    } catch {}
+    return updated;
+  });
+  return historyWriteQueue;
 }
