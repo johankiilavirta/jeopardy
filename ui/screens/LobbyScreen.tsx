@@ -1102,6 +1102,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                       <View style={styles.settingsColRight}>
                         <Text style={styles.label}>GAME #</Text>
                         <View
+                          style={styles.gameIdPickerTouchArea}
                           {...gameIdResponder.panHandlers}
                           onTouchStart={beginGameIdTouch}
                           onTouchEnd={endGameIdTouch}
@@ -1412,6 +1413,16 @@ const styles = StyleSheet.create({
   input: {
     justifyContent: 'center',
     marginBottom: 2,
+  },
+  // Keep the picker easy to grab without changing the visible input or
+  // taking additional space away from the category list.
+  gameIdPickerTouchArea: {
+    marginTop: -8,
+    marginHorizontal: -10,
+    marginBottom: -30,
+    paddingTop: 8,
+    paddingHorizontal: 10,
+    paddingBottom: 30,
   },
   categoryTwoCol: {
     flexDirection: 'row',
