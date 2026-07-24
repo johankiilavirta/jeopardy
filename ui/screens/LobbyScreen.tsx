@@ -944,7 +944,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
         {/* 2. Gradient: fades board into the background colour */}
         <LinearGradient
           pointerEvents="none"
-          colors={['transparent', colors.bg]}
+      colors={[colors.backgroundTransparent, colors.background]}
           locations={gradientLocations}
           style={styles.boardGradient}
         />
@@ -1053,7 +1053,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                 >
                   {/* Soft fade at the leading (top) edge */}
                   <LinearGradient
-                    colors={['transparent', colors.bg]}
+      colors={[colors.backgroundTransparent, colors.background]}
                     style={styles.settingsGradientEdge}
                     pointerEvents="none"
                   />
@@ -1346,7 +1346,7 @@ const styles = StyleSheet.create({
   },
   page: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: colors.background,
   },
   // Board fills entire page as backdrop, with a little breathing room around edges
   boardBackdrop: {
@@ -1397,7 +1397,7 @@ const styles = StyleSheet.create({
     fontFamily: typeTokens.board,
     fontSize: 38,
     color: colors.gold,
-    lineHeight: 44,
+    lineHeight: 52,
     textShadowColor: 'rgba(229,178,13,0.15)',
     textShadowOffset: { width: 0, height: 3 },
     textShadowRadius: 10,
@@ -1425,7 +1425,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: colors.bg,
+    backgroundColor: colors.background,
   },
   // Phase 2: content layer (opacity animated after gradient finishes).
   settingsDragHandle: {

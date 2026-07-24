@@ -6,9 +6,14 @@
  * grid lines.
  */
 
+const APP_BACKGROUND = '#0D0D0D';
+const APP_BACKGROUND_TRANSPARENT = 'rgba(13,13,13,0)';
+
 export const colors = {
   /** Near-black app background */
-  bg: '#0D0D0D',
+  background: APP_BACKGROUND,
+  backgroundTransparent: APP_BACKGROUND_TRANSPARENT,
+  bg: APP_BACKGROUND,
   /** Deep navy cell fill — softer than the raw broadcast blue (#02029A),
    *  which overwhelms on large surfaces. Used everywhere something is
    *  "Jeopardy blue": board cells, clue card, score blocks, menus. */
@@ -32,7 +37,7 @@ export const colors = {
   goldBright: '#FFCC00',
   /** Grid line color between cells — same as the app background, so the
    *  lines read as the background showing through, not a second black. */
-  grid: '#0D0D0D',
+  grid: APP_BACKGROUND,
   /** Outline for the player whose turn it is */
   activeOutline: '#2E5BFF',
   /** Category header text */

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 130">
+  <g fill="none" stroke="#1a1a1a" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- J: top serif, vertical, bottom hook curving left -->
+    <path d="M 6,23 C 14,21 28,20 50,23"/>
+    <path d="M 28,21 C 28.5,38 29,58 29,78 C 29,90 27,100 22,107 C 17,113 10,113 5,108"/>
+
+    <!-- O: tall oval, slightly imperfect -->
+    <path d="M 82,20 C 98,15 112,22 114,48 C 116,74 108,98 90,103 C 72,108 58,92 57,65 C 56,38 66,25 82,20 Z"/>
+
+    <!-- H: two verticals, crossbar slightly above center -->
+    <path d="M 132,20 C 131.5,42 131,68 130,102"/>
+    <path d="M 176,22 C 176.5,44 177,70 178,102"/>
+    <path d="M 131,56 C 145,53 160,53 177,55"/>
+
+    <!-- A: pointed top, two legs, crossbar -->
+    <path d="M 213,17 C 208,34 201,58 190,102"/>
+    <path d="M 213,17 C 218,34 225,58 238,102"/>
+    <path d="M 197,66 C 208,63 224,63 233,65"/>
+
+    <!-- N: left vertical, diagonal, right vertical -->
+    <path d="M 256,102 C 255.5,72 255,42 254,20"/>
+    <path d="M 254,20 C 264,42 278,68 302,102"/>
+    <path d="M 302,102 C 303,72 303.5,42 304,20"/>
+  </g>
+</svg>
