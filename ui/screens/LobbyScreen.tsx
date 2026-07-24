@@ -362,7 +362,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
 
   const insertGameIdDigit = useCallback((digit: string) => {
     if (keyboardFieldRef.current === 'buzzerDelay') {
-      const current = props.buzzerDelay === '-1' ? '' : (props.buzzerDelay ?? '');
+      const current = !props.buzzerDelay || Number(props.buzzerDelay) < 0 ? '' : props.buzzerDelay;
       if (digit === '.' && current.includes('.')) return;
       props.onBuzzerDelayChange?.(`${current}${digit}`.replace(/[^0-9.]/g, ''));
       return;
@@ -372,7 +372,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
 
   const backspaceGameId = useCallback(() => {
     if (keyboardFieldRef.current === 'buzzerDelay') {
-      const current = props.buzzerDelay === '-1' ? '' : (props.buzzerDelay ?? '');
+      const current = !props.buzzerDelay || Number(props.buzzerDelay) < 0 ? '' : props.buzzerDelay;
       props.onBuzzerDelayChange?.(current.slice(0, -1) || '-1');
       return;
     }
@@ -454,7 +454,11 @@ export function LobbyScreen(props: LobbyScreenProps) {
       const start = buzzerDelayStartRef.current;
       const direction = gesture.dy < 0 ? 1 : -1;
       const steps = Math.max(1, Math.floor(Math.abs(gesture.dy) / 28));
-      const next = Math.max(-1, Math.round((start + direction * steps * 0.5) * 2) / 2);
+      const next = start < 0
+        ? (direction > 0 ? 0 : -1)
+        : start === 0 && direction < 0
+          ? -1
+          : Math.max(0, Math.round((start + direction * steps * 0.5) * 2) / 2);
       buzzerDelayChangeRef.current?.(String(next));
     },
     onPanResponderRelease: () => {
@@ -1163,7 +1167,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                           <Pressable
                             style={styles.buzzerDelayInput}
                             accessibilityRole="button"
-                            accessibilityLabel={`Buzzer delay ${props.buzzerDelay ?? '-1'}`}
+                            accessibilityLabel={`Buzzer delay ${Number(props.buzzerDelay) < 0 || !props.buzzerDelay ? 'default' : props.buzzerDelay}`}
                             onLayout={event => {
                               buzzerDelayLayoutRef.current = {
                                 y: advancedYRef.current + event.nativeEvent.layout.y,
@@ -1181,7 +1185,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                             }}
                           >
                             <Text style={styles.buzzerDelayText}>
-                              {props.buzzerDelay === '-1' || !props.buzzerDelay ? 'DEFAULT (-1)' : props.buzzerDelay}
+                              {!props.buzzerDelay || Number(props.buzzerDelay) < 0 ? 'DEFAULT' : props.buzzerDelay}
                             </Text>
                           </Pressable>
                         </View>
