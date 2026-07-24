@@ -89,15 +89,17 @@ function JudgementTab({
   const rise = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.sequence([
-      Animated.delay(220), // wait for keyboard to fully slide down
-      Animated.spring(rise, {
-        toValue: 1,
-        friction: 8,
-        tension: 60,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    requestAnimationFrame(() => {
+      Animated.sequence([
+        Animated.delay(220), // wait for keyboard to fully slide down
+        Animated.spring(rise, {
+          toValue: 1,
+          friction: 8,
+          tension: 60,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
   }, [rise]);
 
   const choose = (correct: boolean, penalty: boolean = true) => {

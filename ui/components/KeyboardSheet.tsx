@@ -76,12 +76,14 @@ export function useKeyboardSheet(
 
   useEffect(() => {
     if (visible) {
-      Animated.spring(kb, {
-        toValue: 1,
-        speed: 16,
-        bounciness: 4,
-        useNativeDriver: true,
-      }).start();
+      requestAnimationFrame(() => {
+        Animated.spring(kb, {
+          toValue: 1,
+          speed: 16,
+          bounciness: 4,
+          useNativeDriver: true,
+        }).start();
+      });
     } else {
       Animated.timing(kb, {
         toValue: 0,

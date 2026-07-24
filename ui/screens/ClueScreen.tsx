@@ -473,7 +473,7 @@ export function ClueScreen({
         Animated.timing(caretBlink, { toValue: 1, duration: 40, delay: 520, useNativeDriver: true }),
       ]),
     );
-    loop.start();
+    requestAnimationFrame(() => loop.start());
     return () => loop.stop();
   }, [kbMounted, caretBlink]);
 

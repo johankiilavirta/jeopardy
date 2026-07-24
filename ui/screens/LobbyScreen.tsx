@@ -100,12 +100,14 @@ function LobbySlotBug({ player, slotIndex, localIsHost, settingsOpen, onSettings
     // rest of the join screen.
     if (localIsHost && !isHostSlot) {
       nameOpacity.setValue(0);
-      Animated.timing(nameOpacity, {
-        toValue: 1,
-        duration: 300,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }).start();
+      requestAnimationFrame(() => {
+        Animated.timing(nameOpacity, {
+          toValue: 1,
+          duration: 300,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }).start();
+      });
     } else {
       nameOpacity.setValue(1);
     }
@@ -514,12 +516,14 @@ export function LobbyScreen(props: LobbyScreenProps) {
 
   useEffect(() => {
     if (props.roomCode <= 0) return;
-    Animated.timing(codeVisible, {
-      toValue: 1,
-      duration: 350,
-      easing: Easing.out(Easing.ease),
-      useNativeDriver: true,
-    }).start();
+    requestAnimationFrame(() => {
+      Animated.timing(codeVisible, {
+        toValue: 1,
+        duration: 350,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    });
   }, [props.roomCode, codeVisible]);
 
   // ── Game info loading ─────────────────────────────────────────────────────
@@ -643,12 +647,14 @@ export function LobbyScreen(props: LobbyScreenProps) {
       categoriesVisible.setValue(0);
       return;
     }
-    Animated.timing(categoriesVisible, {
-      toValue: 1,
-      duration: 350,
-      easing: Easing.out(Easing.ease),
-      useNativeDriver: true,
-    }).start();
+    requestAnimationFrame(() => {
+      Animated.timing(categoriesVisible, {
+        toValue: 1,
+        duration: 350,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    });
   }, [realBoard, categoriesVisible]);
 
   // ── R1/R2 category toggle ─────────────────────────────────────────────────
