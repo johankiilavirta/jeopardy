@@ -20,6 +20,8 @@ interface NumberKeyboardProps {
   final?: boolean;
   /** Use the neutral charcoal keys outside of the blue game board. */
   dark?: boolean;
+  /** Adds a decimal key for settings fields that accept seconds. */
+  decimal?: boolean;
 }
 
 function Key({
@@ -45,7 +47,7 @@ function Key({
   );
 }
 
-export const NumberKeyboard = memo(function NumberKeyboard({ onInsert, onBackspace, onMaxWager, onLetters, final = false, dark = false }: NumberKeyboardProps) {
+export const NumberKeyboard = memo(function NumberKeyboard({ onInsert, onBackspace, onMaxWager, onLetters, final = false, dark = false, decimal = false }: NumberKeyboardProps) {
   return (
     <View style={styles.keyboard}>
       {NUMBER_ROWS.map((row, i) => (
@@ -60,6 +62,8 @@ export const NumberKeyboard = memo(function NumberKeyboard({ onInsert, onBackspa
           <Key label="MAX" final={final || dark} onPress={onMaxWager} />
         ) : onLetters ? (
           <Key label="ABC" final={final || dark} onPress={onLetters} />
+        ) : decimal ? (
+          <Key label="." final={final || dark} onPress={() => onInsert('.')} />
         ) : (
           <View style={styles.spacer} />
         )}

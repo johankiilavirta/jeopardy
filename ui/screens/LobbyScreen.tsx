@@ -15,6 +15,7 @@ import { relayUrls } from '../../app/relayUrl';
 import { DEFAULT_RELAY_HOST } from '../../app/relayDefaults';
 import { sanitizeText } from '../../src/sanitizeText';
 import { loadGameInfo, loadGameIndex, type GameInfo } from '../../data/gameLoader';
+import { nextCompleteGameNumber } from '../../data/gameSelection';
 import type { SessionMode } from '../../app/sessionProvider';
 import { KeyboardSheet, useKeyboardSheet } from '../components/KeyboardSheet';
 import { NumberKeyboard } from '../components/NumberKeyboard';
@@ -46,6 +47,8 @@ interface LobbyScreenProps {
   sessionMode?: SessionMode | undefined;
   gameId?: string;
   onGameIdChange?: (id: string) => void;
+  buzzerDelay?: string;
+  onBuzzerDelayChange?: (delay: string) => void;
   /** Master toggle for in-game animations (default on). */
   animationsEnabled?: boolean;
   onAnimationsChange?: (enabled: boolean) => void;
@@ -65,6 +68,9 @@ const EXIT_COMMIT_DISTANCE = 100;
 const EXIT_COMMIT_VELOCITY = 0.5;
 const START_COMMIT_DISTANCE = 90;
 const START_COMMIT_VELOCITY = 0.5;
+// Keep the implementation below intact for a future re-enable, but do not
+// let the settings panel compete with the GAME # picker for vertical drags.
+const ENABLE_SETTINGS_VERTICAL_DISMISS = false;
 const EMPTY_BURNED: number[] = [];
 const LOBBY_VALUES = [200, 400, 600, 800, 1000] as const;
 
@@ -278,6 +284,9 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const setupScrollRef = useRef<ScrollView | null>(null);
   const advancedYRef = useRef(0);
   const gameIdLayoutRef = useRef({ y: 0, height: 0 });
+  const gameIdSwipeStartRef = useRef(0);
+  const gameIdSwipeActiveRef = useRef(false);
+  const completeGameCacheRef = useRef(new Map<number, GameInfo | null>());
   const fadeStartedRef = useRef(false);
   const pageX = useRef(new Animated.Value(0)).current;
   const gestureAxisRef = useRef<'horizontal' | 'vertical' | null>(null);
@@ -298,12 +307,48 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const settingsClosingRef = useRef(false);
   const [settingsContentH, setSettingsContentH] = useState(0);
   const [settingsScrollH, setSettingsScrollH] = useState(0);
+  const [gameIdGestureActive, setGameIdGestureActive] = useState(false);
+  const [buzzerDelayGestureActive, setBuzzerDelayGestureActive] = useState(false);
+  const buzzerDelayStartRef = useRef(-1);
+  const buzzerDelayValueRef = useRef(props.buzzerDelay ?? '-1');
+  buzzerDelayValueRef.current = props.buzzerDelay ?? '-1';
+  const buzzerDelayChangeRef = useRef(props.onBuzzerDelayChange);
+  buzzerDelayChangeRef.current = props.onBuzzerDelayChange;
+  const buzzerDelaySwipeActiveRef = useRef(false);
+  const [keyboardField, setKeyboardField] = useState<'gameId' | 'buzzerDelay'>('gameId');
+  const keyboardFieldRef = useRef<'gameId' | 'buzzerDelay'>('gameId');
+  const buzzerDelayLayoutRef = useRef({ y: 0, height: 0 });
+  const gameIdTouchReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gameIdValueRef = useRef(props.gameId);
+  gameIdValueRef.current = props.gameId;
+  const gameIdChangeRef = useRef(props.onGameIdChange);
+  gameIdChangeRef.current = props.onGameIdChange;
+
+  const beginGameIdTouch = useCallback(() => {
+    if (gameIdTouchReleaseTimerRef.current) {
+      clearTimeout(gameIdTouchReleaseTimerRef.current);
+      gameIdTouchReleaseTimerRef.current = null;
+    }
+    setGameIdGestureActive(true);
+  }, []);
+
+  const endGameIdTouch = useCallback(() => {
+    if (gameIdTouchReleaseTimerRef.current) clearTimeout(gameIdTouchReleaseTimerRef.current);
+    // Keep the ScrollView locked through the responder handoff and Pressable
+    // release so it cannot steal the tail of a vertical picker gesture.
+    gameIdTouchReleaseTimerRef.current = setTimeout(() => {
+      gameIdTouchReleaseTimerRef.current = null;
+      setGameIdGestureActive(false);
+    }, 120);
+  }, []);
 
   // ── Keyboard sheet for game # entry ──────────────────────────────────────
 
   const sheet = useKeyboardSheet(
     () => {
-      const layout = gameIdLayoutRef.current;
+      const layout = keyboardFieldRef.current === 'buzzerDelay'
+        ? buzzerDelayLayoutRef.current
+        : gameIdLayoutRef.current;
       if (!layout.height) return;
       const keyboardTop = height - sheet.panelHeight;
       const targetTop = (keyboardTop - layout.height) / 2;
@@ -312,15 +357,121 @@ export function LobbyScreen(props: LobbyScreenProps) {
         setupScrollRef.current?.scrollTo({ y, animated: true });
       });
     },
+    () => setKeyboardField('gameId'),
   );
 
   const insertGameIdDigit = useCallback((digit: string) => {
+    if (keyboardFieldRef.current === 'buzzerDelay') {
+      const current = !props.buzzerDelay || Number(props.buzzerDelay) < 0 ? '' : props.buzzerDelay;
+      if (digit === '.' && current.includes('.')) return;
+      props.onBuzzerDelayChange?.(`${current}${digit}`.replace(/[^0-9.]/g, ''));
+      return;
+    }
     props.onGameIdChange?.(`${props.gameId ?? ''}${digit}`.replace(/\D/g, '').slice(0, 6));
   }, [props]);
 
   const backspaceGameId = useCallback(() => {
+    if (keyboardFieldRef.current === 'buzzerDelay') {
+      const current = !props.buzzerDelay || Number(props.buzzerDelay) < 0 ? '' : props.buzzerDelay;
+      props.onBuzzerDelayChange?.(current.slice(0, -1) || '-1');
+      return;
+    }
     props.onGameIdChange?.((props.gameId ?? '').slice(0, -1));
   }, [props]);
+
+  const getCachedGameInfo = useCallback((gameNumber: number) => {
+    const cached = completeGameCacheRef.current;
+    if (cached.has(gameNumber)) return cached.get(gameNumber) ?? null;
+    const info = loadGameInfo(gameNumber);
+    cached.set(gameNumber, info);
+    return info;
+  }, []);
+
+  const updateGameIdFromSwipe = useCallback((dy: number, vy: number) => {
+    const start = gameIdSwipeStartRef.current;
+    const direction: -1 | 1 = dy < 0 ? 1 : -1;
+    // Distance gives deliberate steps; velocity adds momentum while the
+    // finger is still down, so a faster swipe visibly advances faster.
+    const distanceSteps = Math.floor(Math.abs(dy) / 28);
+    // PanResponder velocities are expressed in roughly px/ms (the same
+    // scale used by the sheet's 0.7 swipe threshold). A quick flick therefore
+    // adds several valid-game steps while a slow drag stays distance-driven.
+    const momentumSteps = Math.floor(Math.abs(vy) * 4);
+    const steps = Math.max(1, distanceSteps + momentumSteps);
+    const next = nextCompleteGameNumber(
+      start,
+      direction,
+      steps,
+      loadGameIndex().totalGames,
+      getCachedGameInfo,
+    );
+    if (String(next) !== gameIdValueRef.current) gameIdChangeRef.current?.(String(next));
+  }, [getCachedGameInfo]);
+
+  const gameIdResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_event, gesture) =>
+      Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.35,
+    onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+      Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.35,
+    onPanResponderGrant: () => {
+      beginGameIdTouch();
+      const current = Number(gameIdValueRef.current);
+      gameIdSwipeStartRef.current = Number.isFinite(current) && current > 0
+        ? current
+        : fallbackGameId.current;
+      gameIdSwipeActiveRef.current = false;
+    },
+    onPanResponderMove: (_event, gesture) => {
+      gameIdSwipeActiveRef.current = true;
+      updateGameIdFromSwipe(gesture.dy, gesture.vy);
+    },
+    onPanResponderRelease: () => {
+      // Let a Pressable release that follows this responder event know that
+      // it was a swipe, not a tap. Clear shortly afterward for the next tap.
+      gameIdSwipeActiveRef.current = true;
+      endGameIdTouch();
+      setTimeout(() => { gameIdSwipeActiveRef.current = false; }, 100);
+    },
+    onPanResponderTerminate: () => {
+      gameIdSwipeActiveRef.current = true;
+      endGameIdTouch();
+      setTimeout(() => { gameIdSwipeActiveRef.current = false; }, 100);
+    },
+  }), [beginGameIdTouch, endGameIdTouch, updateGameIdFromSwipe]);
+
+  const buzzerDelayResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_event, gesture) =>
+      Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.35,
+    onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+      Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.35,
+    onPanResponderGrant: () => {
+      setBuzzerDelayGestureActive(true);
+      const current = Number(buzzerDelayValueRef.current);
+      buzzerDelayStartRef.current = Number.isFinite(current) && current >= -1 ? current : -1;
+    },
+    onPanResponderMove: (_event, gesture) => {
+      buzzerDelaySwipeActiveRef.current = true;
+      const start = buzzerDelayStartRef.current;
+      const direction = gesture.dy < 0 ? 1 : -1;
+      const steps = Math.max(1, Math.floor(Math.abs(gesture.dy) / 28));
+      const next = start < 0
+        ? (direction > 0 ? 0 : -1)
+        : start === 0 && direction < 0
+          ? -1
+          : Math.max(0, Math.round((start + direction * steps * 0.5) * 2) / 2);
+      buzzerDelayChangeRef.current?.(String(next));
+    },
+    onPanResponderRelease: () => {
+      buzzerDelaySwipeActiveRef.current = true;
+      setBuzzerDelayGestureActive(false);
+      setTimeout(() => { buzzerDelaySwipeActiveRef.current = false; }, 100);
+    },
+    onPanResponderTerminate: () => {
+      buzzerDelaySwipeActiveRef.current = true;
+      setBuzzerDelayGestureActive(false);
+      setTimeout(() => { buzzerDelaySwipeActiveRef.current = false; }, 100);
+    },
+  }), []);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.addEventListener) return;
@@ -836,6 +987,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
             const settingsPanResponder = PanResponder.create({
               onMoveShouldSetPanResponder: (_e, gesture) => {
                 const isDown =
+                  ENABLE_SETTINGS_VERTICAL_DISMISS &&
                   gesture.dy > 10 &&
                   Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.5 &&
                   settingsScrollOffsetRef.current <= 0;
@@ -854,13 +1006,13 @@ export function LobbyScreen(props: LobbyScreenProps) {
                 if (!settingsAxisRef.current) {
                   if (Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5) {
                     settingsAxisRef.current = 'horizontal';
-                  } else if (gesture.dy > 0) {
+                  } else if (ENABLE_SETTINGS_VERTICAL_DISMISS && gesture.dy > 0) {
                     settingsAxisRef.current = 'vertical';
                   }
                 }
                 if (settingsAxisRef.current === 'horizontal') {
                   settingsDragX.setValue(gesture.dx);
-                } else if (settingsAxisRef.current === 'vertical') {
+                } else if (ENABLE_SETTINGS_VERTICAL_DISMISS && settingsAxisRef.current === 'vertical') {
                   settingsDragYRef.current = Math.max(0, gesture.dy);
                   settingsDragY.setValue(Math.max(0, gesture.dy));
                 }
@@ -868,7 +1020,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
               onPanResponderRelease: (_e, gesture) => {
                 const committed =
                   (settingsAxisRef.current === 'horizontal' && (Math.abs(gesture.dx) > SETTINGS_COMMIT || Math.abs(gesture.vx) > 0.7)) ||
-                  (settingsAxisRef.current === 'vertical' && (gesture.dy > SETTINGS_COMMIT || gesture.vy > 0.7));
+                  (ENABLE_SETTINGS_VERTICAL_DISMISS && settingsAxisRef.current === 'vertical' && (gesture.dy > SETTINGS_COMMIT || gesture.vy > 0.7));
                 settingsAxisRef.current = null;
                 settingsDragYRef.current = 0;
                 settingsDragX.setValue(0);
@@ -946,11 +1098,11 @@ export function LobbyScreen(props: LobbyScreenProps) {
                   style={styles.settingsScroll}
                   contentContainerStyle={[
                     styles.settingsScrollContent,
-                    { paddingBottom: 32 + sheet.panelHeight },
+                    { paddingBottom: 32 + (sheet.visible ? sheet.panelHeight : 0) },
                   ]}
                   showsVerticalScrollIndicator={false}
                   showsHorizontalScrollIndicator={false}
-                  scrollEnabled={settingsContentH > settingsScrollH}
+                  scrollEnabled={settingsContentH > settingsScrollH && !gameIdGestureActive && !buzzerDelayGestureActive}
                   scrollEventThrottle={16}
                   bounces={false}
                   onLayout={e => setSettingsScrollH(e.nativeEvent.layout.height)}
@@ -1004,12 +1156,52 @@ export function LobbyScreen(props: LobbyScreenProps) {
                             );
                           })}
                         </View>
+                        <Text style={[styles.label, styles.stackedLabel]}>BUZZER DELAY</Text>
+                        <View
+                          style={styles.buzzerDelayTouchArea}
+                          {...buzzerDelayResponder.panHandlers}
+                          onTouchStart={() => setBuzzerDelayGestureActive(true)}
+                          onTouchEnd={() => setBuzzerDelayGestureActive(false)}
+                          onTouchCancel={() => setBuzzerDelayGestureActive(false)}
+                        >
+                          <Pressable
+                            style={styles.buzzerDelayInput}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Buzzer delay ${Number(props.buzzerDelay) < 0 || !props.buzzerDelay ? 'default' : props.buzzerDelay}`}
+                            onLayout={event => {
+                              buzzerDelayLayoutRef.current = {
+                                y: advancedYRef.current + event.nativeEvent.layout.y,
+                                height: event.nativeEvent.layout.height,
+                              };
+                            }}
+                            onPress={() => {
+                              if (buzzerDelaySwipeActiveRef.current) {
+                                buzzerDelaySwipeActiveRef.current = false;
+                                return;
+                              }
+                              keyboardFieldRef.current = 'buzzerDelay';
+                              setKeyboardField('buzzerDelay');
+                              sheet.open();
+                            }}
+                          >
+                            <Text style={styles.buzzerDelayText}>
+                              {!props.buzzerDelay || Number(props.buzzerDelay) < 0 ? 'DEFAULT' : props.buzzerDelay}
+                            </Text>
+                          </Pressable>
+                        </View>
                       </View>
 
                       {/* ── Right column: game selection ── */}
                       <View style={styles.settingsColRight}>
                         <Text style={styles.label}>GAME #</Text>
-                        <Pressable
+                        <View
+                          style={styles.gameIdPickerTouchArea}
+                          {...gameIdResponder.panHandlers}
+                          onTouchStart={beginGameIdTouch}
+                          onTouchEnd={endGameIdTouch}
+                          onTouchCancel={endGameIdTouch}
+                        >
+                          <Pressable
                           style={styles.input}
                           accessibilityRole="button"
                           accessibilityLabel={`Game number ${props.gameId || 'random'}`}
@@ -1019,12 +1211,23 @@ export function LobbyScreen(props: LobbyScreenProps) {
                               height: event.nativeEvent.layout.height,
                             };
                           }}
-                          onPress={sheet.open}
-                        >
-                          <Text style={[styles.inputText, !props.gameId && styles.inputPlaceholder]}>
-                            {props.gameId || 'Random'}
-                          </Text>
-                        </Pressable>
+                          onPressIn={beginGameIdTouch}
+                          onPressOut={endGameIdTouch}
+                          onPress={() => {
+                            if (gameIdSwipeActiveRef.current) {
+                              gameIdSwipeActiveRef.current = false;
+                              return;
+                            }
+                            keyboardFieldRef.current = 'gameId';
+                            setKeyboardField('gameId');
+                            sheet.open();
+                          }}
+                          >
+                            <Text style={[styles.inputText, !props.gameId && styles.inputPlaceholder]}>
+                              {props.gameId || 'Random'}
+                            </Text>
+                          </Pressable>
+                        </View>
 
                         {gameInfoStatus === 'loading' && (
                           <Text style={styles.gameInfoNote}>Loading…</Text>
@@ -1092,7 +1295,12 @@ export function LobbyScreen(props: LobbyScreenProps) {
         </Animated.View>
 
         <KeyboardSheet controls={sheet}>
-          <NumberKeyboard dark onInsert={insertGameIdDigit} onBackspace={backspaceGameId} />
+          <NumberKeyboard
+            dark
+            decimal={keyboardField === 'buzzerDelay'}
+            onInsert={insertGameIdDigit}
+            onBackspace={backspaceGameId}
+          />
         </KeyboardSheet>
 
         {/* Drag-left → right-side ">" chevron (matches JoinGameScreen) */}
@@ -1305,6 +1513,29 @@ const styles = StyleSheet.create({
   input: {
     justifyContent: 'center',
     marginBottom: 2,
+  },
+  // Keep the picker easy to grab without changing the visible input or
+  // taking additional space away from the category list.
+  gameIdPickerTouchArea: {
+    marginTop: -8,
+    marginHorizontal: -10,
+    marginBottom: -56,
+    paddingTop: 8,
+    paddingHorizontal: 10,
+    paddingBottom: 56,
+  },
+  buzzerDelayTouchArea: {
+    minHeight: 34,
+    justifyContent: 'center',
+  },
+  buzzerDelayInput: {
+    minHeight: 30,
+    justifyContent: 'center',
+  },
+  buzzerDelayText: {
+    fontFamily: typeTokens.board,
+    fontSize: 22,
+    color: '#fff',
   },
   categoryTwoCol: {
     flexDirection: 'row',

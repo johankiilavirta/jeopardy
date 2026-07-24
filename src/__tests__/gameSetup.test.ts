@@ -46,6 +46,12 @@ describe('buildServerOptions', () => {
     expect(opts.initialState).toBe(saved);
     expect(opts.finalClue).toEqual({ category: 'FJ', text: 'Q', answer: 'A' });
   });
+
+  it('maps buzzer delay seconds to the reading lockout', () => {
+    expect(buildServerOptions(null, null, -1).readingMs).toBeUndefined();
+    expect(buildServerOptions(null, null, 0).readingMs).toBe(0);
+    expect(buildServerOptions(null, null, 2.5).readingMs).toBe(2500);
+  });
 });
 
 describe('validateResumeState', () => {

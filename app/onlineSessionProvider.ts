@@ -30,7 +30,7 @@ export class OnlineSessionProvider implements SessionProvider {
     this.socket.sendRaw({ type: 'join-room', roomCode, playerName });
   }
 
-  startGame(options: { gameId?: number; resume?: object } = {}): void {
+  startGame(options: { gameId?: number; buzzerDelay?: number; resume?: object } = {}): void {
     this.socket.sendRaw({ type: 'start-game', ...options });
   }
 

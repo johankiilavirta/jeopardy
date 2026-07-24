@@ -82,6 +82,11 @@ const DEMOTION_PROMOTE_GRACE_MS = 6000;
  *  only a room that truly can't be found is worth resurrecting. */
 const RETURNING_GUEST_PROMOTE_MS = 8000;
 
+function parseBuzzerDelay(value: string): number | undefined {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
 const extra = Constants.expoConfig?.extra as {
   network?: boolean;
   relayHost?: string;
@@ -207,6 +212,7 @@ export default function App() {
   const [relayHost, setRelayHost] = useState(relayHostFromConfig);
   const [relayPort, setRelayPort] = useState('8787');
   const [gameId, setGameId] = useState('');
+  const [buzzerDelay, setBuzzerDelay] = useState('-1');
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
   const [visibleCategories, setVisibleCategories] = useState(6);
   const [lobbyPlayers, setLobbyPlayers] = useState<LobbyPlayer[]>([]);
@@ -1165,16 +1171,21 @@ export default function App() {
   }, [handleLeave, transitionAnim]);
 
   const handleStartGame = useCallback(() => {
+    const delay = parseBuzzerDelay(buzzerDelay);
     const resume = pendingResumeRef.current;
     if (resume) {
       transportRef.current?.startGame({
+        ...(delay != null ? { buzzerDelay: delay } : {}),
         resume: { state: resume.state, board: resume.board },
       });
       return;
     }
     const id = gameId ? Number(gameId) : null;
-    transportRef.current?.startGame(id ? { gameId: id } : undefined);
-  }, [gameId]);
+    transportRef.current?.startGame({
+      ...(id ? { gameId: id } : {}),
+      ...(delay != null ? { buzzerDelay: delay } : {}),
+    });
+  }, [buzzerDelay, gameId]);
 
   const handleGameLeave = handleLeave;
 
@@ -1333,6 +1344,8 @@ export default function App() {
                 sessionMode={transportRef.current?.mode}
                 gameId={gameId}
                 onGameIdChange={setGameId}
+                buzzerDelay={buzzerDelay}
+                onBuzzerDelayChange={setBuzzerDelay}
                 animationsEnabled={animationsEnabled}
                 onAnimationsChange={setAnimationsEnabled}
                 visibleCategories={visibleCategories}
