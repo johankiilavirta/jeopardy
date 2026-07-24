@@ -1419,10 +1419,10 @@ const styles = StyleSheet.create({
   gameIdPickerTouchArea: {
     marginTop: -8,
     marginHorizontal: -10,
-    marginBottom: -30,
+    marginBottom: -56,
     paddingTop: 8,
     paddingHorizontal: 10,
-    paddingBottom: 30,
+    paddingBottom: 56,
   },
   categoryTwoCol: {
     flexDirection: 'row',
