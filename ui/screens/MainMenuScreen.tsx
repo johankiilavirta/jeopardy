@@ -83,6 +83,7 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [activeField, setActiveField] = useState<SettingsField | null>(null);
+  const [playerKeyboardMode, setPlayerKeyboardMode] = useState<'letters' | 'numbers'>('letters');
   const settingsClosingRef = useRef(false);
   const gradientH = useRef(new Animated.Value(0)).current;
   const settingsContentOpacity = useRef(new Animated.Value(0)).current;
@@ -109,13 +110,14 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
 
   const openKeyboard = useCallback((field: SettingsField) => {
     setActiveField(field);
+    if (field === 'playerName') setPlayerKeyboardMode('letters');
     sheet.open();
     scrollFieldIntoKeyboardWindow(field);
   }, [sheet, scrollFieldIntoKeyboardWindow]);
 
   const insertChar = useCallback((char: string) => {
     if (activeField === 'playerName') {
-      props.onNameChange?.(`${props.playerName ?? ''}${char}`.slice(0, 24));
+      props.onNameChange?.(`${props.playerName ?? ''}${char}`.slice(0, 15));
     } else if (activeField === 'relayHost') {
       props.onRelayHostChange?.(`${props.relayHost ?? ''}${char}`.slice(0, 64));
     } else if (activeField === 'relayPort') {
@@ -149,7 +151,7 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
       } else if (activeField === 'relayHost' && /^[a-zA-Z0-9.:-]$/.test(e.key)) {
         e.preventDefault();
         insertChar(e.key.toLowerCase());
-      } else if (activeField === 'playerName' && (/^[a-zA-Z]$/.test(e.key) || e.key === ' ')) {
+      } else if (activeField === 'playerName' && (/^[a-zA-Z0-9]$/.test(e.key) || e.key === ' ')) {
         e.preventDefault();
         insertChar(e.key === ' ' ? ' ' : e.key.toUpperCase());
       }
@@ -370,101 +372,121 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
               <Text style={styles.settingsTitle}>SETTINGS</Text>
 
               <View style={styles.settingsTwoCol}>
-                {/* ── Left column: player name ── */}
+                {/* ── Left column: player identity + connection mode ── */}
                 <View style={styles.settingsColLeft}>
-                  <Text style={styles.label}>PLAYER NAME</Text>
-                  <Pressable
-                    style={styles.input}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Player name ${props.playerName || 'empty'}`}
-                    onLayout={event => {
-                      fieldLayoutRef.current.playerName = {
-                        y: event.nativeEvent.layout.y,
-                        height: event.nativeEvent.layout.height,
-                      };
-                    }}
-                    onPress={() => openKeyboard('playerName')}
-                  >
-                    <Text style={[styles.inputText, !props.playerName && styles.inputPlaceholder]}>
-                      {props.playerName || 'Your name'}
-                    </Text>
-                  </Pressable>
-                </View>
-
-                {/* ── Right column: bluetooth mode ── */}
-                {props.connectionMode != null && props.onConnectionModeChange && (
-                  <View style={styles.settingsColRight}>
-                    <Text style={styles.label}>BLUETOOTH</Text>
+                  <View style={styles.settingGroup}>
+                    <Text style={styles.label}>PLAYER NAME</Text>
                     <Pressable
-                      accessibilityRole="switch"
-                      accessibilityState={{ checked: props.connectionMode === 'bluetooth' }}
-                      style={styles.toggleBox}
-                      onPress={() => props.onConnectionModeChange?.(
-                        props.connectionMode === 'bluetooth' ? 'online' : 'bluetooth',
-                      )}
+                      style={styles.input}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Player name ${props.playerName || 'empty'}`}
+                      onLayout={event => {
+                        fieldLayoutRef.current.playerName = {
+                          y: event.nativeEvent.layout.y,
+                          height: event.nativeEvent.layout.height,
+                        };
+                      }}
+                      onPress={() => openKeyboard('playerName')}
                     >
-                      <Text style={[styles.toggleText, props.connectionMode === 'online' && styles.toggleTextOff]}>
-                        {props.connectionMode === 'bluetooth' ? 'ON' : 'OFF'}
+                      <Text
+                        style={[styles.inputText, !props.playerName && styles.inputPlaceholder]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.6}
+                      >
+                        {props.playerName || 'YOUR NAME'}
                       </Text>
                     </Pressable>
                   </View>
-                )}
+
+                  {props.connectionMode != null && props.onConnectionModeChange && (
+                    <View style={styles.settingGroup}>
+                      <Text style={styles.label}>BLUETOOTH</Text>
+                      <Pressable
+                        accessibilityRole="switch"
+                        accessibilityState={{ checked: props.connectionMode === 'bluetooth' }}
+                        style={styles.toggleBox}
+                        onPress={() => props.onConnectionModeChange?.(
+                          props.connectionMode === 'bluetooth' ? 'online' : 'bluetooth',
+                        )}
+                      >
+                        <Text style={[styles.toggleText, props.connectionMode === 'online' && styles.toggleTextOff]}>
+                          {props.connectionMode === 'bluetooth' ? 'ON' : 'OFF'}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+
+                {/* ── Right column: advanced connection settings ── */}
+                <View style={styles.settingsColRight}>
+                  <Pressable
+                    style={styles.advancedToggle}
+                    onPress={() => {
+                      sheet.close();
+                      setShowAdvanced(!showAdvanced);
+                    }}
+                  >
+                    <Text style={styles.advancedToggleText}>
+                      {showAdvanced ? '▾ ADVANCED' : '▸ ADVANCED'}
+                    </Text>
+                  </Pressable>
+
+                  {showAdvanced && (
+                    <View
+                      style={styles.advancedSection}
+                      onLayout={event => {
+                        advancedYRef.current = event.nativeEvent.layout.y;
+                      }}
+                    >
+                      <View style={styles.settingGroup}>
+                        <Text style={styles.label}>RELAY HOST</Text>
+                        <Pressable
+                          style={styles.input}
+                          accessibilityRole="button"
+                          onLayout={event => {
+                            fieldLayoutRef.current.relayHost = {
+                              y: advancedYRef.current + event.nativeEvent.layout.y,
+                              height: event.nativeEvent.layout.height,
+                            };
+                          }}
+                          onPress={() => openKeyboard('relayHost')}
+                        >
+                          <Text
+                            style={[styles.inputText, !props.relayHost && styles.inputPlaceholder]}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.5}
+                          >
+                            {props.relayHost || 'LOCALHOST'}
+                          </Text>
+                        </Pressable>
+                      </View>
+
+                      <View style={styles.settingGroup}>
+                        <Text style={styles.label}>RELAY PORT</Text>
+                        <Pressable
+                          style={styles.input}
+                          accessibilityRole="button"
+                          onLayout={event => {
+                            fieldLayoutRef.current.relayPort = {
+                              y: advancedYRef.current + event.nativeEvent.layout.y,
+                              height: event.nativeEvent.layout.height,
+                            };
+                          }}
+                          onPress={() => openKeyboard('relayPort')}
+                        >
+                          <Text style={[styles.inputText, !props.relayPort && styles.inputPlaceholder]}>
+                            {props.relayPort || '8787'}
+                          </Text>
+                        </Pressable>
+                      </View>
+                      <Text style={styles.buildTag}>{BUILD_TAG}</Text>
+                    </View>
+                  )}
+                </View>
               </View>
 
-              <Pressable
-                style={styles.advancedToggle}
-                onPress={() => {
-                  sheet.close();
-                  setShowAdvanced(!showAdvanced);
-                }}
-              >
-                <Text style={styles.advancedToggleText}>
-                  {showAdvanced ? '▾ Advanced' : '▸ Advanced'}
-                </Text>
-              </Pressable>
-
-              {showAdvanced && (
-                <View
-                  style={styles.advancedSection}
-                  onLayout={event => {
-                    advancedYRef.current = event.nativeEvent.layout.y;
-                  }}
-                >
-                  <Text style={styles.label}>Relay Host</Text>
-                  <Pressable
-                    style={styles.input}
-                    accessibilityRole="button"
-                    onLayout={event => {
-                      fieldLayoutRef.current.relayHost = {
-                        y: advancedYRef.current + event.nativeEvent.layout.y,
-                        height: event.nativeEvent.layout.height,
-                      };
-                    }}
-                    onPress={() => openKeyboard('relayHost')}
-                  >
-                    <Text style={[styles.inputText, !props.relayHost && styles.inputPlaceholder]}>
-                      {props.relayHost || 'localhost'}
-                    </Text>
-                  </Pressable>
-                  <Text style={[styles.label, styles.stackedLabel]}>Relay Port</Text>
-                  <Pressable
-                    style={styles.input}
-                    accessibilityRole="button"
-                    onLayout={event => {
-                      fieldLayoutRef.current.relayPort = {
-                        y: advancedYRef.current + event.nativeEvent.layout.y,
-                        height: event.nativeEvent.layout.height,
-                      };
-                    }}
-                    onPress={() => openKeyboard('relayPort')}
-                  >
-                    <Text style={[styles.inputText, !props.relayPort && styles.inputPlaceholder]}>
-                      {props.relayPort || '8787'}
-                    </Text>
-                  </Pressable>
-                  <Text style={styles.buildTag}>{BUILD_TAG}</Text>
-                </View>
-              )}
             </View>
 
             <KeyboardSheet controls={sheet}>
@@ -472,8 +494,20 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
                 <NumberKeyboard dark onInsert={insertChar} onBackspace={backspaceChar} />
               ) : activeField === 'relayHost' ? (
                 <HostKeyboard onInsert={insertChar} onBackspace={backspaceChar} />
+              ) : playerKeyboardMode === 'numbers' ? (
+                <NumberKeyboard
+                  dark
+                  onInsert={insertChar}
+                  onBackspace={backspaceChar}
+                  onLetters={() => setPlayerKeyboardMode('letters')}
+                />
               ) : (
-                <AnswerKeyboard onInsert={insertChar} onBackspace={backspaceChar} final />
+                <AnswerKeyboard
+                  onInsert={insertChar}
+                  onBackspace={backspaceChar}
+                  onNumbers={() => setPlayerKeyboardMode('numbers')}
+                  final
+                />
               )}
             </KeyboardSheet>
           </Animated.View>
@@ -590,15 +624,20 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   settingsTwoCol: {
+    flex: 1,
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 8,
+    alignItems: 'stretch',
+    gap: 36,
   },
   settingsColLeft: {
-    width: 160,
+    flex: 2,
+    gap: 24,
   },
   settingsColRight: {
-    flex: 1,
+    flex: 3,
+  },
+  settingGroup: {
+    minHeight: 58,
   },
   settingsTitle: {
     fontFamily: typeTokens.board,
@@ -613,23 +652,18 @@ const styles = StyleSheet.create({
     color: '#555',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
-    marginBottom: 6,
+    marginBottom: 2,
   },
-  stackedLabel: { marginTop: 14 },
   input: {
-    borderWidth: 1,
-    borderColor: '#444',
-    borderRadius: 6,
-    padding: 10,
-    minHeight: 42,
+    minHeight: 34,
     justifyContent: 'center',
   },
   inputText: {
-    fontFamily: typeTokens.ui500,
-    fontSize: 16,
+    fontFamily: typeTokens.board,
+    fontSize: 30,
     color: '#fff',
   },
-  inputPlaceholder: { color: '#666' },
+  inputPlaceholder: { color: '#333' },
   toggleBox: {
     paddingVertical: 2,
   },
@@ -641,13 +675,21 @@ const styles = StyleSheet.create({
   toggleTextOff: {
     color: '#444',
   },
-  advancedToggle: { marginTop: 24, alignSelf: 'flex-start' },
+  advancedToggle: {
+    minHeight: 28,
+    alignSelf: 'flex-start',
+    justifyContent: 'center',
+  },
   advancedToggleText: {
-    fontFamily: typeTokens.ui500,
-    fontSize: 14,
+    fontFamily: typeTokens.ui700,
+    fontSize: 10,
+    letterSpacing: 1.5,
     color: '#555',
   },
-  advancedSection: { marginTop: 8 },
+  advancedSection: {
+    marginTop: 8,
+    gap: 16,
+  },
   buildTag: {
     marginTop: 8,
     fontFamily: typeTokens.ui500,

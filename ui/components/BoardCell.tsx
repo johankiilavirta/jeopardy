@@ -32,6 +32,12 @@ interface BoardCellProps {
 export function BoardCell({ value, valueFontSize, burned, disabled, onPress, empty, onSkip, flashDelay, onFinalValueLayout }: BoardCellProps) {
   const wrapRef = useRef<View>(null);
   const dead = burned || empty;
+  // Board derives this from the actual cell dimensions after its first
+  // layout. Rendering the stylesheet's 28pt fallback during that pass lets
+  // iOS briefly show a differently fitted value before replacing it with the
+  // final size. Leave the amount blank for that one measurement pass instead:
+  // when it first becomes visible it already has its final font size.
+  const hasFinalValueFont = valueFontSize != null;
 
   // Capture at mount: the flash effect below only runs once, so a delay that
   // shows up on a later render must not flip a lit cell into dark flash mode
@@ -81,18 +87,22 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
           <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: colors.cell, borderRadius: radius, opacity: flashAnim }]} pointerEvents="none" />
           <Pressable style={styles.pressableInner} onPress={handlePress} disabled={disabled}>
             <Animated.View style={[styles.valueRow, { opacity: textOpacity }]}>
-              <Text
-                style={[styles.dollar, valueFontSize != null && { fontSize: valueFontSize, marginRight: valueFontSize * DOLLAR_GAP }]}
-                numberOfLines={1}
-                allowFontScaling={false}
-              >$</Text>
-              <Text
-                key={`value-${valueFontSize?.toFixed(3) ?? 'probe'}`}
-                style={[styles.value, valueFontSize != null && { fontSize: valueFontSize }]}
-                numberOfLines={1}
-                allowFontScaling={false}
-                onTextLayout={valueFontSize != null ? onFinalValueLayout : undefined}
-              >{value}</Text>
+              {hasFinalValueFont && (
+                <>
+                  <Text
+                    style={[styles.dollar, { fontSize: valueFontSize, marginRight: valueFontSize * DOLLAR_GAP }]}
+                    numberOfLines={1}
+                    allowFontScaling={false}
+                  >$</Text>
+                  <Text
+                    key={`value-${valueFontSize.toFixed(3)}`}
+                    style={[styles.value, { fontSize: valueFontSize }]}
+                    numberOfLines={1}
+                    allowFontScaling={false}
+                    onTextLayout={onFinalValueLayout}
+                  >{value}</Text>
+                </>
+              )}
             </Animated.View>
           </Pressable>
         </View>
@@ -112,28 +122,30 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
         disabled={dead || disabled}
       >
         <View style={styles.valueRow}>
-          <Text
-            key={`value-${valueFontSize?.toFixed(3) ?? 'probe'}`}
-            style={[
-              styles.dollar,
-              valueFontSize != null && { fontSize: valueFontSize, marginRight: valueFontSize * DOLLAR_GAP },
-              dead && styles.valueBurned,
-            ]}
-            numberOfLines={1}
-            adjustsFontSizeToFit={valueFontSize == null}
-            allowFontScaling={false}
-          >$</Text>
-          <Text
-            style={[
-              styles.value,
-              valueFontSize != null && { fontSize: valueFontSize },
-              dead && styles.valueBurned,
-            ]}
-            numberOfLines={1}
-            adjustsFontSizeToFit={valueFontSize == null}
-            allowFontScaling={false}
-            onTextLayout={valueFontSize != null ? onFinalValueLayout : undefined}
-          >{value}</Text>
+          {hasFinalValueFont && (
+            <>
+              <Text
+                key={`value-${valueFontSize.toFixed(3)}`}
+                style={[
+                  styles.dollar,
+                  { fontSize: valueFontSize, marginRight: valueFontSize * DOLLAR_GAP },
+                  dead && styles.valueBurned,
+                ]}
+                numberOfLines={1}
+                allowFontScaling={false}
+              >$</Text>
+              <Text
+                style={[
+                  styles.value,
+                  { fontSize: valueFontSize },
+                  dead && styles.valueBurned,
+                ]}
+                numberOfLines={1}
+                allowFontScaling={false}
+                onTextLayout={onFinalValueLayout}
+              >{value}</Text>
+            </>
+          )}
         </View>
       </Pressable>
     </View>
