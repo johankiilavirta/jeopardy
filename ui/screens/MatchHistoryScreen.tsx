@@ -1,7 +1,7 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { isOngoingMatch, type MatchResult } from '../../app/matchHistory';
+import { isOngoingMatch, matchBelongsToPlayer, type MatchResult } from '../../app/matchHistory';
 import { Board } from '../components/Board';
 import type { BoardDefinition } from '../fixtures/board';
 import { ScoreChart } from '../components/ScoreChart';
@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 interface MatchHistoryScreenProps {
   matches: MatchResult[];
   playerName: string;
+  historyReady: boolean;
   onBack: () => void;
   onResumeMatch: (match: MatchResult) => void;
 }
@@ -22,7 +23,7 @@ const EXIT_VELOCITY = 0.5;
 
 function resultForMatch(match: MatchResult, playerName: string): 'W' | 'L' | 'T' | null {
   if (isOngoingMatch(match)) return null;
-  const normalizedPlayerName = playerName.trim().toLowerCase();
+  const normalizedPlayerName = (match.localPlayerName ?? playerName).trim().toLowerCase();
   const player = match.players.find(p => p.name.trim().toLowerCase() === normalizedPlayerName);
   if (!player) return null;
   if (match.winnerNames.length > 1) return 'T';
@@ -48,7 +49,7 @@ function deltaAmount(amount: number): string {
 function scoreBug(match: MatchResult, result: 'W' | 'L' | 'T' | null, playerName: string): string {
   const players = [...match.players].sort((a, b) => a.name.localeCompare(b.name));
   if (players.length < 2) return players[0] ? compactScore(players[0].score) : '';
-  const normalizedPlayerName = playerName.trim().toLowerCase();
+  const normalizedPlayerName = (match.localPlayerName ?? playerName).trim().toLowerCase();
   const localPlayer = players.find(player => player.name.trim().toLowerCase() === normalizedPlayerName);
   const opponent = localPlayer && players.find(player => player !== localPlayer);
   if (localPlayer && opponent && (result === 'W' || result === 'L')) {
@@ -68,12 +69,12 @@ function scoreBug(match: MatchResult, result: 'W' | 'L' | 'T' | null, playerName
   } else {
     const firstNeedsBump = result !== 'T' && result !== null &&
       Math.floor(Math.abs(first.score) / 1000) === Math.floor(Math.abs(second.score) / 1000) &&
-      ((result === 'W' && first.name.trim().toLowerCase() === playerName.trim().toLowerCase()) ||
-        (result === 'L' && first.name.trim().toLowerCase() !== playerName.trim().toLowerCase()));
+      ((result === 'W' && first.name.trim().toLowerCase() === normalizedPlayerName) ||
+        (result === 'L' && first.name.trim().toLowerCase() !== normalizedPlayerName));
     const secondNeedsBump = result !== 'T' && result !== null &&
       Math.floor(Math.abs(first.score) / 1000) === Math.floor(Math.abs(second.score) / 1000) &&
-      ((result === 'W' && second.name.trim().toLowerCase() === playerName.trim().toLowerCase()) ||
-        (result === 'L' && second.name.trim().toLowerCase() !== playerName.trim().toLowerCase()));
+      ((result === 'W' && second.name.trim().toLowerCase() === normalizedPlayerName) ||
+        (result === 'L' && second.name.trim().toLowerCase() !== normalizedPlayerName));
     firstScore = compactScore(first.score, firstNeedsBump);
     secondScore = compactScore(second.score, secondNeedsBump);
   }
@@ -108,7 +109,8 @@ function distributeDateGames(games: MatchResult[]): MatchResult[][] {
 
 function playerLabel(match: MatchResult, playerName: string): string {
   const names = match.players.map(player => player.name).sort((a, b) => a.localeCompare(b));
-  const localIndex = names.findIndex(name => name.trim().toLowerCase() === playerName.trim().toLowerCase());
+  const localPlayerName = match.localPlayerName ?? playerName;
+  const localIndex = names.findIndex(name => name.trim().toLowerCase() === localPlayerName.trim().toLowerCase());
   if (localIndex >= 0 && names.length > 1) {
     const opponent = names[localIndex === 0 ? 1 : 0];
     return opponent ? `vs ${opponent.toUpperCase()}` : '';
@@ -136,7 +138,7 @@ function Chevron({ flipped = false }: { flipped?: boolean }) {
   );
 }
 
-export function MatchHistoryScreen({ matches, playerName, onBack, onResumeMatch }: MatchHistoryScreenProps) {
+export function MatchHistoryScreen({ matches, playerName, historyReady, onBack, onResumeMatch }: MatchHistoryScreenProps) {
   const [selectedMatch, setSelectedMatch] = useState<MatchResult | null>(null);
   const [boardSize, setBoardSize] = useState({ width: 0, height: 0 });
   const { width, height } = useWindowDimensions();
@@ -144,6 +146,7 @@ export function MatchHistoryScreen({ matches, playerName, onBack, onResumeMatch 
   const pageX = useRef(new Animated.Value(0)).current;
   const chevronVisible = useRef(new Animated.Value(1)).current;
   const boardCoverOpacity = useRef(new Animated.Value(1)).current;
+  const statsOpacity = useRef(new Animated.Value(0)).current;
   const boardRevealStartedRef = useRef(false);
   const exitDragRef = useRef(0);
   const exitDirectionRef = useRef<-1 | 1 | null>(null);
@@ -157,7 +160,38 @@ export function MatchHistoryScreen({ matches, playerName, onBack, onResumeMatch 
       useNativeDriver: true,
     }).start();
   }, [boardCoverOpacity]);
-  const visibleMatches = matches.slice(0, MAX_VISIBLE_MATCHES);
+  const scopedMatches = useMemo(
+    () => matches.filter(match => matchBelongsToPlayer(match, playerName)),
+    [matches, playerName],
+  );
+  const visibleMatches = useMemo(
+    () => scopedMatches.slice(0, MAX_VISIBLE_MATCHES),
+    [scopedMatches],
+  );
+  const completedResults = useMemo(
+    () => scopedMatches
+      .filter(match => !isOngoingMatch(match))
+      .map(match => resultForMatch(match, playerName))
+      .filter((result): result is 'W' | 'L' | 'T' => result != null),
+    [playerName, scopedMatches],
+  );
+  const wins = completedResults.filter(result => result === 'W').length;
+  const losses = completedResults.filter(result => result === 'L').length;
+  const ties = completedResults.filter(result => result === 'T').length;
+  const winRate = completedResults.length ? Math.round((wins / completedResults.length) * 100) : 0;
+  const statsSignature = `${playerName.trim().toLowerCase()}|${wins}|${losses}|${ties}|${completedResults.length}`;
+
+  useEffect(() => {
+    if (!historyReady) return;
+    statsOpacity.setValue(0);
+    Animated.timing(statsOpacity, {
+      toValue: 1,
+      duration: 350,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+  }, [historyReady, statsOpacity, statsSignature]);
+
   const dateColumns = useMemo(() => {
     const dateGroups: { key: string; games: MatchResult[] }[] = [];
     for (const match of visibleMatches) {
@@ -168,7 +202,7 @@ export function MatchHistoryScreen({ matches, playerName, onBack, onResumeMatch 
       else dateGroups.push({ key, games: [match] });
     }
     return dateGroups.flatMap(group => distributeDateGames(group.games)).slice(0, 5);
-  }, [matches]);
+  }, [visibleMatches]);
   const historyBoard = useMemo<BoardDefinition>(() => ({
     categories: Array.from({ length: 5 }, (_, column) => {
       const games = dateColumns[column] ?? [];
@@ -257,11 +291,6 @@ export function MatchHistoryScreen({ matches, playerName, onBack, onResumeMatch 
     );
   }
 
-  const completedGames = matches.filter(match => !isOngoingMatch(match));
-  const wins = completedGames.filter(match => resultForMatch(match, playerName) === 'W').length;
-  const losses = completedGames.filter(match => resultForMatch(match, playerName) === 'L').length;
-  const ties = completedGames.filter(match => resultForMatch(match, playerName) === 'T').length;
-  const winRate = completedGames.length ? Math.round((wins / completedGames.length) * 100) : 0;
   const openMatch = (match: MatchResult) => {
     try {
       if (!canOpenMatch(match)) return;
@@ -290,14 +319,16 @@ export function MatchHistoryScreen({ matches, playerName, onBack, onResumeMatch 
               ? current : { width: nextWidth, height: nextHeight });
           }}
         >
-          <Board
-            board={historyBoard}
-            burnedClueIds={Array.from({ length: columnCount * 5 }, (_, index) => index)}
-            locked
-            categoryMaxFontSize={24}
-            onReady={handleBoardReady}
-          />
-          <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+          {historyReady && (
+            <Board
+              board={historyBoard}
+              burnedClueIds={Array.from({ length: columnCount * 5 }, (_, index) => index)}
+              locked
+              categoryMaxFontSize={24}
+              onReady={handleBoardReady}
+            />
+          )}
+          {historyReady && <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
             {dateColumns.flatMap((games, column) => games.map((match, row) => {
               const result = resultForMatch(match, playerName);
               const ongoing = isOngoingMatch(match);
@@ -320,14 +351,14 @@ export function MatchHistoryScreen({ matches, playerName, onBack, onResumeMatch 
                 </Pressable>
               );
             }))}
-          </View>
+          </View>}
           <Animated.View
             pointerEvents="none"
             style={[styles.boardTypesetCover, { opacity: boardCoverOpacity }]}
           />
         </View>
           <LinearGradient pointerEvents="none" colors={[colors.backgroundTransparent, colors.background]} style={styles.statsGradient}>
-          <View style={styles.statsRow}>
+          <Animated.View style={[styles.statsRow, { opacity: statsOpacity }]}>
             <View style={styles.statColumn}>
               <View style={styles.statValueFrame}><Text style={styles.statValueRate}>{winRate}%</Text></View>
               <Text style={styles.statLabel}>WIN RATE</Text>
@@ -336,7 +367,7 @@ export function MatchHistoryScreen({ matches, playerName, onBack, onResumeMatch 
               <View style={styles.statValueFrame}><Text style={styles.statValueRecord}>{wins}W-{losses}L{ties ? `-${ties}T` : ''}</Text></View>
               <Text style={styles.statLabel}>RECORD</Text>
             </View>
-          </View>
+          </Animated.View>
         </LinearGradient>
       </Animated.View>
       <ExitChevrons pageX={pageX} visible={chevronVisible} />

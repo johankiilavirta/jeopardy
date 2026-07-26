@@ -11,9 +11,11 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 }));
 
 import {
+  buildGameKey,
   computeWinnerNames,
   isOngoingMatch,
   loadMatchHistory,
+  matchBelongsToPlayer,
   recordMatch,
   recordOngoingMatch,
   removeOngoingMatch,
@@ -66,6 +68,37 @@ describe('computeWinnerNames', () => {
   });
 });
 
+describe('player-scoped match identity', () => {
+  it('puts the local player first in the game key', () => {
+    expect(buildGameKey(42, [
+      { name: 'Alice' },
+      { name: 'Bob' },
+    ], ' Bob ')).toBe('42|bob|alice');
+  });
+
+  it('keeps equivalent opponent ordering stable', () => {
+    expect(buildGameKey(42, [
+      { name: 'Charlie' },
+      { name: 'Alice' },
+      { name: 'Bob' },
+    ], 'Bob')).toBe('42|bob|alice|charlie');
+  });
+
+  it('uses the explicit owner to scope new records', () => {
+    const aliceHistory = match('alice-game', { localPlayerName: 'Alice' });
+
+    expect(matchBelongsToPlayer(aliceHistory, ' alice ')).toBe(true);
+    expect(matchBelongsToPlayer(aliceHistory, 'Bob')).toBe(false);
+  });
+
+  it('infers ownership from players for legacy records', () => {
+    const legacyHistory = match('legacy-game');
+
+    expect(matchBelongsToPlayer(legacyHistory, 'BOB')).toBe(true);
+    expect(matchBelongsToPlayer(legacyHistory, 'Charlie')).toBe(false);
+  });
+});
+
 describe('recordMatch / loadMatchHistory', () => {
   it('round-trips matches newest first', async () => {
     await recordMatch(match('a'));
@@ -95,6 +128,31 @@ describe('recordMatch / loadMatchHistory', () => {
     expect(history).toHaveLength(1);
     expect(history.filter(isOngoingMatch)).toHaveLength(0);
     expect(history[0]!.id).toBe('completed-instance');
+  });
+
+  it('keeps the same game separate when different local usernames own it', async () => {
+    const players = [
+      { name: 'Alice', score: 1000, correct: 5, incorrect: 1 },
+      { name: 'Bob', score: 400, correct: 3, incorrect: 2 },
+    ];
+    const aliceKey = buildGameKey(42, players, 'Alice');
+    const bobKey = buildGameKey(42, players, 'Bob');
+
+    await recordMatch(match(`${aliceKey}|completed`, {
+      gameKey: aliceKey,
+      localPlayerName: 'Alice',
+      players,
+    }));
+    await recordMatch(match(`${bobKey}|completed`, {
+      gameKey: bobKey,
+      localPlayerName: 'Bob',
+      players,
+    }));
+
+    const history = await loadMatchHistory();
+    expect(history).toHaveLength(2);
+    expect(history.filter(item => matchBelongsToPlayer(item, 'Alice'))).toHaveLength(1);
+    expect(history.filter(item => matchBelongsToPlayer(item, 'Bob'))).toHaveLength(1);
   });
 
   it('removes only the matching ongoing game', async () => {

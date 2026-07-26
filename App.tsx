@@ -44,7 +44,7 @@ import {
   type SavedSnapshot,
   type PreferredConnectionMode,
 } from './app/sessionStore';
-import { buildGameKey, computeWinnerNames, isOngoingMatch, loadMatchHistory, recordMatch, recordOngoingMatch, removeOngoingMatch, type MatchResult } from './app/matchHistory';
+import { buildGameKey, computeWinnerNames, isOngoingMatch, loadMatchHistory, matchBelongsToPlayer, recordMatch, recordOngoingMatch, removeOngoingMatch, type MatchResult } from './app/matchHistory';
 import { SettingsScreen } from './ui/screens/SettingsScreen';
 import { MatchHistoryScreen } from './ui/screens/MatchHistoryScreen';
 import { colors } from './ui/theme/tokens';
@@ -243,9 +243,13 @@ export default function App() {
   /** Persistence begins only after the first clue has actually completed. */
   const persistenceStartedRef = useRef(false);
   const [recentMatches, setRecentMatches] = useState<MatchResult[]>([]);
+  const [matchHistoryLoaded, setMatchHistoryLoaded] = useState(false);
 
   useEffect(() => {
-    void loadMatchHistory().then(setRecentMatches);
+    void loadMatchHistory().then(matches => {
+      setRecentMatches(matches);
+      setMatchHistoryLoaded(true);
+    });
   }, []);
 
   useEffect(() => {
@@ -309,6 +313,9 @@ export default function App() {
   const handleStateUpdate = useCallback((state: GameState, pid: string | null, cu?: boolean, cr?: boolean) => {
     setInitialGameState({ state, playerId: pid, ...(cu != null ? { canUndo: cu } : {}), ...(cr != null ? { canRedo: cr } : {}) });
     if (!PERSISTENCE_ENABLED) return;
+    const localPlayerName =
+      (pid ? state.players[pid]?.name : undefined) ??
+      sessionRef.current?.playerName;
     const hasProgress = state.burnedClueIds.length > 0;
     if (!hasProgress && state.status !== 'GAME_OVER') {
       // Starting a room—or merely opening its board—is not an in-progress
@@ -320,7 +327,7 @@ export default function App() {
         void clearSession();
         void clearSnapshot();
         const players = Object.values(state.players).map(player => ({ name: player.name }));
-        const gameKey = buildGameKey(gameNumberRef.current, players);
+        const gameKey = buildGameKey(gameNumberRef.current, players, localPlayerName);
         matchIdRef.current = null;
         void removeOngoingMatch(gameKey).then(setRecentMatches);
       }
@@ -344,11 +351,12 @@ export default function App() {
           scoreHistory: p.scoreHistory,
           finalWager: state.finalWagers?.[p.id],
         }));
-        const gameKey = buildGameKey(gameNumberRef.current, players);
+        const gameKey = buildGameKey(gameNumberRef.current, players, localPlayerName);
         void recordMatch({
           id: `${gameKey}|completed`,
           status: 'completed',
           gameKey,
+          ...(localPlayerName ? { localPlayerName } : {}),
           startedAt: matchStartedAtRef.current,
           finishedAt: Date.now(),
           gameNumber: gameNumberRef.current,
@@ -375,7 +383,7 @@ export default function App() {
           reactionMsTotal: p.reactionMsTotal,
           scoreHistory: p.scoreHistory,
         }));
-        const gameKey = buildGameKey(gameNumberRef.current, players);
+        const gameKey = buildGameKey(gameNumberRef.current, players, localPlayerName);
         if (!matchIdRef.current) {
           matchIdRef.current = `${gameKey}|ongoing`;
           matchStartedAtRef.current = Date.now();
@@ -383,6 +391,7 @@ export default function App() {
         void recordOngoingMatch({
           id: matchIdRef.current,
           gameKey,
+          ...(localPlayerName ? { localPlayerName } : {}),
           startedAt: matchStartedAtRef.current,
           finishedAt: 0,
           gameNumber: gameNumberRef.current,
@@ -1155,7 +1164,7 @@ export default function App() {
 
   const handleResumeMatch = useCallback((match: MatchResult) => {
     if (!match.state || !isOngoingMatch(match)) return;
-    const gameKey = match.gameKey ?? buildGameKey(match.gameNumber, match.players);
+    const gameKey = match.gameKey ?? buildGameKey(match.gameNumber, match.players, match.localPlayerName);
     pendingMatchIdentityRef.current = { gameKey, startedAt: match.startedAt ?? Date.now() };
     const snapshot: SavedSnapshot = {
       state: match.state,
@@ -1505,7 +1514,7 @@ export default function App() {
             visibleCategories={visibleCategories}
             onVisibleCategoriesChange={setVisibleCategories}
             isResume={screen.isResume}
-            recentMatches={recentMatches}
+            recentMatches={recentMatches.filter(match => matchBelongsToPlayer(match, playerName))}
             sessionMode={transportRef.current?.mode}
           />
         ) : null;
@@ -1517,6 +1526,7 @@ export default function App() {
           <MatchHistoryScreen
             matches={recentMatches}
             playerName={playerName}
+            historyReady={matchHistoryLoaded}
             onBack={handleHistoryBack}
             onResumeMatch={handleResumeMatch}
           />

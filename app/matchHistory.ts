@@ -34,6 +34,8 @@ export interface MatchResult {
   id: string;
   /** Same board and player combination, useful for identifying replays. */
   gameKey?: string;
+  /** Player whose device wrote this record. Optional for legacy entries. */
+  localPlayerName?: string;
   /** Older records have no status and are completed by definition. */
   status?: 'ongoing' | 'completed';
   startedAt?: number;
@@ -54,14 +56,43 @@ export function isOngoingMatch(match: MatchResult): boolean {
   return match.status === 'ongoing';
 }
 
-/** Canonical identity for one board and one pair of players. */
-export function buildGameKey(gameNumber: number | null, players: Pick<MatchPlayerResult, 'name'>[]): string {
-  const names = players.map(player => player.name.trim().toLowerCase()).sort();
+function normalizePlayerName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+/** Canonical identity for one board and one set of players. The local player
+ * is first so records from different usernames remain independently scoped. */
+export function buildGameKey(
+  gameNumber: number | null,
+  players: Pick<MatchPlayerResult, 'name'>[],
+  localPlayerName?: string,
+): string {
+  const names = players.map(player => normalizePlayerName(player.name));
+  const localName = localPlayerName ? normalizePlayerName(localPlayerName) : '';
+  if (localName) {
+    const localIndex = names.indexOf(localName);
+    if (localIndex >= 0) names.splice(localIndex, 1);
+    names.sort();
+    names.unshift(localName);
+  } else {
+    names.sort();
+  }
   return `${gameNumber ?? 'demo'}|${names.join('|')}`;
 }
 
 function gameKeyForMatch(match: MatchResult): string {
-  return match.gameKey ?? buildGameKey(match.gameNumber, match.players);
+  return match.gameKey ?? buildGameKey(match.gameNumber, match.players, match.localPlayerName);
+}
+
+/** New records have an explicit owner. Legacy records belong to a username
+ * only when that name appears in their player list. */
+export function matchBelongsToPlayer(match: MatchResult, playerName: string): boolean {
+  const normalized = normalizePlayerName(playerName);
+  if (!normalized) return false;
+  if (match.localPlayerName != null) {
+    return normalizePlayerName(match.localPlayerName) === normalized;
+  }
+  return match.players.some(player => normalizePlayerName(player.name) === normalized);
 }
 
 export function computeWinnerNames(players: MatchPlayerResult[]): string[] {
