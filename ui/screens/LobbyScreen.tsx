@@ -279,6 +279,23 @@ export function LobbyScreen(props: LobbyScreenProps) {
   const [airDate, setAirDate] = useState<string | null>(null);
   const [seasonNumber, setSeasonNumber] = useState<number | null>(null);
   const [gameInfoStatus, setGameInfoStatus] = useState<'idle' | 'loading' | 'not-found'>('idle');
+  // The backdrop board needs one native layout pass to determine its exact
+  // value font size. Keep that pass covered so its first visible frame is
+  // already fully typeset rather than a blank/fallback intermediate.
+  const backdropCoverOpacity = useRef(new Animated.Value(1)).current;
+  const backdropBoardRevealStartedRef = useRef(false);
+  const handleBackdropBoardReady = useCallback(() => {
+    if (backdropBoardRevealStartedRef.current) return;
+    backdropBoardRevealStartedRef.current = true;
+    requestAnimationFrame(() => {
+      Animated.timing(backdropCoverOpacity, {
+        toValue: 0,
+        duration: 350,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    });
+  }, [backdropCoverOpacity]);
 
   const contentOpacity = useRef(new Animated.Value(1)).current;
   const codeVisible = useRef(new Animated.Value(0)).current;
@@ -982,6 +999,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
             board={{ categories: demoBoard.categories.map(c => ({ ...c, name: '' })) }}
             burnedClueIds={EMPTY_BURNED}
             locked={true}
+            onReady={handleBackdropBoardReady}
           />
           {/* Real categories fade in on top once loaded */}
           {realBoard && (
@@ -989,6 +1007,10 @@ export function LobbyScreen(props: LobbyScreenProps) {
               <Board board={realBoard} burnedClueIds={EMPTY_BURNED} locked={true} />
             </Animated.View>
           )}
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.boardTypesetCover, { opacity: backdropCoverOpacity }]}
+          />
         </View>
 
         {/* 1b. Clickable category-toggle overlay (positioned over the board's category header row) */}
@@ -1485,6 +1507,14 @@ const styles = StyleSheet.create({
     left: 8,
     right: 8,
     bottom: 0,
+  },
+  boardTypesetCover: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: colors.background,
   },
   // Gradient covers the full screen from top, fading board out high up
   boardGradient: {

@@ -50,6 +50,7 @@ import { MatchHistoryScreen } from './ui/screens/MatchHistoryScreen';
 import { colors } from './ui/theme/tokens';
 
 const CONNECTION_TIMEOUT_MS = 7000;
+const MAX_PLAYER_NAME_LENGTH = 15;
 /** Local (Bluetooth/nearby) join attempts fail fast: discovery + connect
  *  normally completes in 1-3s, so waiting the full online-relay timeout
  *  just slows down the rejoin retry loop. */
@@ -227,6 +228,10 @@ export default function App() {
   // Black overlay driven from 0 (transparent) to 1 (opaque) for screen transitions.
   const transitionAnim = useRef(new Animated.Value(0)).current;
   const transitionHeldRef = useRef(false);
+  // Set alongside a destination screen update. The effect below runs only
+  // after React has committed that destination, so fading the cover back out
+  // can never reveal the outgoing screen.
+  const transitionRevealAfterCommitRef = useRef(false);
 
   // Match history: a stable per-game id (survives reconnects, cleared on
   // leave/new room) so re-finishing after an undo upserts instead of
@@ -242,6 +247,17 @@ export default function App() {
   useEffect(() => {
     void loadMatchHistory().then(setRecentMatches);
   }, []);
+
+  useEffect(() => {
+    if (!transitionRevealAfterCommitRef.current) return;
+    transitionRevealAfterCommitRef.current = false;
+    Animated.timing(transitionAnim, {
+      toValue: 0,
+      duration: 320,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+  }, [screen, transitionAnim]);
 
   // RESUME GAME is offered when an unfinished snapshot is saved on device.
   const [resumeAvailable, setResumeAvailable] = useState(false);
@@ -817,20 +833,15 @@ export default function App() {
           roomCode = msg.roomCode as number;
           roomAuthority = authorityFromMessage(msg) ?? roomAuthority;
           if (!keepGameMounted) {
+            if (transitionHeldRef.current) {
+              transitionHeldRef.current = false;
+              transitionRevealAfterCommitRef.current = true;
+            }
             setScreen({
               type: 'lobby',
               roomCode,
               isHost: true,
             });
-          }
-          if (transitionHeldRef.current) {
-            transitionHeldRef.current = false;
-            Animated.timing(transitionAnim, {
-              toValue: 0,
-              duration: 320,
-              easing: Easing.out(Easing.ease),
-              useNativeDriver: true,
-            }).start();
           }
           setLobbyError(null);
           if (options.autoStart && pendingResumeRef.current) {
@@ -852,16 +863,11 @@ export default function App() {
           if (action !== 'create') {
             const roomCode = typeof action === 'object' ? action.join : 0;
             setJoinSearching(false);
-            setScreen({ type: 'lobby', roomCode, isHost: false });
             if (transitionHeldRef.current) {
               transitionHeldRef.current = false;
-              Animated.timing(transitionAnim, {
-                toValue: 0,
-                duration: 320,
-                easing: Easing.out(Easing.ease),
-                useNativeDriver: true,
-              }).start();
+              transitionRevealAfterCommitRef.current = true;
             }
+            setScreen({ type: 'lobby', roomCode, isHost: false });
           }
           break;
         case 'game-started': {
@@ -1138,8 +1144,8 @@ export default function App() {
       duration: 200,
       easing: Easing.in(Easing.ease),
       useNativeDriver: true,
-    }).start(() => {
-      action();
+    }).start(({ finished }) => {
+      if (finished) action();
     });
   }, [transitionAnim]);
 
@@ -1173,8 +1179,9 @@ export default function App() {
   }, [connectAndDo, connectionMode, transitionAnim]);
 
   const handleNameChange = useCallback((name: string) => {
-    setPlayerName(name);
-    if (PERSISTENCE_ENABLED) void savePlayerName(name);
+    const cappedName = name.slice(0, MAX_PLAYER_NAME_LENGTH);
+    setPlayerName(cappedName);
+    if (PERSISTENCE_ENABLED) void savePlayerName(cappedName);
   }, []);
 
   const handleJoinNav = useCallback((sourceRect?: CellRect) => {
@@ -1352,7 +1359,9 @@ export default function App() {
       ]);
       if (stale) return;
       if (name) {
-        setPlayerName(name);
+        const cappedName = name.slice(0, MAX_PLAYER_NAME_LENGTH);
+        setPlayerName(cappedName);
+        if (cappedName !== name) void savePlayerName(cappedName);
       } else {
         const fallbackName = randomPlayerName();
         setPlayerName(fallbackName);
@@ -1443,45 +1452,34 @@ export default function App() {
         );
       case 'lobby':
         return (
-          <View style={styles.screenStack}>
-            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-              <MainMenuScreen
-                onNewGame={handleNewGame}
-                onJoinGame={handleJoinNav}
-                onHistory={handleHistory}
-              />
-            </View>
-            <View style={StyleSheet.absoluteFill}>
-              <LobbyScreen
-                roomCode={screen.roomCode}
-                players={lobbyPlayers}
-                isHost={screen.isHost}
-                onStart={handleStartGame}
-                onLeave={handleLobbyLeaveWithFade}
-                onNewGame={handleOverlayNewGame}
-                onJoinGame={handleOverlayJoinGame}
-                playerName={playerName}
-                onNameChange={handleNameChange}
-                relayHost={relayHost}
-                onRelayHostChange={setRelayHost}
-                relayPort={relayPort}
-                onRelayPortChange={setRelayPort}
-                sessionMode={transportRef.current?.mode}
-                gameId={gameId}
-                onGameIdChange={setGameId}
-                buzzerDelay={buzzerDelay}
-                onBuzzerDelayChange={setBuzzerDelay}
-                animationsEnabled={animationsEnabled}
-                onAnimationsChange={setAnimationsEnabled}
-                visibleCategories={visibleCategories}
-                onVisibleCategoriesChange={setVisibleCategories}
-                onKickPlayer={handleKickPlayer}
-                error={lobbyError}
-                fadeOut={lobbyFadingOut}
-                onFadeOutDone={handleLobbyFadeOutDone}
-              />
-            </View>
-          </View>
+          <LobbyScreen
+            roomCode={screen.roomCode}
+            players={lobbyPlayers}
+            isHost={screen.isHost}
+            onStart={handleStartGame}
+            onLeave={handleLobbyLeaveWithFade}
+            onNewGame={handleOverlayNewGame}
+            onJoinGame={handleOverlayJoinGame}
+            playerName={playerName}
+            onNameChange={handleNameChange}
+            relayHost={relayHost}
+            onRelayHostChange={setRelayHost}
+            relayPort={relayPort}
+            onRelayPortChange={setRelayPort}
+            sessionMode={transportRef.current?.mode}
+            gameId={gameId}
+            onGameIdChange={setGameId}
+            buzzerDelay={buzzerDelay}
+            onBuzzerDelayChange={setBuzzerDelay}
+            animationsEnabled={animationsEnabled}
+            onAnimationsChange={setAnimationsEnabled}
+            visibleCategories={visibleCategories}
+            onVisibleCategoriesChange={setVisibleCategories}
+            onKickPlayer={handleKickPlayer}
+            error={lobbyError}
+            fadeOut={lobbyFadingOut}
+            onFadeOutDone={handleLobbyFadeOutDone}
+          />
         );
       case 'game':
         return transportRef.current ? (

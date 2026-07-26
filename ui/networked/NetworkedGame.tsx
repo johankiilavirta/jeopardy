@@ -63,6 +63,8 @@ const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
   CLUE_EXPIRED: { ms: 5000 },
 };
 
+const PROPOSAL_INTRO = ['ESTHER', 'WILL', 'YOU', 'BE', 'MY', 'GIRLFRIEND?'] as const;
+
 
 
 export function NetworkedGame({ transport, serverPeerId, initialState, boardData, remotePeerConnectionStatus = 'connected', localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, onBoardVisible, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume, recentMatches, sessionMode }: NetworkedGameProps) {
@@ -448,10 +450,14 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     introRound != null
       ? (boardData ? toBoardDefinition(boardData, introRound as RoundNumber) : demoBoard)
       : null;
-  const introCategories =
-    introBoard?.categories.map((c, i) =>
-      i >= visibleCategories ? `${c.name} *` : c.name,
-    ) ?? null;
+  const proposalIntroEnabled =
+    introRound === 1 &&
+    Object.values(gameState.players).some(player => player.name.trim().toUpperCase() === 'J0HAN');
+  const introCategories = proposalIntroEnabled
+    ? [...PROPOSAL_INTRO]
+    : introBoard?.categories.map((c, i) =>
+        i >= visibleCategories ? `${c.name} *` : c.name,
+      ) ?? null;
 
   return (
     <UndoRedoSwipe
@@ -614,6 +620,11 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
             key={introRound}
             categories={introCategories}
             onDone={() => setIntroRound(null)}
+            acceleratedFromIndex={proposalIntroEnabled ? 1 : undefined}
+            paceMultiplier={proposalIntroEnabled ? 0.7 : undefined}
+            finalCardPrelude={proposalIntroEnabled ? 'ESTHER, WILL YOU BE MY' : undefined}
+            finalPreludeDelayMultiplier={proposalIntroEnabled ? 2 : undefined}
+            waitForTapAfterFinal={proposalIntroEnabled}
           />
         )}
 
