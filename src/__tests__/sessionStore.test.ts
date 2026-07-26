@@ -34,9 +34,11 @@ const board: GameData = {
 };
 
 function seedSnapshotState(): void {
+  const state = createInitialState(['Alice', 'Bob'], 6);
+  state.burnedClueIds = [0];
   storage.map.set(
     'jeopardy/snapshot-state',
-    JSON.stringify({ state: createInitialState(['Alice', 'Bob'], 6), savedAt: 1 }),
+    JSON.stringify({ state, savedAt: 1 }),
   );
 }
 
@@ -75,7 +77,9 @@ describe('sessionStore', () => {
 
   it('round-trips a snapshot with board and mode', async () => {
     vi.useFakeTimers();
-    saveSnapshotState(createInitialState(['Alice', 'Bob'], 6));
+    const state = createInitialState(['Alice', 'Bob'], 6);
+    state.burnedClueIds = [0];
+    saveSnapshotState(state);
     await vi.advanceTimersByTimeAsync(1000); // past the write debounce
     await saveSnapshotBoard(board, 'nearby');
 
@@ -83,6 +87,19 @@ describe('sessionStore', () => {
     expect(snapshot?.mode).toBe('nearby');
     expect(snapshot?.board?.gameNumber).toBe(42);
     expect(snapshot?.state.players['alice']?.name).toBe('Alice');
+  });
+
+  it('does not save or load a game with no completed clues', async () => {
+    vi.useFakeTimers();
+    saveSnapshotState(createInitialState(['Alice', 'Bob'], 6));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await loadSnapshot()).toBeNull();
+
+    storage.map.set(
+      'jeopardy/snapshot-state',
+      JSON.stringify({ state: createInitialState(['Alice', 'Bob'], 6), savedAt: 1 }),
+    );
+    expect(await loadSnapshot()).toBeNull();
   });
 
   it('records the mode even for a null (demo) board', async () => {

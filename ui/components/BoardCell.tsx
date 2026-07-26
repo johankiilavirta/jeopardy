@@ -25,9 +25,11 @@ interface BoardCellProps {
    * (non-dead) cells on the DJ board intro.
    */
   flashDelay?: number | undefined;
+  /** Fires after the final, explicitly-sized value text has laid out. */
+  onFinalValueLayout?: (() => void) | undefined;
 }
 
-export function BoardCell({ value, valueFontSize, burned, disabled, onPress, empty, onSkip, flashDelay }: BoardCellProps) {
+export function BoardCell({ value, valueFontSize, burned, disabled, onPress, empty, onSkip, flashDelay, onFinalValueLayout }: BoardCellProps) {
   const wrapRef = useRef<View>(null);
   const dead = burned || empty;
 
@@ -85,9 +87,11 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
                 allowFontScaling={false}
               >$</Text>
               <Text
+                key={`value-${valueFontSize?.toFixed(3) ?? 'probe'}`}
                 style={[styles.value, valueFontSize != null && { fontSize: valueFontSize }]}
                 numberOfLines={1}
                 allowFontScaling={false}
+                onTextLayout={valueFontSize != null ? onFinalValueLayout : undefined}
               >{value}</Text>
             </Animated.View>
           </Pressable>
@@ -109,6 +113,7 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
       >
         <View style={styles.valueRow}>
           <Text
+            key={`value-${valueFontSize?.toFixed(3) ?? 'probe'}`}
             style={[
               styles.dollar,
               valueFontSize != null && { fontSize: valueFontSize, marginRight: valueFontSize * DOLLAR_GAP },
@@ -127,6 +132,7 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
             numberOfLines={1}
             adjustsFontSizeToFit={valueFontSize == null}
             allowFontScaling={false}
+            onTextLayout={valueFontSize != null ? onFinalValueLayout : undefined}
           >{value}</Text>
         </View>
       </Pressable>

@@ -127,3 +127,19 @@ export async function recordOngoingMatch(match: MatchResult): Promise<MatchResul
   });
   return historyWriteQueue;
 }
+
+/** Remove an abandoned/no-progress ongoing entry without touching completed
+ * matches or other resumable games. */
+export function removeOngoingMatch(gameKey: string): Promise<MatchResult[]> {
+  historyWriteQueue = historyWriteQueue.then(async () => {
+    const history = await loadMatchHistory();
+    const updated = history.filter(item =>
+      !isOngoingMatch(item) || gameKeyForMatch(item) !== gameKey,
+    );
+    try {
+      await AsyncStorage.setItem(MATCH_HISTORY_KEY, JSON.stringify(updated));
+    } catch {}
+    return updated;
+  });
+  return historyWriteQueue;
+}

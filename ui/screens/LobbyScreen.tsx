@@ -532,10 +532,9 @@ export function LobbyScreen(props: LobbyScreenProps) {
   useEffect(() => {
     if (!props.fadeOut || fadeStartedRef.current) return;
     fadeStartedRef.current = true;
-    if (props.animationsEnabled === false) {
-      props.onFadeOutDone?.();
-      return;
-    }
+    // This fade is the game-loading handoff, not optional decoration: it
+    // keeps board measurement and fitting concealed on every device even
+    // when the user's decorative animations preference is disabled.
     Animated.timing(contentOpacity, {
       toValue: 0,
       duration: 250,
@@ -966,6 +965,11 @@ export function LobbyScreen(props: LobbyScreenProps) {
     outputRange: [0, 68],
     extrapolate: 'clamp',
   });
+  const gameStartCoverOpacity = contentOpacity.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
 
   return (
     <View style={styles.root} {...lobbyPanResponder.panHandlers}>
@@ -1048,7 +1052,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
 
         {/* 3. Interactive content layer */}
         <Animated.View
-          style={[StyleSheet.absoluteFill, styles.contentLayer, { opacity: contentOpacity }]}
+          style={[StyleSheet.absoluteFill, styles.contentLayer]}
         >
 
           {/* Bottom section: lobby code above, player bugs at the very bottom */}
@@ -1446,6 +1450,14 @@ export function LobbyScreen(props: LobbyScreenProps) {
           </Animated.View>
         )}
 
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFill,
+            styles.gameStartCover,
+            { opacity: gameStartCoverOpacity },
+          ]}
+        />
       </Animated.View>
     </View>
   );
@@ -1461,6 +1473,10 @@ const styles = StyleSheet.create({
   page: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  gameStartCover: {
+    zIndex: 1000,
+    backgroundColor: colors.bg,
   },
   // Board fills entire page as backdrop, with a little breathing room around edges
   boardBackdrop: {

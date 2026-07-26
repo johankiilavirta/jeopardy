@@ -103,6 +103,7 @@ function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boa
   // word when React Native lays out the final category text.
   const [wordProbes, setWordProbes] = useState<Record<string, number>>({});
   const [spaceProbe, setSpaceProbe] = useState<number | null>(null);
+  const [, setFinalLayoutRevision] = useState(0);
 
   const colCount = categories.length;
 
@@ -230,15 +231,55 @@ function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boa
     return names.map(n => n ? nativeFit(n, minFontSize) : { fontSize: minFontSize, text: '' });
   }, [boardSize, categories, categoryMaxFontSize, colCount, spaceProbe, wordProbes]);
 
-  // Font sizing is measurement-driven (onLayout probes land over several
-  // frames), so a freshly mounted board visibly assembles itself: values at
-  // a guessed size, then a snap, then category titles. Report readiness so
-  // the parent can hold the board (and score bar) hidden until it's fully
-  // formed. Probes still measure at opacity 0 — opacity doesn't skip layout.
-  const ready = valueFontSize != null && categoryFits != null;
+  // Merely computing a fit does not mean native text has painted that fit yet.
+  // Track the onLayout event from every final category and value Text. The
+  // parent keeps the whole board at opacity 0 until all of those layouts have
+  // committed, preventing the category/value resize from leaking into reveal.
+  const finalCategoryFits =
+    categoryFits != null && categoryFits.every((fit): fit is NonNullable<typeof fit> => fit != null)
+      ? categoryFits
+      : null;
+  const finalLayoutSignature = valueFontSize != null && finalCategoryFits != null
+    ? `${valueFontSize.toFixed(3)}|${finalCategoryFits.map(fit => `${fit.fontSize.toFixed(3)}:${fit.text}`).join('|')}`
+    : null;
+  const finalLayoutsRef = useRef<{
+    signature: string | null;
+    categories: Set<number>;
+    values: Set<number>;
+  }>({ signature: null, categories: new Set(), values: new Set() });
+  if (finalLayoutsRef.current.signature !== finalLayoutSignature) {
+    finalLayoutsRef.current = {
+      signature: finalLayoutSignature,
+      categories: new Set(),
+      values: new Set(),
+    };
+  }
+  const reportedSignatureRef = useRef<string | null>(null);
+  const ready =
+    finalLayoutSignature != null &&
+    finalLayoutsRef.current.categories.size === colCount &&
+    finalLayoutsRef.current.values.size === colCount * ROW_COUNT;
+
   useEffect(() => {
-    if (ready) onReady?.();
-  }, [ready, onReady]);
+    if (!ready || !finalLayoutSignature || reportedSignatureRef.current === finalLayoutSignature) return;
+    if (finalLayoutsRef.current.signature !== finalLayoutSignature) return;
+    reportedSignatureRef.current = finalLayoutSignature;
+    onReady?.();
+  }, [ready, finalLayoutSignature, onReady]);
+
+  const markFinalCategoryLayout = (index: number) => {
+    if (!finalLayoutSignature || finalLayoutsRef.current.signature !== finalLayoutSignature) return;
+    if (finalLayoutsRef.current.categories.has(index)) return;
+    finalLayoutsRef.current.categories.add(index);
+    setFinalLayoutRevision(revision => revision + 1);
+  };
+
+  const markFinalValueLayout = (index: number) => {
+    if (!finalLayoutSignature || finalLayoutsRef.current.signature !== finalLayoutSignature) return;
+    if (finalLayoutsRef.current.values.has(index)) return;
+    finalLayoutsRef.current.values.add(index);
+    setFinalLayoutRevision(revision => revision + 1);
+  };
 
   return (
     <View
@@ -298,8 +339,9 @@ function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boa
             key={`category-${i}`}
             name={category.name}
             flashDelay={cellDelays ? catFlashDelay : undefined}
-            precomputedFit={categoryFits?.[i] ?? undefined}
+            precomputedFit={finalCategoryFits?.[i] ?? undefined}
             maxFontSize={categoryMaxFontSize}
+            onFinalTextLayout={() => markFinalCategoryLayout(i)}
           />
         ))}
       </View>
@@ -321,6 +363,7 @@ function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boa
                 onPress={rect => clue && onSelectClue?.(clue.id, rect)}
                 onSkip={clue && onSkipClue ? () => onSkipClue(clue.id) : undefined}
                 flashDelay={cellDelays && !dead ? cellDelays[cellIdx] : undefined}
+                onFinalValueLayout={() => markFinalValueLayout(cellIdx)}
               />
             );
           })}

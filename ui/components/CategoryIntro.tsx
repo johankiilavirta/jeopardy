@@ -1,8 +1,7 @@
-import { useCallback, useRef, useState, useEffect } from 'react';
+import { useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   Animated,
   Easing,
-  LayoutChangeEvent,
   Pressable,
   StyleSheet,
   Text,
@@ -16,15 +15,58 @@ import { sanitizeText } from '../../src/sanitizeText';
 const HOLD_MS = 966;
 /** Duration of the horizontal push between two cards. */
 const SLIDE_MS = 254;
-/** Fade of the whole overlay after the last card, revealing the board behind. */
-const FADE_MS = 300;
-
 interface CategoryIntroProps {
   /** Category names in board order. The 6th (backfilled) category should
    *  already carry its trailing " *". */
   categories: string[];
   /** Called once the last card has been held — reveal the board. */
   onDone: () => void;
+}
+
+const MAX_INTRO_FONT = 48;
+const MIN_INTRO_FONT = 24;
+const INTRO_LINE_HEIGHT = 1.18;
+
+/** Fit category copy without relying on native adjustsFontSizeToFit events.
+ * Offscreen cards do not reliably emit those events on iOS, which can
+ * deadlock an intro that waits for every card. Anton is condensed; these
+ * conservative glyph-width estimates keep the result within four lines. */
+function fitIntroFont(text: string, width: number, height: number): number {
+  const words = sanitizeText(text).toUpperCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return MAX_INTRO_FONT;
+  const glyphWidth = (word: string) =>
+    Array.from(word).reduce((total, char) => {
+      if ('MW'.includes(char)) return total + 0.78;
+      if ('I1'.includes(char)) return total + 0.32;
+      if ('.,!:\'`'.includes(char)) return total + 0.26;
+      return total + 0.58;
+    }, 0);
+  const wordWidths = words.map(glyphWidth);
+  const spaceWidth = 0.34;
+
+  for (let fontSize = MAX_INTRO_FONT; fontSize >= MIN_INTRO_FONT; fontSize--) {
+    const lineCapacity = width / fontSize;
+    let lines = 1;
+    let current = 0;
+    let fits = true;
+    for (const wordWidth of wordWidths) {
+      if (wordWidth > lineCapacity) {
+        fits = false;
+        break;
+      }
+      if (current === 0) current = wordWidth;
+      else if (current + spaceWidth + wordWidth <= lineCapacity) {
+        current += spaceWidth + wordWidth;
+      } else {
+        lines++;
+        current = wordWidth;
+      }
+    }
+    if (fits && lines <= 4 && lines * fontSize * INTRO_LINE_HEIGHT <= height) {
+      return fontSize;
+    }
+  }
+  return MIN_INTRO_FONT;
 }
 
 /**
@@ -37,27 +79,44 @@ interface CategoryIntroProps {
  */
 export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
   const tx = useRef(new Animated.Value(0)).current;
-  const contentOpacity = useRef(new Animated.Value(0)).current;
+  const revealCoverOpacity = useRef(new Animated.Value(1)).current;
   const containerOpacity = useRef(new Animated.Value(1)).current;
   const { width: w, height: h } = useWindowDimensions();
-  const startedRef = useRef(false);
+  const startedSignatureRef = useRef<string | null>(null);
   const doneRef = useRef(false);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+  const introFontSizes = useMemo(() => {
+    const cardTextWidth = Math.max(1, w * 0.86 - 56);
+    const cardTextHeight = Math.max(1, h * 0.76);
+    return categories.map(category => fitIntroFont(category, cardTextWidth, cardTextHeight));
+  }, [categories, h, w]);
+  const animationSignature = `${w}|${h}|${categories.join('\u0001')}`;
 
   const finish = useCallback(() => {
     if (doneRef.current) return;
     doneRef.current = true;
-    onDone();
-  }, [onDone]);
+    onDoneRef.current();
+  }, []);
 
   useEffect(() => {
-    if (startedRef.current || w <= 0) return;
-    startedRef.current = true;
+    if (
+      startedSignatureRef.current === animationSignature ||
+      w <= 0 ||
+      h <= 0 ||
+      introFontSizes.length !== categories.length
+    ) return;
+    startedSignatureRef.current = animationSignature;
+    tx.setValue(0);
+    revealCoverOpacity.setValue(1);
+    containerOpacity.setValue(1);
 
     const n = categories.length;
-    // Fade in the cards over the solid background
+    // The fitted cards render normally behind a solid black cover. Only after
+    // native text layout reports completion does the cover fade away.
     const steps: Animated.CompositeAnimation[] = [
-      Animated.timing(contentOpacity, {
-        toValue: 1,
+      Animated.timing(revealCoverOpacity, {
+        toValue: 0,
         duration: 600,
         useNativeDriver: true,
       })
@@ -85,12 +144,12 @@ export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
         useNativeDriver: true,
       }),
     );
-    requestAnimationFrame(() => {
-      Animated.sequence(steps).start(({ finished }) => {
-        if (finished) finish();
-      });
+    const sequence = Animated.sequence(steps);
+    sequence.start(({ finished }) => {
+      if (finished) finish();
     });
-  }, [w, categories.length, finish, tx, contentOpacity, containerOpacity]);
+    return () => sequence.stop();
+  }, [w, h, categories.length, finish, tx, revealCoverOpacity, containerOpacity, introFontSizes.length, animationSignature]);
 
   // Dark frame around the blue card, matching the broadcast proportions:
   // ~7% of width on the sides, ~12% of height top and bottom.
@@ -102,13 +161,23 @@ export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
         <Animated.View
           style={[
             styles.strip,
-            { width: w * categories.length, transform: [{ translateX: tx }], opacity: contentOpacity },
+            { width: w * categories.length, transform: [{ translateX: tx }] },
           ]}
         >
           {categories.map((name, i) => (
             <View key={i} style={[styles.slot, { width: w }, pad]}>
               <View style={styles.card}>
-                <Text style={styles.categoryText} adjustsFontSizeToFit numberOfLines={4}>
+                <Text
+                  style={[
+                    styles.categoryText,
+                    {
+                      fontSize: introFontSizes[i] ?? MIN_INTRO_FONT,
+                      lineHeight: (introFontSizes[i] ?? MIN_INTRO_FONT) * INTRO_LINE_HEIGHT,
+                    },
+                  ]}
+                  numberOfLines={4}
+                  allowFontScaling={false}
+                >
                   {sanitizeText(name).toUpperCase()}
                 </Text>
               </View>
@@ -116,6 +185,10 @@ export function CategoryIntro({ categories, onDone }: CategoryIntroProps) {
           ))}
         </Animated.View>
       </Pressable>
+      <Animated.View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, styles.revealCover, { opacity: revealCoverOpacity }]}
+      />
     </Animated.View>
   );
 }
@@ -134,6 +207,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     height: '100%',
   },
+  revealCover: {
+    zIndex: 2,
+    backgroundColor: colors.bg,
+  },
   // Each slot is a full screen-width column on the dark background; the blue
   // card is inset within it, so the dark frame shows on all sides and the gap
   // between two cards' frames reads as a dark sliver during the push.
@@ -150,7 +227,6 @@ const styles = StyleSheet.create({
   },
   categoryText: {
     fontFamily: typeTokens.board,
-    fontSize: 48,
     color: colors.categoryText,
     textAlign: 'center',
     transform: [{ scaleX: 0.85 }],
