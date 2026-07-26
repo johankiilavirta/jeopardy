@@ -137,11 +137,10 @@ export async function clearSession(): Promise<void> {
 
 let snapshotTimer: ReturnType<typeof setTimeout> | null = null;
 
-/** Persist the latest state, debounced. GAME_OVER states are not saved —
- *  a finished game has nothing to resume (the history archive, later,
- *  is where finished games will go). */
+/** Persist the latest state, debounced. A board with no completed clues is
+ * not an in-progress game, and GAME_OVER has nothing left to resume. */
 export function saveSnapshotState(state: GameState): void {
-  if (state.status === 'GAME_OVER') return;
+  if (state.status === 'GAME_OVER' || state.burnedClueIds.length === 0) return;
   if (snapshotTimer != null) clearTimeout(snapshotTimer);
   snapshotTimer = setTimeout(() => {
     snapshotTimer = null;
@@ -166,7 +165,14 @@ export async function loadSnapshot(): Promise<SavedSnapshot | null> {
     const raw = await AsyncStorage.getItem(SNAPSHOT_STATE_KEY);
     if (!raw) return null;
     const { state, savedAt } = JSON.parse(raw) as { state: GameState; savedAt: number };
-    if (!state || typeof state !== 'object' || !state.players || state.status === 'GAME_OVER') {
+    if (
+      !state ||
+      typeof state !== 'object' ||
+      !state.players ||
+      state.status === 'GAME_OVER' ||
+      !Array.isArray(state.burnedClueIds) ||
+      state.burnedClueIds.length === 0
+    ) {
       return null;
     }
     const boardRaw = await AsyncStorage.getItem(SNAPSHOT_BOARD_KEY);

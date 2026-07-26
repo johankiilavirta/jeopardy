@@ -16,6 +16,7 @@ import {
   loadMatchHistory,
   recordMatch,
   recordOngoingMatch,
+  removeOngoingMatch,
   type MatchResult,
 } from '../../app/matchHistory';
 
@@ -94,6 +95,16 @@ describe('recordMatch / loadMatchHistory', () => {
     expect(history).toHaveLength(1);
     expect(history.filter(isOngoingMatch)).toHaveLength(0);
     expect(history[0]!.id).toBe('completed-instance');
+  });
+
+  it('removes only the matching ongoing game', async () => {
+    await recordOngoingMatch(match('ongoing-a', { status: 'ongoing', gameKey: '1|alice|bob', finishedAt: 0 }));
+    await recordOngoingMatch(match('ongoing-b', { status: 'ongoing', gameKey: '2|alice|bob', finishedAt: 0 }));
+    await recordMatch(match('completed', { status: 'completed', gameKey: '1|alice|bob' }));
+
+    const history = await removeOngoingMatch('2|alice|bob');
+
+    expect(history.map(item => item.id)).toEqual(['completed']);
   });
 
   it('caps the history at 200 matches', async () => {

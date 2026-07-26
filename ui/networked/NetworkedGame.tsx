@@ -17,6 +17,7 @@ import { getClueContent } from '../fixtures/clues';
 import { toBoardDefinition, makeClueGetter, getVisibleBoard } from '../../data/gameLoader';
 import type { GameData, RoundNumber } from '../../data/gameLoader';
 import type { MatchResult } from '../../app/matchHistory';
+import type { SessionMode } from '../../app/sessionProvider';
 import { InGameSettingsScreen } from '../screens/InGameSettingsScreen';
 import { ChooseClueScreen } from '../screens/ChooseClueScreen';
 import { ScoreChart } from '../components/ScoreChart';
@@ -53,6 +54,7 @@ interface NetworkedGameProps {
   isResume?: boolean | undefined;
   /** Locally recorded finished games, newest first (last-5 chips row). */
   recentMatches?: MatchResult[];
+  sessionMode?: SessionMode | undefined;
 }
 
 const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
@@ -63,7 +65,7 @@ const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number }>> = {
 
 
 
-export function NetworkedGame({ transport, serverPeerId, initialState, boardData, remotePeerConnectionStatus = 'connected', localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, onBoardVisible, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume, recentMatches }: NetworkedGameProps) {
+export function NetworkedGame({ transport, serverPeerId, initialState, boardData, remotePeerConnectionStatus = 'connected', localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, onBoardVisible, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume, recentMatches, sessionMode }: NetworkedGameProps) {
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
@@ -733,6 +735,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           relayPort={relayPortSetting ?? relayPort ?? '8787'}
           onRelayPortChange={onRelayPortChange ?? (() => {})}
           roomCode={roomCode}
+          sessionMode={sessionMode}
         />
       )}
     </View>

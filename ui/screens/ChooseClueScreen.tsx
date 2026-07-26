@@ -79,24 +79,26 @@ export function ChooseClueScreen({
   const [boardKey, setBoardKey] = useState<string | null>(null);
   const boardKeyRef = useRef<string | null>(null);
 
-  // The board's fonts settle over several frames of onLayout measurements,
-  // so the whole screen (board AND score bar) stays hidden until Board
-  // reports ready, then fades in as one fully-formed unit. A size-change
-  // remount (rotation) re-hides for a fresh reveal.
-  const revealOpacity = useRef(new Animated.Value(0)).current;
+  // Keep the board fully rendered behind an opaque cover while its native
+  // text layout settles. An opacity-zero parent can suppress TextLayout events
+  // on iOS and deadlock the reveal; a cover lets layout complete normally
+  // without exposing intermediate font sizes.
+  const revealCoverOpacity = useRef(new Animated.Value(1)).current;
   const revealedRef = useRef(false);
   const handleBoardReady = useCallback(() => {
     if (revealedRef.current) return;
     revealedRef.current = true;
-    requestAnimationFrame(() => {
-      Animated.timing(revealOpacity, { toValue: 1, duration: 220, useNativeDriver: true }).start(({ finished }) => {
-        if (finished) onBoardVisible?.();
-      });
+    Animated.timing(revealCoverOpacity, {
+      toValue: 0,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) onBoardVisible?.();
     });
-  }, [onBoardVisible, revealOpacity]);
+  }, [onBoardVisible, revealCoverOpacity]);
 
   return (
-    <Animated.View style={[styles.screen, { opacity: revealOpacity }]}>
+    <View style={styles.screen}>
       <View
         style={styles.boardWrap}
         onLayout={e => {
@@ -104,7 +106,7 @@ export function ChooseClueScreen({
           const key = `${Math.round(width)}x${Math.round(height)}`;
           if (boardKeyRef.current !== null && boardKeyRef.current !== key) {
             revealedRef.current = false;
-            revealOpacity.setValue(0);
+            revealCoverOpacity.setValue(1);
           }
           boardKeyRef.current = key;
           setBoardKey(key);
@@ -157,7 +159,15 @@ export function ChooseClueScreen({
           finalJeopardy={isFinalJeopardy}
         />
       </Animated.View>
-    </Animated.View>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          StyleSheet.absoluteFill,
+          styles.revealCover,
+          { opacity: revealCoverOpacity },
+        ]}
+      />
+    </View>
   );
 }
 
@@ -182,5 +192,9 @@ const styles = StyleSheet.create({
   // aligns to these), independent of the board/card inset.
   playerBarWrap: {
     paddingHorizontal: '2%',
+  },
+  revealCover: {
+    zIndex: 100,
+    backgroundColor: colors.bg,
   },
 });

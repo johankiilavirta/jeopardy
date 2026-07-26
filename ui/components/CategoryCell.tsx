@@ -15,9 +15,11 @@ interface CategoryCellProps {
   precomputedFit?: { fontSize: number; text: string } | undefined;
   /** Upper bound for short category labels such as HISTORY date headers. */
   maxFontSize?: number | undefined;
+  /** Fires after the final, explicitly-sized category text has laid out. */
+  onFinalTextLayout?: (() => void) | undefined;
 }
 
-export function CategoryCell({ name, flashDelay, precomputedFit, maxFontSize = 44 }: CategoryCellProps) {
+export function CategoryCell({ name, flashDelay, precomputedFit, maxFontSize = 44, onFinalTextLayout }: CategoryCellProps) {
   const textOpacity = useRef(new Animated.Value(flashDelay != null ? 0 : 1)).current;
 
   useEffect(() => {
@@ -34,11 +36,11 @@ export function CategoryCell({ name, flashDelay, precomputedFit, maxFontSize = 4
         {precomputedFit ? (
           <View style={styles.fitWrap}>
             <Text
+              key={`${precomputedFit.fontSize.toFixed(3)}:${precomputedFit.text}`}
               style={[styles.text, { fontSize: precomputedFit.fontSize, lineHeight: precomputedFit.fontSize * 1.28 }]}
               numberOfLines={3}
-              adjustsFontSizeToFit
-              minimumFontScale={0.2}
               allowFontScaling={false}
+              onTextLayout={onFinalTextLayout}
             >
               {precomputedFit.text}
             </Text>

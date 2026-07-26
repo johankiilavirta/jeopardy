@@ -44,7 +44,7 @@ import {
   type SavedSnapshot,
   type PreferredConnectionMode,
 } from './app/sessionStore';
-import { buildGameKey, computeWinnerNames, isOngoingMatch, loadMatchHistory, recordMatch, recordOngoingMatch, type MatchResult } from './app/matchHistory';
+import { buildGameKey, computeWinnerNames, isOngoingMatch, loadMatchHistory, recordMatch, recordOngoingMatch, removeOngoingMatch, type MatchResult } from './app/matchHistory';
 import { SettingsScreen } from './ui/screens/SettingsScreen';
 import { MatchHistoryScreen } from './ui/screens/MatchHistoryScreen';
 import { colors } from './ui/theme/tokens';
@@ -235,6 +235,8 @@ export default function App() {
   const matchStartedAtRef = useRef<number>(Date.now());
   const pendingMatchIdentityRef = useRef<{ gameKey: string; startedAt: number } | null>(null);
   const gameNumberRef = useRef<number | null>(null);
+  /** Persistence begins only after the first clue has actually completed. */
+  const persistenceStartedRef = useRef(false);
   const [recentMatches, setRecentMatches] = useState<MatchResult[]>([]);
 
   useEffect(() => {
@@ -291,7 +293,25 @@ export default function App() {
   const handleStateUpdate = useCallback((state: GameState, pid: string | null, cu?: boolean, cr?: boolean) => {
     setInitialGameState({ state, playerId: pid, ...(cu != null ? { canUndo: cu } : {}), ...(cr != null ? { canRedo: cr } : {}) });
     if (!PERSISTENCE_ENABLED) return;
+    const hasProgress = state.burnedClueIds.length > 0;
+    if (!hasProgress && state.status !== 'GAME_OVER') {
+      // Starting a room—or merely opening its board—is not an in-progress
+      // game. If an undo returns all the way to zero completed clues, remove
+      // the provisional resume/history records again.
+      if (persistenceStartedRef.current) {
+        persistenceStartedRef.current = false;
+        setResumeAvailable(false);
+        void clearSession();
+        void clearSnapshot();
+        const players = Object.values(state.players).map(player => ({ name: player.name }));
+        const gameKey = buildGameKey(gameNumberRef.current, players);
+        matchIdRef.current = null;
+        void removeOngoingMatch(gameKey).then(setRecentMatches);
+      }
+      return;
+    }
     if (state.status === 'GAME_OVER') {
+      persistenceStartedRef.current = false;
       sessionRef.current = null;
       setResumeAvailable(false);
       void clearSession();
@@ -321,6 +341,12 @@ export default function App() {
         }).then(setRecentMatches);
       }
     } else {
+      if (!persistenceStartedRef.current) {
+        persistenceStartedRef.current = true;
+        const session = sessionRef.current;
+        if (session) void saveSession(session);
+        void saveSnapshotBoard(boardDataRef.current, session?.mode ?? 'online');
+      }
       saveSnapshotState(state);
       {
         const players = Object.values(state.players).map(p => ({
@@ -562,12 +588,12 @@ export default function App() {
             if (board) {
               setBoardData(board);
               boardDataRef.current = board;
-              void saveSnapshotBoard(board, joinedSession.mode);
+              if (persistenceStartedRef.current) void saveSnapshotBoard(board, joinedSession.mode);
             }
             // Keep the match id across a reconnect — it's the same game.
             gameNumberRef.current = board?.gameNumber ?? null;
             sessionRef.current = joinedSession;
-            void saveSession(joinedSession);
+            if (persistenceStartedRef.current) void saveSession(joinedSession);
             break;
           }
           case 'lobby-update': {
@@ -592,7 +618,7 @@ export default function App() {
               isHost: false,
             };
             sessionRef.current = joinedSession;
-            void saveSession(joinedSession);
+            if (persistenceStartedRef.current) void saveSession(joinedSession);
             setLobbyPlayers(msg.players as LobbyPlayer[]);
             setScreen({ type: 'lobby', roomCode: session.roomCode, isHost: false });
             break;
@@ -664,6 +690,7 @@ export default function App() {
     pendingMatchIdentityRef.current = null;
     matchIdRef.current = resumedIdentity ? `${resumedIdentity.gameKey}|ongoing` : null;
     matchStartedAtRef.current = resumedIdentity?.startedAt ?? Date.now();
+    persistenceStartedRef.current = false;
     if (PERSISTENCE_ENABLED) void clearSession();
     setLobbyError(null);
     setJoinError(null);
@@ -884,8 +911,6 @@ export default function App() {
               isHost: action === 'create',
             };
             sessionRef.current = { ...session, savedAt: Date.now() };
-            void saveSession(session);
-            void saveSnapshotBoard(board, mode);
           }
           break;
         }
@@ -905,7 +930,7 @@ export default function App() {
           roomAuthority = incomingAuthority;
           const committedSession = { ...session, ...incomingAuthority };
           sessionRef.current = committedSession;
-          if (PERSISTENCE_ENABLED) void saveSession(committedSession);
+          if (PERSISTENCE_ENABLED && persistenceStartedRef.current) void saveSession(committedSession);
           break;
         }
         case 'superseded-host': {
@@ -1491,6 +1516,7 @@ export default function App() {
             onVisibleCategoriesChange={setVisibleCategories}
             isResume={screen.isResume}
             recentMatches={recentMatches}
+            sessionMode={transportRef.current?.mode}
           />
         ) : null;
       case 'settings':

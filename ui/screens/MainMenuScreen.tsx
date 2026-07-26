@@ -90,7 +90,6 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
   const settingsDragY = useRef(new Animated.Value(0)).current;
   const settingsAxisRef = useRef<'horizontal' | 'vertical' | null>(null);
   const scrollOffsetRef = useRef(0);
-  const settingsScrollRef = useRef<ScrollView | null>(null);
   const advancedYRef = useRef(0);
   const fieldLayoutRef = useRef<Record<SettingsField, { y: number; height: number }>>({
     playerName: { y: 0, height: 0 },
@@ -104,16 +103,9 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
     () => setActiveField(null),
   );
 
-  const scrollFieldIntoKeyboardWindow = useCallback((field: SettingsField) => {
-    const layout = fieldLayoutRef.current[field];
-    if (!layout.height) return;
-    const keyboardTop = height - sheet.panelHeight;
-    const targetTop = (keyboardTop - layout.height) / 2;
-    const y = Math.max(0, layout.y - targetTop);
-    requestAnimationFrame(() => {
-      settingsScrollRef.current?.scrollTo({ y, animated: true });
-    });
-  }, [height, sheet.panelHeight]);
+  const scrollFieldIntoKeyboardWindow = useCallback((_field: SettingsField) => {
+    // No-op: settings panel is non-scrolling; keyboard sheet slides up over content.
+  }, []);
 
   const openKeyboard = useCallback((field: SettingsField) => {
     setActiveField(field);
@@ -352,11 +344,6 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
             style={[StyleSheet.absoluteFill, { opacity: settingsContentOpacity }]}
             {...settingsPanResponder.panHandlers}
           >
-            {/* Drag handle */}
-            <Pressable style={styles.settingsDragHandle} onPress={closeSettings}>
-              <View style={styles.settingsDragPill} />
-            </Pressable>
-
             {/* Drag-left → right chevron */}
             <Animated.View pointerEvents="none" style={[styles.chevIcon, styles.chevIconRight, { opacity: leftChevOpacity, transform: [{ translateX: leftChevTransX }] }]}>
               <View style={styles.chev}>
@@ -379,58 +366,50 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
               </View>
             </Animated.View>
 
-            <ScrollView
-              ref={settingsScrollRef}
-              style={styles.settingsScroll}
-              contentContainerStyle={[
-                styles.settingsScrollContent,
-                { paddingBottom: 32 + (sheet.visible ? sheet.panelHeight : 0) },
-              ]}
-              showsVerticalScrollIndicator={false}
-              showsHorizontalScrollIndicator={false}
-              scrollEventThrottle={16}
-              bounces={false}
-              onScrollBeginDrag={() => { if (sheet.visible) sheet.close(); }}
-              onScroll={e => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y; }}
-              onTouchStart={() => { if (sheet.visible) sheet.close(); }}
-            >
+            <View style={styles.settingsContent}>
               <Text style={styles.settingsTitle}>SETTINGS</Text>
 
-              <Text style={styles.label}>Player Name</Text>
-              <Pressable
-                style={styles.input}
-                accessibilityRole="button"
-                accessibilityLabel={`Player name ${props.playerName || 'empty'}`}
-                onLayout={event => {
-                  fieldLayoutRef.current.playerName = {
-                    y: event.nativeEvent.layout.y,
-                    height: event.nativeEvent.layout.height,
-                  };
-                }}
-                onPress={() => openKeyboard('playerName')}
-              >
-                <Text style={[styles.inputText, !props.playerName && styles.inputPlaceholder]}>
-                  {props.playerName || 'Your name'}
-                </Text>
-              </Pressable>
-
-              {props.connectionMode != null && props.onConnectionModeChange && (
-                <>
-                  <Text style={[styles.label, styles.stackedLabel]}>Bluetooth Mode</Text>
+              <View style={styles.settingsTwoCol}>
+                {/* ── Left column: player name ── */}
+                <View style={styles.settingsColLeft}>
+                  <Text style={styles.label}>PLAYER NAME</Text>
                   <Pressable
-                    accessibilityRole="switch"
-                    accessibilityState={{ checked: props.connectionMode === 'bluetooth' }}
-                    style={styles.toggleBox}
-                    onPress={() => props.onConnectionModeChange?.(
-                      props.connectionMode === 'bluetooth' ? 'online' : 'bluetooth',
-                    )}
+                    style={styles.input}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Player name ${props.playerName || 'empty'}`}
+                    onLayout={event => {
+                      fieldLayoutRef.current.playerName = {
+                        y: event.nativeEvent.layout.y,
+                        height: event.nativeEvent.layout.height,
+                      };
+                    }}
+                    onPress={() => openKeyboard('playerName')}
                   >
-                    <Text style={[styles.toggleText, props.connectionMode === 'online' && styles.toggleTextOff]}>
-                      {props.connectionMode === 'bluetooth' ? 'On' : 'Off'}
+                    <Text style={[styles.inputText, !props.playerName && styles.inputPlaceholder]}>
+                      {props.playerName || 'Your name'}
                     </Text>
                   </Pressable>
-                </>
-              )}
+                </View>
+
+                {/* ── Right column: bluetooth mode ── */}
+                {props.connectionMode != null && props.onConnectionModeChange && (
+                  <View style={styles.settingsColRight}>
+                    <Text style={styles.label}>BLUETOOTH</Text>
+                    <Pressable
+                      accessibilityRole="switch"
+                      accessibilityState={{ checked: props.connectionMode === 'bluetooth' }}
+                      style={styles.toggleBox}
+                      onPress={() => props.onConnectionModeChange?.(
+                        props.connectionMode === 'bluetooth' ? 'online' : 'bluetooth',
+                      )}
+                    >
+                      <Text style={[styles.toggleText, props.connectionMode === 'online' && styles.toggleTextOff]}>
+                        {props.connectionMode === 'bluetooth' ? 'ON' : 'OFF'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
 
               <Pressable
                 style={styles.advancedToggle}
@@ -486,7 +465,7 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
                   <Text style={styles.buildTag}>{BUILD_TAG}</Text>
                 </View>
               )}
-            </ScrollView>
+            </View>
 
             <KeyboardSheet controls={sheet}>
               {activeField === 'relayPort' ? (
@@ -566,18 +545,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: colors.background,
   },
-  // ── Drag handle ──────────────────────────────────────────────────────────
-  settingsDragHandle: {
-    alignItems: 'center',
-    paddingTop: 14,
-    paddingBottom: 10,
-  },
-  settingsDragPill: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-  },
   // ── Dismiss chevrons ─────────────────────────────────────────────────────
   chevIcon: {
     position: 'absolute',
@@ -616,12 +583,22 @@ const styles = StyleSheet.create({
   chevTop: { top: 5.25, transform: [{ rotate: '-45deg' }] },
   chevBot: { top: 15.25, transform: [{ rotate: '45deg' }] },
   // ── Settings content ─────────────────────────────────────────────────────
-  settingsScroll: { flex: 1 },
-  settingsScrollContent: {
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    width: '100%',
+  settingsContent: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 40,
+    paddingBottom: 32,
+  },
+  settingsTwoCol: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  settingsColLeft: {
+    width: 160,
+  },
+  settingsColRight: {
+    flex: 1,
   },
   settingsTitle: {
     fontFamily: typeTokens.board,
@@ -631,13 +608,12 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   label: {
-    alignSelf: 'flex-start',
-    fontFamily: typeTokens.ui500,
-    fontSize: 13,
-    color: '#888',
-    marginBottom: 4,
-    width: '100%',
-    maxWidth: 400,
+    fontFamily: typeTokens.ui700,
+    fontSize: 10,
+    color: '#555',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    marginBottom: 6,
   },
   stackedLabel: { marginTop: 14 },
   input: {
@@ -647,8 +623,6 @@ const styles = StyleSheet.create({
     padding: 10,
     minHeight: 42,
     justifyContent: 'center',
-    width: '100%',
-    maxWidth: 400,
   },
   inputText: {
     fontFamily: typeTokens.ui500,
@@ -657,26 +631,23 @@ const styles = StyleSheet.create({
   },
   inputPlaceholder: { color: '#666' },
   toggleBox: {
-    borderWidth: 1,
-    borderColor: '#444',
-    borderRadius: 6,
-    padding: 10,
-    width: '100%',
-    maxWidth: 400,
+    paddingVertical: 2,
   },
   toggleText: {
-    fontFamily: typeTokens.ui500,
-    fontSize: 16,
-    color: '#fff',
+    fontFamily: typeTokens.board,
+    fontSize: 26,
+    color: colors.gold,
   },
-  toggleTextOff: { color: '#666' },
+  toggleTextOff: {
+    color: '#444',
+  },
   advancedToggle: { marginTop: 24, alignSelf: 'flex-start' },
   advancedToggleText: {
     fontFamily: typeTokens.ui500,
     fontSize: 14,
     color: '#555',
   },
-  advancedSection: { marginTop: 8, width: '100%', maxWidth: 400 },
+  advancedSection: { marginTop: 8 },
   buildTag: {
     marginTop: 8,
     fontFamily: typeTokens.ui500,
