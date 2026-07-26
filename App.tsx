@@ -1239,14 +1239,10 @@ export default function App() {
       duration: 200,
       easing: Easing.in(Easing.ease),
       useNativeDriver: true,
-    }).start(() => {
+    }).start(({ finished }) => {
+      if (!finished) return;
+      transitionRevealAfterCommitRef.current = true;
       setScreen({ type: 'history' });
-      Animated.timing(transitionAnim, {
-        toValue: 0,
-        duration: 320,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }).start();
     });
   }, [transitionAnim]);
   const handleHistoryBack = useCallback(() => {
@@ -1256,14 +1252,10 @@ export default function App() {
       duration: 200,
       easing: Easing.in(Easing.ease),
       useNativeDriver: true,
-    }).start(() => {
+    }).start(({ finished }) => {
+      if (!finished) return;
+      transitionRevealAfterCommitRef.current = true;
       setScreen({ type: 'menu' });
-      Animated.timing(transitionAnim, {
-        toValue: 0,
-        duration: 320,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }).start();
     });
   }, [transitionAnim]);
 
