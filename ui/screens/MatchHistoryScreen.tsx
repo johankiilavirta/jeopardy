@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { Animated, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { isOngoingMatch, type MatchResult } from '../../app/matchHistory';
 import { Board } from '../components/Board';
@@ -143,8 +143,20 @@ export function MatchHistoryScreen({ matches, playerName, onBack, onResumeMatch 
   const insets = useSafeAreaInsets();
   const pageX = useRef(new Animated.Value(0)).current;
   const chevronVisible = useRef(new Animated.Value(1)).current;
+  const boardCoverOpacity = useRef(new Animated.Value(1)).current;
+  const boardRevealStartedRef = useRef(false);
   const exitDragRef = useRef(0);
   const exitDirectionRef = useRef<-1 | 1 | null>(null);
+  const handleBoardReady = useCallback(() => {
+    if (boardRevealStartedRef.current) return;
+    boardRevealStartedRef.current = true;
+    Animated.timing(boardCoverOpacity, {
+      toValue: 0,
+      duration: 350,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+  }, [boardCoverOpacity]);
   const visibleMatches = matches.slice(0, MAX_VISIBLE_MATCHES);
   const dateColumns = useMemo(() => {
     const dateGroups: { key: string; games: MatchResult[] }[] = [];
@@ -278,7 +290,13 @@ export function MatchHistoryScreen({ matches, playerName, onBack, onResumeMatch 
               ? current : { width: nextWidth, height: nextHeight });
           }}
         >
-          <Board board={historyBoard} burnedClueIds={Array.from({ length: columnCount * 5 }, (_, index) => index)} locked categoryMaxFontSize={24} />
+          <Board
+            board={historyBoard}
+            burnedClueIds={Array.from({ length: columnCount * 5 }, (_, index) => index)}
+            locked
+            categoryMaxFontSize={24}
+            onReady={handleBoardReady}
+          />
           <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
             {dateColumns.flatMap((games, column) => games.map((match, row) => {
               const result = resultForMatch(match, playerName);
@@ -303,6 +321,10 @@ export function MatchHistoryScreen({ matches, playerName, onBack, onResumeMatch 
               );
             }))}
           </View>
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.boardTypesetCover, { opacity: boardCoverOpacity }]}
+          />
         </View>
           <LinearGradient pointerEvents="none" colors={[colors.backgroundTransparent, colors.background]} style={styles.statsGradient}>
           <View style={styles.statsRow}>
@@ -339,6 +361,10 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   page: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
   boardHost: { position: 'absolute', top: 0, right: 14, bottom: 0, left: 14, backgroundColor: colors.background },
+  boardTypesetCover: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: colors.background,
+  },
   tile: { position: 'absolute', backgroundColor: colors.cell, padding: 7 },
   tilePressed: { backgroundColor: 'rgba(46,91,255,0.45)' },
   tileGame: { fontFamily: typeTokens.board, fontSize: 13, color: colors.boardValue },
