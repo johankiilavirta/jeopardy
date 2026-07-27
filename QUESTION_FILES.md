@@ -43,10 +43,13 @@ The private copy is indexed by byte range, so only the selected game is parsed
 during lobby/gameplay. Once import completes, the original downloads can move
 or be deleted without affecting the app.
 
-For private development, `npm run export-questions` combines the existing
-per-season repository files into:
+For private development, `npm run convert-data` converts locally supplied,
+properly licensed TSV source files from `scripts/raw/` into per-season JSON
+files. This repository does not download or provide third-party question
+archives. `npm run export-questions` then combines the generated season files
+into:
 
-`private-question-files/jeopardy-games.json`
+`private-question-files/jest-trivia-games.json`
 
 That directory is gitignored and is not referenced by the Metro application
 graph.
