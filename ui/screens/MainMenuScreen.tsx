@@ -21,7 +21,6 @@ import type { QuestionLibraryInfo } from '../../app/questionLibrary';
 
 const SCREEN_TOP_PADDING = 64;
 const SCREEN_SIDE_PADDING = 32;
-const TITLE_TO_CONTENT_GAP = 40;
 const SETTINGS_COMMIT = 60;
 const BUILD_TAG = 'board recovery-2026-07-18';
 
@@ -297,7 +296,6 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
       >
-        <Text style={styles.title}>JEOPARDY</Text>
         <View style={styles.buttons}>
           <Pressable
             style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
@@ -565,12 +563,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: SCREEN_SIDE_PADDING,
     paddingTop: SCREEN_TOP_PADDING,
     paddingBottom: SCREEN_SIDE_PADDING,
-  },
-  title: {
-    fontFamily: typeTokens.board,
-    fontSize: 48,
-    color: colors.gold,
-    marginBottom: TITLE_TO_CONTENT_GAP,
   },
   buttons: {
     width: '100%',
