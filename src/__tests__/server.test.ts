@@ -418,10 +418,10 @@ describe('GameServer', () => {
 
     p1.send('host', selectClueMsg);
     expect(lastStateFrom(p1Messages).state.status).toBe('CLUE_READING');
-    // Dynamic reading time: 5s base + per-char + noise, capped at 9s.
+    // Dynamic reading time is universally shortened by 30%.
     expect(pendingMs().length).toBe(1);
-    expect(pendingMs()[0]).toBeGreaterThanOrEqual(5000);
-    expect(pendingMs()[0]).toBeLessThanOrEqual(9000);
+    expect(pendingMs()[0]).toBeGreaterThanOrEqual(3500);
+    expect(pendingMs()[0]).toBeLessThanOrEqual(6300);
 
     fire();
     expect(lastStateFrom(p1Messages).state.status).toBe('BUZZ_OPEN');
@@ -450,7 +450,7 @@ describe('GameServer', () => {
     MockTransport.link(host, p1);
 
     p1.send('host', selectClueMsg);
-    expect(pendingMs()).toEqual([100]);
+    expect(pendingMs()).toEqual([70]);
     fire();
     expect(pendingMs()).toEqual([200]);
     fire();

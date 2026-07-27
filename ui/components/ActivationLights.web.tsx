@@ -51,13 +51,12 @@ export const ActivationLights = memo(function ActivationLights({ lights }: Activ
     }
     const { deadline, durationMs, flash } = win;
 
-    band.style.transition = 'opacity 100ms'; // Twice as fast fade-in
+    band.style.transition = 'none';
     band.style.opacity = '1';
 
-    // The pop: snap the row to its off glow, flush styles so the rise
-    // below actually transitions, then rise fast and hold fully lit.
+    // Hard-cut to fully lit on the activation frame.
     row.style.transition = 'none';
-    row.style.opacity = flash ? String(OFF_OPACITY) : '1';
+    row.style.opacity = '1';
 
     // Reset every lamp to lit with no transition, then flush once.
     const lamps = row.children as HTMLCollectionOf<HTMLElement>;
@@ -65,11 +64,6 @@ export const ActivationLights = memo(function ActivationLights({ lights }: Activ
       lamps[i]!.style.transition = 'none';
       lamps[i]!.style.opacity = '1';
     }
-    void row.offsetWidth;
-
-    row.style.transition = 'opacity 60ms ease-out'; // Twice as fast flash
-    row.style.opacity = '1';
-
     // The drain, all scheduled now: the countdown range begins where the
     // hold ends, lamps extinguish outermost pair first with one
     // tier-length linear fade each, and the center pair dies exactly at

@@ -16,6 +16,7 @@ export class WebSocketTransport implements Transport {
   private messageCbs: ((peerId: string, message: string) => void)[] = [];
   private rawMessageCbs: ((msg: Record<string, unknown>) => void)[] = [];
   private errorCbs: ((err: string) => void)[] = [];
+  private connectionLost = false;
 
   /** Resolves with this peer's assigned ID once the relay sends "welcome". */
   readonly ready: Promise<string>;
@@ -27,7 +28,7 @@ export class WebSocketTransport implements Transport {
     };
     this.ws.onclose = (event) => {
       if (event.code !== 1000) {
-        this.errorCbs.forEach(cb => cb('Connection to relay lost'));
+        this.reportConnectionLost();
       }
     };
     this.ready = new Promise(resolve => {
@@ -61,7 +62,20 @@ export class WebSocketTransport implements Transport {
 
   advertise(): void {}
   discover(): void {}
-  stop(): void { this.ws.close(); }
+  stop(): void {
+    this.ws.close();
+  }
+
+  private reportConnectionLost(): void {
+    if (this.connectionLost) return;
+    this.connectionLost = true;
+    this.errorCbs.forEach(cb => cb('Connection to relay lost'));
+    // There is only one remote peer from the game client's perspective.
+    // Surface the close as a peer disconnect too, so the game never keeps
+    // presenting a stale board as live.
+    this.disconnectCbs.forEach(cb => cb('server'));
+    if (this.ws.readyState === WebSocket.OPEN) this.ws.close();
+  }
 
   /** True once the underlying socket is closing/closed (e.g. after the app
    *  was suspended). Used to detect a dead connection on wake. */

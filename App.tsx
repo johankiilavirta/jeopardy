@@ -33,10 +33,12 @@ import {
   clearSnapshot,
   loadPlayerName,
   loadPreferredConnectionMode,
+  loadVibrationEnabled,
   loadSession,
   loadSnapshot,
   savePlayerName,
   savePreferredConnectionMode,
+  saveVibrationEnabled,
   saveInitialSnapshot,
   saveSession,
   saveSnapshotBoard,
@@ -54,6 +56,7 @@ import {
   initializeQuestionLibrary,
   type QuestionLibraryInfo,
 } from './app/questionLibrary';
+import { triggerBuzzFeedback } from './app/buzzFeedback';
 
 const CONNECTION_TIMEOUT_MS = 7000;
 const MAX_PLAYER_NAME_LENGTH = 15;
@@ -222,6 +225,8 @@ export default function App() {
   const [relayPort, setRelayPort] = useState('8787');
   const [gameId, setGameId] = useState('');
   const [buzzerDelay, setBuzzerDelay] = useState('-1');
+  const [vibrationEnabled, setVibrationEnabled] = useState(false);
+  const vibrationPreferenceChangedRef = useRef(false);
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
   const [visibleCategories, setVisibleCategories] = useState(6);
   const [lobbyPlayers, setLobbyPlayers] = useState<LobbyPlayer[]>([]);
@@ -425,6 +430,9 @@ export default function App() {
 
   /** The socket died while on the game screen — get back in. */
   const handleSocketLost = useCallback(() => {
+    setPeerConnectionStatus('remote-disconnected');
+    // Development builds intentionally do not persist/rejoin their fixed
+    // test room, but they must still make a dropped live stream obvious.
     if (!PERSISTENCE_ENABLED) return;
     const session = sessionRef.current;
     if (screenRef.current.type === 'game' && session) {
@@ -1225,6 +1233,15 @@ export default function App() {
     if (PERSISTENCE_ENABLED) void savePlayerName(cappedName);
   }, []);
 
+  const handleVibrationChange = useCallback((enabled: boolean) => {
+    vibrationPreferenceChangedRef.current = true;
+    setVibrationEnabled(enabled);
+    if (PERSISTENCE_ENABLED) void saveVibrationEnabled(enabled);
+    // Enabling doubles as a hardware check, so players know before the next
+    // clue whether their phone is actually producing feedback.
+    if (enabled) void triggerBuzzFeedback();
+  }, []);
+
   const handleJoinNav = useCallback((sourceRect?: CellRect) => {
     setLobbyError(null);
     setJoinError(null);
@@ -1402,11 +1419,12 @@ export default function App() {
     if (!PERSISTENCE_ENABLED || UI_LAB) return;
     let stale = false;
     void (async () => {
-      const [name, session, snapshot, preferredMode, library] = await Promise.all([
+      const [name, session, snapshot, preferredMode, savedVibration, library] = await Promise.all([
         loadPlayerName(),
         loadSession(),
         loadSnapshot(),
         loadPreferredConnectionMode(),
+        loadVibrationEnabled(),
         initializeQuestionLibrary(),
       ]);
       if (stale) return;
@@ -1423,6 +1441,11 @@ export default function App() {
       setQuestionLibrary(library);
       if (preferredMode && (ONLINE_PLAY_ENABLED || preferredMode === 'bluetooth')) {
         setConnectionMode(preferredMode);
+      }
+      // Do not let a slow storage read overwrite a toggle made while startup
+      // hydration was still running.
+      if (savedVibration != null && !vibrationPreferenceChangedRef.current) {
+        setVibrationEnabled(savedVibration);
       }
       // Relaunch: our snapshot is stale, so join-first rather than
       // insta-promoting a candidate that could clobber the live game.
@@ -1476,6 +1499,8 @@ export default function App() {
             questionLibrary={questionLibrary}
             questionImportStatus={questionImportStatus}
             onImportQuestions={handleImportQuestions}
+            vibrationEnabled={vibrationEnabled}
+            onVibrationChange={handleVibrationChange}
           />
         );
       case 'reconnecting':
@@ -1533,6 +1558,8 @@ export default function App() {
             resumeBoard={pendingResumeRef.current?.board ?? null}
             buzzerDelay={buzzerDelay}
             onBuzzerDelayChange={setBuzzerDelay}
+            vibrationEnabled={vibrationEnabled}
+            onVibrationChange={handleVibrationChange}
             animationsEnabled={animationsEnabled}
             onAnimationsChange={setAnimationsEnabled}
             visibleCategories={visibleCategories}
@@ -1572,6 +1599,8 @@ export default function App() {
             onRelayPortChange={setRelayPort}
             animationsEnabled={animationsEnabled}
             onAnimationsChange={setAnimationsEnabled}
+            vibrationEnabled={vibrationEnabled}
+            onVibrationChange={handleVibrationChange}
             visibleCategories={visibleCategories}
             onVisibleCategoriesChange={setVisibleCategories}
             isResume={screen.isResume}

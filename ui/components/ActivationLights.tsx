@@ -51,13 +51,9 @@ export const ActivationLights = memo(function ActivationLights({ lights }: Activ
       setActiveLights(lights);
       // Synchronously reset animated values before React commits the first frame to the screen!
       progress.setValue(0);
-      glow.setValue(lights.flash ? OFF_OPACITY : 1);
-
-      Animated.timing(overallOpacity, {
-        toValue: 1,
-        duration: 100, // Twice as fast fade-in
-        useNativeDriver: true,
-      }).start();
+      glow.setValue(1);
+      overallOpacity.stopAnimation();
+      overallOpacity.setValue(1);
     } else {
       Animated.timing(overallOpacity, {
         toValue: 0,
@@ -92,17 +88,10 @@ export const ActivationLights = memo(function ActivationLights({ lights }: Activ
       drain.start();
     };
 
-    const arm = flash
-      ? Animated.sequence([
-          Animated.timing(glow, {
-            toValue: 1,
-            duration: 60, // Twice as fast flash
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.delay(1260), // Preserves exactly 1320ms FLASH_MS
-        ])
-      : Animated.timing(glow, { toValue: 1, duration: 60, useNativeDriver: true });
+    // Hard-cut to fully lit. Keep the old hold length so the onset changes
+    // without shortening the answer timer's visible countdown.
+    glow.setValue(1);
+    const arm = Animated.delay(flash ? FLASH_MS : HOLD_MS);
 
     arm.start(({ finished }) => {
       if (finished) startDrain();

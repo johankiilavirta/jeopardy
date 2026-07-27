@@ -94,6 +94,10 @@ interface ClueScreenProps {
   canBuzz?: boolean | undefined;
   /** This player buzzed and is still typing — the keyboard is up. */
   showKeyboard?: boolean | undefined;
+  /** Mount and measure the keyboard offscreen before buzzing becomes live. */
+  prepareKeyboard?: boolean | undefined;
+  /** Hide clue copy while the card shell expands and text fitting settles. */
+  contentVisible?: boolean | undefined;
   /** Swipe judging is live (REVEAL). */
   canJudge?: boolean | undefined;
   /** Tap-to-buzz: called when the card is tapped while canBuzz. */
@@ -148,6 +152,8 @@ export function ClueScreen({
   isFinalWagerPhase = false,
   canBuzz,
   showKeyboard,
+  prepareKeyboard,
+  contentVisible = true,
   canJudge,
   onBuzz,
   onJudge,
@@ -331,6 +337,10 @@ export function ClueScreen({
     (measuredPanelHeight ?? minSheetHeight) - keyboardBottomInset,
   );
   const kb = useRef(new Animated.Value(0)).current;
+  // Separate visual presentation from mounting. The keyboard is pre-mounted
+  // offscreen during clue reading so it can measure early, but must remain
+  // explicitly transparent until this player actually buzzes.
+  const sheetOpacity = useRef(new Animated.Value(0)).current;
   // Live downward drag on the panel (swipe-to-lock follows the finger).
   const kbDrag = useRef(new Animated.Value(0)).current;
   const answerOpacity = useRef(new Animated.Value(0)).current;
@@ -372,18 +382,20 @@ export function ClueScreen({
       // spring. Replacing the estimated interpolation mid-flight causes a
       // visible hitch, especially on wide landscape number keyboards.
       if (measuredPanelHeight == null) return;
+      sheetOpacity.setValue(1);
       Animated.timing(answerOpacity, {
         toValue: 1,
         duration: 120,
         useNativeDriver: true,
       }).start();
-      Animated.spring(kb, {
+      Animated.timing(kb, {
         toValue: 1,
-        speed: 16,
-        bounciness: 4,
+        duration: 180,
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }).start();
     } else {
+      if (prepareKeyboard && onAnswerChange) setKbMounted(true);
       Animated.timing(answerOpacity, {
         toValue: 0,
         duration: 150,
@@ -397,10 +409,21 @@ export function ClueScreen({
         duration: 180,
         useNativeDriver: true,
       }).start(({ finished }) => {
-        if (finished) setKbMounted(false);
+        if (!finished) return;
+        sheetOpacity.setValue(0);
+        if (!prepareKeyboard) setKbMounted(false);
       });
     }
-  }, [keyboardVisible, measuredPanelHeight, kb, kbDrag, answerOpacity]);
+  }, [
+    answerOpacity,
+    kb,
+    kbDrag,
+    keyboardVisible,
+    measuredPanelHeight,
+    onAnswerChange,
+    prepareKeyboard,
+    sheetOpacity,
+  ]);
 
   // The sheet slides up from fully below the screen's bottom edge into place.
   const panelRise = kb.interpolate({
@@ -818,7 +841,7 @@ export function ClueScreen({
             style={[
               styles.header,
               isFinalWagerPhase && styles.headerFinalWager,
-              { opacity: headerFade },
+              { opacity: contentVisible ? headerFade : 0 },
             ]}
           >
             <View style={styles.categoryWrap}>
@@ -837,7 +860,10 @@ export function ClueScreen({
             </Text>
           </Animated.View>
 
-          <View style={styles.body} onLayout={handleBodyLayout}>
+          <View
+            style={[styles.body, !contentVisible && { opacity: 0 }]}
+            onLayout={handleBodyLayout}
+          >
             {!isFinalWagerPhase && (
               <View
                 pointerEvents="none"
@@ -933,7 +959,12 @@ export function ClueScreen({
           style={[
             styles.sheetWrap,
             { bottom: -keyboardBottomInset },
-            { opacity: measuredPanelHeight == null ? 0 : 1 },
+            {
+              opacity:
+                measuredPanelHeight == null
+                  ? 0
+                  : sheetOpacity,
+            },
             { transform: [{ translateY: Animated.add(panelRise, kbDrag) }] },
           ]}
         >

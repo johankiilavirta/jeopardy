@@ -76,6 +76,9 @@ interface MainMenuScreenProps {
   questionLibrary?: QuestionLibraryInfo | null | undefined;
   questionImportStatus?: string | null | undefined;
   onImportQuestions?: (() => void) | undefined;
+  /** Vibrate when buzzing opens. Default off. */
+  vibrationEnabled?: boolean | undefined;
+  onVibrationChange?: ((enabled: boolean) => void) | undefined;
 }
 
 export function MainMenuScreen(props: MainMenuScreenProps) {
@@ -446,6 +449,20 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
                       </Pressable>
                     </View>
                   )}
+
+                  <View style={styles.settingGroup}>
+                    <Text style={styles.label}>VIBRATION</Text>
+                    <Pressable
+                      accessibilityRole="switch"
+                      accessibilityState={{ checked: !!props.vibrationEnabled }}
+                      style={styles.toggleBox}
+                      onPress={() => props.onVibrationChange?.(!props.vibrationEnabled)}
+                    >
+                      <Text style={[styles.toggleText, !props.vibrationEnabled && styles.toggleTextOff]}>
+                        {props.vibrationEnabled ? 'ON' : 'OFF'}
+                      </Text>
+                    </Pressable>
+                  </View>
                 </View>
 
                 {/* ── Right column: advanced connection settings ── */}

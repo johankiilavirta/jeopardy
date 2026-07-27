@@ -415,11 +415,15 @@ export class BluetoothSessionProvider implements SessionProvider {
     if (!control) {
       if (this.role === 'host' && isClientScreenReady(message)) {
         const name = this.remotePlayerName;
+        this.markGuestSeen(peerId);
         if (name) this.connectCbs.forEach(cb => cb(peerId, name));
         this.emitControl({ type: 'client-screen-ready', ...this.authorityFields() });
         return;
       }
-      if (this.role === 'host') this.serverTransport?.deliverRemote(peerId, message);
+      if (this.role === 'host') {
+        if (this.remotePeerId === peerId) this.markGuestSeen(peerId);
+        this.serverTransport?.deliverRemote(peerId, message);
+      }
       else {
         if (this.hostAuthorityAccepted) this.markHostSeen();
         this.messageCbs.forEach(cb => cb(SERVER_PEER_ID, message));
@@ -474,6 +478,7 @@ export class BluetoothSessionProvider implements SessionProvider {
       return;
     }
     if (this.role === 'host' && control.type === 'board-ready') {
+      if (this.remotePeerId === peerId) this.markGuestSeen(peerId);
       const pending = this.pendingStart;
       if (pending && control.startId === pending.startId) {
         clearTimeout(pending.timeout);
@@ -487,6 +492,7 @@ export class BluetoothSessionProvider implements SessionProvider {
       return;
     }
     if (this.role === 'host' && control.type === 'game-ready' && this.remotePlayerName) {
+      this.markGuestSeen(peerId);
       this.serverTransport?.connectRemote(peerId, this.remotePlayerName);
       return;
     }
@@ -738,6 +744,10 @@ export class BluetoothSessionProvider implements SessionProvider {
   private markHostSeen(): void {
     this.lastHostSeenAt = Date.now();
     this.hostDisconnectEmitted = false;
+    // Start the reverse heartbeat as soon as any authenticated host traffic
+    // arrives. Waiting for the first heartbeat specifically creates a rejoin
+    // race when a large board/state payload is ahead of it on the BLE queue.
+    this.startGuestHeartbeat();
     if (this.hostLivenessState !== 'connected') {
       this.hostLivenessState = 'connected';
       this.emitControl({ type: 'host-liveness', state: 'connected', ...this.authorityFields() });
