@@ -3,7 +3,7 @@ import ExpoModulesCore
 import Foundation
 
 public final class BluetoothNetworkModule: Module {
-  fileprivate let queue = DispatchQueue(label: "jeopardy.bluetooth-network")
+  fileprivate let queue = DispatchQueue(label: "jest-trivia.bluetooth-network")
   fileprivate let serviceUUID = CBUUID(string: "7D8F2E4D-4C53-4D4F-9D6E-4A7C37A1E001")
   fileprivate let txUUID = CBUUID(string: "7D8F2E4D-4C53-4D4F-9D6E-4A7C37A1E002")
   fileprivate let rxUUID = CBUUID(string: "7D8F2E4D-4C53-4D4F-9D6E-4A7C37A1E003")

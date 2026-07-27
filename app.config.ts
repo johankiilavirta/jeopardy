@@ -3,16 +3,16 @@ import appJson from './app.json';
 
 // Expo evaluates this config through CommonJS, so keep the packaged default
 // self-contained rather than importing the app's TypeScript helper.
-const DEFAULT_RELAY_HOST = 'wss://jeopardy-relay-johan.fly.dev';
+const DEFAULT_RELAY_HOST = 'wss://jest-trivia-relay-johan.fly.dev';
 
 const config: ExpoConfig = {
   ...appJson.expo,
   ios: {
-    bundleIdentifier: 'com.anonymous.jeopardy',
+    bundleIdentifier: 'com.anonymous.jesttrivia',
     infoPlist: {
-      NSBluetoothAlwaysUsageDescription: 'Jeopardy uses Bluetooth to host and join games with nearby players when Wi-Fi is unavailable.',
-      NSLocalNetworkUsageDescription: 'Jeopardy uses your local network to find and join games hosted by nearby players.',
-      NSBonjourServices: ['_jeopardy._tcp'],
+      NSBluetoothAlwaysUsageDescription: 'Jest Trivia uses Bluetooth to host and join games with nearby players when Wi-Fi is unavailable.',
+      NSLocalNetworkUsageDescription: 'Jest Trivia uses your local network to find and join games hosted by nearby players.',
+      NSBonjourServices: ['_jesttrivia._tcp'],
     },
   },
   extra: {

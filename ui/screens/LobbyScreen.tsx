@@ -764,7 +764,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
   }, [realBoard, codeVisible, categoriesVisible]);
 
   // ── R1/R2 category toggle ─────────────────────────────────────────────────
-  // Tapping a category header fades in the Double Jeopardy category name.
+  // Tapping a category header fades in the Round Two category name.
 
   const catAnimsRef = useRef<Animated.Value[]>([]);
   const toggledColsRef = useRef<Set<number>>(new Set());
@@ -1058,7 +1058,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                     style={[styles.catOverlayCol, { width: colW, left: col * (colW + colGap) }]}
                     onPress={() => handleCategoryPress(col)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Toggle Double Jeopardy category: ${r2Name}`}
+                    accessibilityLabel={`Toggle Round Two category: ${r2Name}`}
                   >
                     {/* R2 name fades in over the R1 name when toggled */}
                     <Animated.View
@@ -1397,7 +1397,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                             <View style={styles.categoryTwoCol}>
                               <View style={styles.categorySubCol}>
                                 <Text style={styles.label}>
-                                  {'JEOPARDY!' + (round1Categories.some(c => c.clueCount < 5) ? ' *' : '')}
+                                  {'ROUND ONE' + (round1Categories.some(c => c.clueCount < 5) ? ' *' : '')}
                                 </Text>
                                 {round1Categories.map(({ name, clueCount }, i) => (
                                   <View key={i} style={styles.categoryRow}>
@@ -1410,7 +1410,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                               {round2Categories && (
                                 <View style={styles.categorySubCol}>
                                   <Text style={styles.label}>
-                                    {'DOUBLE!' + (round2Categories.some(c => c.clueCount < 5) ? ' *' : '')}
+                                    {'ROUND TWO' + (round2Categories.some(c => c.clueCount < 5) ? ' *' : '')}
                                   </Text>
                                   {round2Categories.map(({ name, clueCount }, i) => (
                                     <View key={i} style={styles.categoryRow}>

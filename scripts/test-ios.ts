@@ -26,7 +26,7 @@ const env = {
   EXPO_PUBLIC_RELAY_HOST: localIp,
 };
 
-console.log(`\n  Starting iOS Multi-Simulator Test (Fast Forward to Final Jeopardy)\n`);
+console.log(`\n  Starting iOS Multi-Simulator Test (Fast Forward to Final Wager)\n`);
 
 const children: ChildProcess[] = [];
 function run(cmd: string, args: string[]): ChildProcess {

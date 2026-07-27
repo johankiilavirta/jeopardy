@@ -89,7 +89,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     const current = currentVisibleStateRef.current;
 
     const inFinal = (s: GameState) =>
-      s.status === 'FINAL_JEOPARDY_WAGER' || s.status === 'FINAL_JEOPARDY_ANSWER';
+      s.status === 'FINAL_WAGER' || s.status === 'FINAL_ANSWER';
 
     if (inFinal(incoming)) {
       // While a fade is already running, don't restart it — just keep the
@@ -104,10 +104,10 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       }
 
       // Cinematic fade only on the genuine forward entry into Final
-      // Jeopardy. Undo/redo landing on a wager state from inside the final
+      // Jest Trivia. Undo/redo landing on a wager state from inside the final
       // round (current clue is already the sentinel) swaps directly below.
       const enteringFinal =
-        incoming.status === 'FINAL_JEOPARDY_WAGER' &&
+        incoming.status === 'FINAL_WAGER' &&
         current != null &&
         !inFinal(current) &&
         current.activeClue?.id !== -1;
@@ -117,8 +117,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       // Undo back onto an answer state (current is REVEAL) swaps directly,
       // and a reconnect landing mid-answer (current == null) does too.
       const wagerToAnswer =
-        incoming.status === 'FINAL_JEOPARDY_ANSWER' &&
-        current?.status === 'FINAL_JEOPARDY_WAGER';
+        incoming.status === 'FINAL_ANSWER' &&
+        current?.status === 'FINAL_WAGER';
 
       if (enteringFinal || wagerToAnswer) {
         const [toBlackMs, fromBlackMs] = enteringFinal ? [1000, 1500] : [450, 900];
@@ -150,7 +150,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       }
     }
 
-    // Direct swap. A mid-flight fade toward Final Jeopardy is superseded by
+    // Direct swap. A mid-flight fade toward Final Wager is superseded by
     // this newer state (e.g. the user undid the verdict that started it) —
     // kill it so its completion can't overwrite the screen with stale state.
     if (fjFadeActiveRef.current) {
@@ -233,7 +233,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   if (gameState && gameState.status !== previousStatusRef.current) {
     if (gameState.status === 'BUZZ_OPEN') {
       buzzWindowDeadlineRef.current = Date.now() + PHASE_TIMERS.BUZZ_OPEN!.ms;
-    } else if (gameState.status === 'FINAL_JEOPARDY_WAGER' || gameState.status === 'FINAL_JEOPARDY_ANSWER') {
+    } else if (gameState.status === 'FINAL_WAGER' || gameState.status === 'FINAL_ANSWER') {
       buzzWindowDeadlineRef.current = Date.now() + 30000;
     }
     previousStatusRef.current = gameState.status;
@@ -244,8 +244,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const typing =
     (gameState?.status === 'BUZZ_OPEN' && localBuzz && !localBuzz.locked) ||
     (gameState?.status === 'ANSWERING' && localBuzz && !localBuzz.locked) ||
-    (gameState?.status === 'FINAL_JEOPARDY_WAGER' && localBuzz && !localBuzz.locked) ||
-    (gameState?.status === 'FINAL_JEOPARDY_ANSWER' && localBuzz && !localBuzz.locked);
+    (gameState?.status === 'FINAL_WAGER' && localBuzz && !localBuzz.locked) ||
+    (gameState?.status === 'FINAL_ANSWER' && localBuzz && !localBuzz.locked);
 
   // Every STATE_UPDATE deserializes a fresh object tree, so identity can't
   // signal change here. Key the board pipeline on the burned list's content
@@ -259,8 +259,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     [burnedKey],
   );
 
-  // Round transition: once every Jeopardy! (round 1) clue is burned, switch
-  // the board to Double Jeopardy! (round 2). Round 2 clue ids live in their
+  // Round transition: once every Round One (round 1) clue is burned, switch
+  // the board to Round Two! (round 2). Round 2 clue ids live in their
   // own range, so the two never collide and round 1 stays fully burned.
   const round1Done = useMemo(() => {
     const round1Board = boardData ? toBoardDefinition(boardData, 1) : demoBoard;
@@ -299,9 +299,9 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // Stable identity so the memoized ActivationLights can skip re-rendering
   // its 171 lamps on renders that don't change the timer window.
   const lights = useMemo(() => {
-    const show = gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING' || gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER';
+    const show = gameState?.status === 'BUZZ_OPEN' || gameState?.status === 'ANSWERING' || gameState?.status === 'FINAL_WAGER' || gameState?.status === 'FINAL_ANSWER';
     if (!show || buzzWindowDeadlineRef.current == null) return null;
-    const isFinal = gameState?.status === 'FINAL_JEOPARDY_WAGER' || gameState?.status === 'FINAL_JEOPARDY_ANSWER';
+    const isFinal = gameState?.status === 'FINAL_WAGER' || gameState?.status === 'FINAL_ANSWER';
     return {
       deadline: buzzWindowDeadlineRef.current,
       durationMs: isFinal ? 30000 : PHASE_TIMERS.BUZZ_OPEN!.ms,
@@ -332,7 +332,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     });
   }
   // A pending trailing send must not leak across a clue or phase boundary
-  // (e.g. Final Jeopardy wager digits landing in the answer phase, which
+  // (e.g. Final Wager wager digits landing in the answer phase, which
   // shares the sentinel clue id). Locks are safe without a flush: a
   // user-initiated LOCK_ANSWER carries the full text; only the server-side
   // typing timer can drop the final <250ms of typing (see answerThrottle).
@@ -353,7 +353,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // the answer keyboard. Drop the echo at the phase boundary — the server's
   // fresh (empty) answer takes over.
   useEffect(() => {
-    if (gameState?.status === 'FINAL_JEOPARDY_ANSWER') setLocalEcho(null);
+    if (gameState?.status === 'FINAL_ANSWER') setLocalEcho(null);
   }, [gameState?.status]);
 
   if (!gameState || !playerId) {
@@ -367,7 +367,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
 
   const onStand = judgedPlayerId(gameState);
 
-  // Final Jeopardy spans three statuses — WAGER, ANSWER, and the shared
+  // Final Wager spans three statuses — WAGER, ANSWER, and the shared
   // REVEAL used for judging — but the clue keeps its sentinel id (-1)
   // through all of them, so the black backdrop keys off the clue, not the
   // status. The backdrop always stops short of the player bar; whether the
@@ -376,7 +376,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // because the bar's rail matches the backdrop color.
   const isFinalClue = gameState.activeClue?.id === -1;
 
-  // Everyone's answer goes on the stand at once in Final Jeopardy; normal
+  // Everyone's answer goes on the stand at once in Final Wager; normal
   // play judges one buzzer at a time in buzz order.
   const stands =
     gameState.status === 'REVEAL'
@@ -531,7 +531,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
             >
             <ClueScreen
               clue={gameState.activeClue}
-              isFinalJeopardyWager={gameState.status === 'FINAL_JEOPARDY_WAGER'}
+              isFinalWagerPhase={gameState.status === 'FINAL_WAGER'}
               canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz}
               canPass={
                 !recoveringLocally &&
@@ -550,10 +550,10 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               }}
               lights={lights}
               showKeyboard={typing}
-              keyboardType={gameState.status === 'FINAL_JEOPARDY_WAGER' ? 'number' : 'text'}
-              inputPrefix={gameState.status === 'FINAL_JEOPARDY_WAGER' ? '$' : ''}
-              placeholder={gameState.status === 'FINAL_JEOPARDY_WAGER' ? 'ENTER WAGER' : 'TYPE YOUR ANSWER'}
-              onMaxWager={gameState.status === 'FINAL_JEOPARDY_WAGER' ? () => handleAnswerChange(String(gameState.players[playerId]?.score ?? 0)) : undefined}
+              keyboardType={gameState.status === 'FINAL_WAGER' ? 'number' : 'text'}
+              inputPrefix={gameState.status === 'FINAL_WAGER' ? '$' : ''}
+              placeholder={gameState.status === 'FINAL_WAGER' ? 'ENTER WAGER' : 'TYPE YOUR ANSWER'}
+              onMaxWager={gameState.status === 'FINAL_WAGER' ? () => handleAnswerChange(String(gameState.players[playerId]?.score ?? 0)) : undefined}
               onSkip={() => {
                 if (gameState.activeClue) dispatch({ type: 'SKIP_CLUE', playerId, clueId: gameState.activeClue.id });
               }}
@@ -595,7 +595,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           <JudgementTray
             players={Object.values(gameState.players)}
             localPlayerId={playerId}
-            finalJeopardy={isFinalClue}
+            finalWager={isFinalClue}
             stands={stands}
             hasMoreToJudge={
               !isFinalClue && gameState.activeClue

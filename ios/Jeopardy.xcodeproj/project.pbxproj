@@ -373,8 +373,8 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.jeopardy;
-				PRODUCT_NAME = Jeopardy;
+				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.jesttrivia;
+				PRODUCT_NAME = "Jest Trivia";
 				SWIFT_OBJC_BRIDGING_HEADER = "Jeopardy/Jeopardy-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -408,8 +408,8 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.jeopardy;
-				PRODUCT_NAME = Jeopardy;
+				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.jesttrivia;
+				PRODUCT_NAME = "Jest Trivia";
 				SWIFT_OBJC_BRIDGING_HEADER = "Jeopardy/Jeopardy-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;

@@ -51,15 +51,15 @@ export function ChooseClueScreen({
   const locked =
     recovering || (state.currentTurnPlayerId !== null && state.currentTurnPlayerId !== localPlayerId);
 
-  // Final Jeopardy (the sentinel clue id) is nobody's turn — everyone
+  // Final Wager (the sentinel clue id) is nobody's turn — everyone
   // wagers and answers at once — so the turn indicator goes dark and the
   // score bugs trade their navy for the final round's charcoal.
-  const isFinalJeopardy = state.activeClue?.id === -1;
+  const isFinalWager = state.activeClue?.id === -1;
 
   // The FJ backdrop above always leaves the bar's strip open; the bar itself
   // slides away only while everyone types their answer (scores would spoil
   // the wagers) and slides back up for the wager and the judging reveal.
-  const barHidden = state.status === 'FINAL_JEOPARDY_ANSWER';
+  const barHidden = state.status === 'FINAL_ANSWER';
   const barSlide = useRef(new Animated.Value(barHidden ? 1 : 0)).current;
   useEffect(() => {
     requestAnimationFrame(() => {
@@ -149,14 +149,14 @@ export function ChooseClueScreen({
       >
         <PlayerHeader
           players={Object.values(state.players)}
-          currentTurnPlayerId={isFinalJeopardy ? null : state.currentTurnPlayerId}
+          currentTurnPlayerId={isFinalWager ? null : state.currentTurnPlayerId}
           localPlayerId={localPlayerId}
           disconnectedPlayerId={disconnectedPlayerId}
           hostPlayerId={hostPlayerId}
           promotingPlayerId={promotingPlayerId}
           judgingPlayerId={judgingPlayerId}
           animationsEnabled={animationsEnabled}
-          finalJeopardy={isFinalJeopardy}
+          finalWager={isFinalWager}
         />
       </Animated.View>
       <Animated.View

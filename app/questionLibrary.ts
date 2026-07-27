@@ -3,7 +3,7 @@ import { File, FileMode, Paths } from 'expo-file-system';
 import type { GameData } from '../data/gameLoader';
 import { setImportedGameSource } from '../data/importedGameStore';
 
-const LIBRARY_KEY = 'jeopardy/question-library-v1';
+const LIBRARY_KEY = 'jest-trivia/question-library-v1';
 const LIBRARY_FILE_NAME = 'question-library.json';
 const MAX_FILE_BYTES = 250 * 1024 * 1024;
 const READ_CHUNK_BYTES = 256 * 1024;

@@ -3,8 +3,8 @@ import Foundation
 import MultipeerConnectivity
 
 public final class NearbyNetworkModule: Module {
-  fileprivate let queue = DispatchQueue(label: "jeopardy.nearby-network")
-  private let serviceType = "jeopardy"
+  fileprivate let queue = DispatchQueue(label: "jest-trivia.nearby-network")
+  private let serviceType = "jest-trivia"
   fileprivate let maximumMessageBytes = 1_048_576
 
   private lazy var delegateProxy = NearbyNetworkDelegate(owner: self)

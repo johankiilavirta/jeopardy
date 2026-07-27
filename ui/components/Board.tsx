@@ -14,7 +14,7 @@ interface BoardProps {
   onSelectClue?: ((clueId: number, rect: CellRect) => void) | undefined;
   onSkipClue?: ((clueId: number) => void) | undefined;
   /**
-   * Increments to 1 the first time Double Jeopardy starts, triggering the
+   * Increments to 1 the first time Round Two starts, triggering the
    * board-intro flash sequence. 0 (default) = no animation.
    */
   boardAnimKey?: number | undefined;
@@ -117,7 +117,7 @@ function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boa
 
   // The flash only plays when boardAnimKey *changes* after mount (the live
   // round 1 → 2 transition). Mounting with the key already latched — resuming
-  // or rejoining straight into Double Jeopardy, or a size-change remount after
+  // or rejoining straight into Round Two, or a size-change remount after
   // the transition — must not replay it.
   const initialAnimKeyRef = useRef(boardAnimKey);
   const cellDelays = useMemo<number[] | null>(() => {

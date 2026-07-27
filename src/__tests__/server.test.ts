@@ -738,14 +738,14 @@ describe('GameServer buzz reaction time', () => {
   });
 });
 
-describe('GameServer Final Jeopardy undo/redo', () => {
+describe('GameServer Final Wager undo/redo', () => {
   const finalClue = {
     category: 'WORLD CAPITALS',
     text: 'Australia moved its capital to this purpose-built city in 1927',
     answer: 'What is Canberra',
   };
 
-  /** One-clue board: skipping it drops into Final Jeopardy, then both
+  /** One-clue board: skipping it drops into Final Wager, then both
    *  players wager (alice 500, bob 300) and answer, landing in REVEAL.
    *  Scores are seeded (alice 1500, bob 700) so the wagers are legal —
    *  wagers clamp down to what the player actually has. */
@@ -815,24 +815,24 @@ describe('GameServer Final Jeopardy undo/redo', () => {
     const undo = () => p1.send('host', JSON.stringify({ type: 'UNDO' }));
 
     undo(); // bob's answer lock
-    expect(server.history.current.status).toBe('FINAL_JEOPARDY_ANSWER');
+    expect(server.history.current.status).toBe('FINAL_ANSWER');
     expect(server.history.current.buzzes.find(b => b.playerId === 'bob')).toMatchObject({
       answer: 'SYDNEY',
       locked: false,
     });
 
     undo(); // alice's answer lock
-    expect(server.history.current.status).toBe('FINAL_JEOPARDY_ANSWER');
+    expect(server.history.current.status).toBe('FINAL_ANSWER');
     expect(server.history.current.buzzes.every(b => !b.locked)).toBe(true);
 
     undo(); // bob's wager lock
-    expect(server.history.current.status).toBe('FINAL_JEOPARDY_WAGER');
+    expect(server.history.current.status).toBe('FINAL_WAGER');
 
     undo(); // alice's wager lock
-    expect(server.history.current.status).toBe('FINAL_JEOPARDY_WAGER');
+    expect(server.history.current.status).toBe('FINAL_WAGER');
     expect(server.history.current.buzzes.every(b => !b.locked)).toBe(true);
 
-    undo(); // entering Final Jeopardy itself
+    undo(); // entering Final Wager itself
     expect(server.history.current.status).toBe('CHOOSE_CLUE');
   });
 
@@ -842,7 +842,7 @@ describe('GameServer Final Jeopardy undo/redo', () => {
     expect(server.history.current.status).toBe('CHOOSE_CLUE');
 
     p1.send('host', JSON.stringify({ type: 'REDO' }));
-    expect(server.history.current.status).toBe('FINAL_JEOPARDY_WAGER');
+    expect(server.history.current.status).toBe('FINAL_WAGER');
     expect(server.history.current.buzzes.every(b => !b.locked)).toBe(true);
   });
 });
@@ -912,7 +912,7 @@ describe('ANSWER_UPDATE delta', () => {
     expect(last.state.buzzes[0]).toMatchObject({ playerId: 'bob', answer: 'PLUTO', locked: true });
   });
 
-  it('Final Jeopardy typing uses the sentinel clue id', () => {
+  it('Final Wager typing uses the sentinel clue id', () => {
     const { timer } = createMockTimer();
     const host = new MockTransport('host');
     const initial = createInitialState(['Alice', 'Bob'], 1, {
@@ -925,9 +925,9 @@ describe('ANSWER_UPDATE delta', () => {
     const p1 = new MockTransport('player1');
     MockTransport.link(host, p1);
 
-    // Skipping the only clue drops into the Final Jeopardy wager phase.
+    // Skipping the only clue drops into the Final Wager wager phase.
     p1.send('host', JSON.stringify({ type: 'SKIP_CLUE', clueId: 1 }));
-    expect(server.history.current.status).toBe('FINAL_JEOPARDY_WAGER');
+    expect(server.history.current.status).toBe('FINAL_WAGER');
 
     const p1Messages = captureMessages(p1);
     p1.send('host', JSON.stringify({ type: 'SET_ANSWER', text: '500' }));

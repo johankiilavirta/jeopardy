@@ -17,13 +17,13 @@ interface JudgementTrayProps {
   players: Player[];
   /** Local player shown first — must match the score bar's ordering. */
   localPlayerId?: string | undefined;
-  /** The answers on the stand. Normal play has one; Final Jeopardy shows
+  /** The answers on the stand. Normal play has one; Final Wager shows
    *  everyone's at once, judged in any order. */
   stands: JudgementStand[];
   onJudge: (playerId: string, correct: boolean, penalty?: boolean) => void;
   hasMoreToJudge: boolean;
-  /** Final Jeopardy: the tab swaps its recessed navy for charcoal. */
-  finalJeopardy?: boolean;
+  /** Final Wager: the tab swaps its recessed navy for charcoal. */
+  finalWager?: boolean;
 }
 
 /**
@@ -43,7 +43,7 @@ export function JudgementTray({
   stands,
   onJudge,
   hasMoreToJudge,
-  finalJeopardy = false,
+  finalWager = false,
 }: JudgementTrayProps) {
   return (
     <View style={styles.row} pointerEvents="box-none">
@@ -60,7 +60,7 @@ export function JudgementTray({
             slideOutCorrect={stands.length > 1}
             slideOutIncorrect={stands.length > 1 || hasMoreToJudge}
             onJudge={onJudge}
-            finalJeopardy={finalJeopardy}
+            finalWager={finalWager}
           />
         ) : (
           // Empty slot keeping the tabs aligned with this player's bug below.
@@ -77,14 +77,14 @@ function JudgementTab({
   slideOutCorrect,
   slideOutIncorrect,
   onJudge,
-  finalJeopardy,
+  finalWager,
 }: {
   playerName: string;
   stand: JudgementStand;
   slideOutCorrect: boolean;
   slideOutIncorrect: boolean;
   onJudge: (playerId: string, correct: boolean, penalty?: boolean) => void;
-  finalJeopardy: boolean;
+  finalWager: boolean;
 }) {
   const rise = useRef(new Animated.Value(0)).current;
 
@@ -126,7 +126,7 @@ function JudgementTab({
       <Animated.View
         style={[
           styles.tab,
-          finalJeopardy && styles.tabFinal,
+          finalWager && styles.tabFinal,
           {
             transform: [
               {

@@ -16,7 +16,7 @@ interface NumberKeyboardProps {
   onMaxWager?: () => void;
   /** Returns to the letter deck for a text answer. */
   onLetters?: () => void;
-  /** Final Jeopardy: the keys swap cell navy for the round's charcoal. */
+  /** Final Wager: the keys swap cell navy for the round's charcoal. */
   final?: boolean;
   /** Use the neutral charcoal keys outside of the blue game board. */
   dark?: boolean;

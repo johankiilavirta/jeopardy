@@ -8,7 +8,7 @@ const finalClue = {
   answer: 'What is Canberra',
 };
 
-/** Burn every clue on a tiny board so the game falls into Final Jeopardy.
+/** Burn every clue on a tiny board so the game falls into Final Wager.
  *  Scores are seeded (alice 1500, bob 700) so the wagers below are legal —
  *  wagers clamp down to what the player actually has. */
 function reachWager(scores: { alice: number; bob: number } = { alice: 1500, bob: 700 }): GameState {
@@ -31,17 +31,17 @@ function reachReveal(aliceWager = 500, bobWager = 300): GameState {
   state = reducer(state, { type: 'SET_ANSWER', playerId: 'alice', text: String(aliceWager) });
   state = reducer(state, { type: 'SET_ANSWER', playerId: 'bob', text: String(bobWager) });
   state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice' });
-  state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob' }); // → FINAL_JEOPARDY_ANSWER
+  state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob' }); // → FINAL_ANSWER
   state = reducer(state, { type: 'SET_ANSWER', playerId: 'alice', text: 'CANBERRA' });
   state = reducer(state, { type: 'SET_ANSWER', playerId: 'bob', text: 'SYDNEY' });
   state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice' });
   return reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob' }); // → REVEAL
 }
 
-describe('Final Jeopardy flow', () => {
+describe('Final Wager flow', () => {
   it('burning the last clue enters the wager with the sentinel clue and everyone buzzed in', () => {
     const state = reachWager();
-    expect(state.status).toBe('FINAL_JEOPARDY_WAGER');
+    expect(state.status).toBe('FINAL_WAGER');
     expect(state.activeClue!.id).toBe(-1);
     expect(state.activeClue!.text).toBe(finalClue.category);
     expect(state.buzzes.map(b => b.playerId).sort()).toEqual(['alice', 'bob']);
@@ -53,7 +53,7 @@ describe('Final Jeopardy flow', () => {
     state = reducer(state, { type: 'SET_ANSWER', playerId: 'bob', text: '300' });
     state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice' });
     state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob' });
-    expect(state.status).toBe('FINAL_JEOPARDY_ANSWER');
+    expect(state.status).toBe('FINAL_ANSWER');
     expect(state.activeClue!.text).toBe(finalClue.text);
     expect(state.finalWagers).toEqual({ alice: 500, bob: 300 });
     expect(state.buzzes.every(b => !b.locked && b.answer === '')).toBe(true);
@@ -67,7 +67,7 @@ describe('Final Jeopardy flow', () => {
   });
 });
 
-describe('Final Jeopardy wager clamping', () => {
+describe('Final Wager wager clamping', () => {
   it('a wager above the player\'s score is rounded down to the max they can bet', () => {
     let state = reachWager();
     state = reducer(state, { type: 'SET_ANSWER', playerId: 'alice', text: '999999' });
@@ -87,7 +87,7 @@ describe('Final Jeopardy wager clamping', () => {
   });
 });
 
-describe('Final Jeopardy judging', () => {
+describe('Final Wager judging', () => {
   it('answers may be judged in any order', () => {
     let state = reachReveal();
     // Bob buzzed after alice in the wager order, but is judged first.
@@ -132,7 +132,7 @@ describe('Final Jeopardy judging', () => {
     expect(again).toBe(state);
   });
 
-  it('Final Jeopardy cannot be skipped', () => {
+  it('Final Wager cannot be skipped', () => {
     const wager = reachWager();
     expect(reducer(wager, { type: 'SKIP_CLUE', playerId: 'alice', clueId: -1 })).toBe(wager);
     const reveal = reachReveal();

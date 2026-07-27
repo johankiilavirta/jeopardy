@@ -168,7 +168,7 @@ function handleBuzz(state: GameState, action: Extract<Action, { type: 'BUZZ' }>)
 }
 
 function handleSetAnswer(state: GameState, action: Extract<Action, { type: 'SET_ANSWER' }>): GameState {
-  if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING' && state.status !== 'FINAL_JEOPARDY_WAGER' && state.status !== 'FINAL_JEOPARDY_ANSWER') return state;
+  if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING' && state.status !== 'FINAL_WAGER' && state.status !== 'FINAL_ANSWER') return state;
 
   const buzz = getBuzz(state, action.playerId);
   if (!buzz || buzz.locked) return state;
@@ -182,7 +182,7 @@ function handleSetAnswer(state: GameState, action: Extract<Action, { type: 'SET_
 }
 
 function handleLockAnswer(state: GameState, action: Extract<Action, { type: 'LOCK_ANSWER' }>): GameState {
-  if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING' && state.status !== 'FINAL_JEOPARDY_WAGER' && state.status !== 'FINAL_JEOPARDY_ANSWER') return state;
+  if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING' && state.status !== 'FINAL_WAGER' && state.status !== 'FINAL_ANSWER') return state;
 
   const buzz = getBuzz(state, action.playerId);
   if (!buzz || buzz.locked) return state;
@@ -208,13 +208,13 @@ function handleLockAnswer(state: GameState, action: Extract<Action, { type: 'LOC
   );
   const reveal = (
     state.status === 'ANSWERING' ||
-    state.status === 'FINAL_JEOPARDY_WAGER' ||
-    state.status === 'FINAL_JEOPARDY_ANSWER' ||
+    state.status === 'FINAL_WAGER' ||
+    state.status === 'FINAL_ANSWER' ||
     isSolo ||
     allPlayersActed
   ) && allBuzzersNowLocked;
 
-  if (reveal && state.status === 'FINAL_JEOPARDY_WAGER') {
+  if (reveal && state.status === 'FINAL_WAGER') {
     const finalWagers: Record<string, number> = {};
     for (const b of buzzes) {
       // A wager can't exceed what the player has (nor go below zero) —
@@ -226,7 +226,7 @@ function handleLockAnswer(state: GameState, action: Extract<Action, { type: 'LOC
     const nextBuzzes = activePlayers.map(id => ({ playerId: id, answer: '', locked: false }));
     return {
       ...state,
-      status: 'FINAL_JEOPARDY_ANSWER',
+      status: 'FINAL_ANSWER',
       activeClue: {
         ...state.activeClue!,
         category: state.finalClue!.category,
@@ -237,7 +237,7 @@ function handleLockAnswer(state: GameState, action: Extract<Action, { type: 'LOC
     };
   }
 
-  if (reveal && state.status === 'FINAL_JEOPARDY_ANSWER') {
+  if (reveal && state.status === 'FINAL_ANSWER') {
     return {
       ...state,
       status: 'REVEAL',
@@ -253,7 +253,7 @@ function handleLockAnswer(state: GameState, action: Extract<Action, { type: 'LOC
 }
 
 function handleUnlockAnswer(state: GameState, action: Extract<Action, { type: 'UNLOCK_ANSWER' }>): GameState {
-  if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING' && state.status !== 'FINAL_JEOPARDY_WAGER' && state.status !== 'FINAL_JEOPARDY_ANSWER') return state;
+  if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING' && state.status !== 'FINAL_WAGER' && state.status !== 'FINAL_ANSWER') return state;
 
   const buzz = getBuzz(state, action.playerId);
   if (!buzz || !buzz.locked) return state;
@@ -275,7 +275,7 @@ function handleJudgeAnswer(state: GameState, action: Extract<Action, { type: 'JU
   const player = state.players[action.playerId];
   if (!player) return state;
 
-  // Final Jeopardy: every answer is on the stand at once and may be judged
+  // Final Wager: every answer is on the stand at once and may be judged
   // in any order. Each verdict settles that player's wager and retires
   // their buzz; the last verdict ends the game. Score history gets one
   // point for the whole round, pushed when the final verdict lands.
@@ -450,7 +450,7 @@ function handleDismissClue(state: GameState): GameState {
 function handleSkipClue(state: GameState, action: Extract<Action, { type: 'SKIP_CLUE' }>): GameState {
   if (state.status === 'GAME_OVER') return state;
 
-  // Final Jeopardy can't be skipped — re-burning would loop back into it.
+  // Final Wager can't be skipped — re-burning would loop back into it.
   if (state.activeClue?.id === -1) return state;
 
   // If a clue is currently up, skip that one regardless of the id sent.
@@ -523,13 +523,13 @@ function transitionFromBoard(state: GameState, burningClueId?: number): Partial<
     const buzzes = activePlayers.map(id => ({ playerId: id, answer: '', locked: false }));
     const wagerClue = {
       id: -1,
-      category: 'FINAL JEOPARDY',
+      category: 'FINAL WAGER',
       text: state.finalClue.category,
       answer: state.finalClue.answer,
       value: 0,
       failedPlayerIds: [],
     };
-    return { status: 'FINAL_JEOPARDY_WAGER', activeClue: wagerClue, buzzes, clueSelectPlayerId: null, passedPlayerIds: [] };
+    return { status: 'FINAL_WAGER', activeClue: wagerClue, buzzes, clueSelectPlayerId: null, passedPlayerIds: [] };
   }
   
   return { status: 'GAME_OVER', activeClue: null, buzzes: [], clueSelectPlayerId: null, passedPlayerIds: [] };

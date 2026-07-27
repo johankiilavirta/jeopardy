@@ -6,7 +6,7 @@
 # connection. A stopped machine loses in-progress rooms, but the app
 # saves snapshots on-device and offers RESUME GAME.
 
-app = "jeopardy-relay-johan"
+app = "jest-trivia-relay-johan"
 primary_region = "arn"
 
 [http_service]

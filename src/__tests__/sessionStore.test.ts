@@ -41,7 +41,7 @@ function seedSnapshotState(): void {
   const state = createInitialState(['Alice', 'Bob'], 6);
   state.burnedClueIds = [0];
   storage.map.set(
-    'jeopardy/snapshot-state',
+    'jest-trivia/snapshot-state',
     JSON.stringify({ state, savedAt: 1 }),
   );
 }
@@ -70,7 +70,7 @@ describe('sessionStore', () => {
 
   it('defaults legacy sessions (no mode/isHost/authority) to an online guest', async () => {
     storage.map.set(
-      'jeopardy/session',
+      'jest-trivia/session',
       JSON.stringify({ roomCode: 512, playerName: 'Bob', relayHost: 'h', relayPort: '8787', savedAt: Date.now() }),
     );
     const session = await loadSession();
@@ -130,7 +130,7 @@ describe('sessionStore', () => {
 
   it('reads legacy raw-GameData board records as online', async () => {
     seedSnapshotState();
-    storage.map.set('jeopardy/snapshot-board', JSON.stringify(board));
+    storage.map.set('jest-trivia/snapshot-board', JSON.stringify(board));
     const snapshot = await loadSnapshot();
     expect(snapshot?.board?.gameNumber).toBe(42);
     expect(snapshot?.mode).toBe('online');

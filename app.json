@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Jeopardy",
-    "slug": "jeopardy",
+    "name": "Jest Trivia",
+    "slug": "jest-trivia",
     "version": "1.0.0",
     "orientation": "landscape",
     "icon": "./assets/icon.png",

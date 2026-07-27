@@ -13,7 +13,7 @@ import type { GameData } from '../data/gameLoader';
 import type { SessionMode } from './sessionProvider';
 import type { GameState } from '../src/types';
 
-const MATCH_HISTORY_KEY = 'jeopardy/match-history';
+const MATCH_HISTORY_KEY = 'jest-trivia/match-history';
 const MAX_MATCHES = 200;
 
 export interface MatchPlayerResult {
