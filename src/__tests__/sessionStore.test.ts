@@ -11,6 +11,9 @@ const storage = vi.hoisted(() => {
       getItem: async (key: string) => map.get(key) ?? null,
       setItem: async (key: string, value: string) => { map.set(key, value); },
       removeItem: async (key: string) => { map.delete(key); },
+      multiSet: async (entries: [string, string][]) => {
+        entries.forEach(([key, value]) => map.set(key, value));
+      },
       multiRemove: async (keys: string[]) => { keys.forEach(k => map.delete(k)); },
     },
   };
@@ -22,6 +25,7 @@ import {
   loadSession,
   loadSnapshot,
   saveSession,
+  saveInitialSnapshot,
   saveSnapshotBoard,
   saveSnapshotState,
 } from '../../app/sessionStore';
@@ -57,6 +61,8 @@ describe('sessionStore', () => {
       epoch: 2,
       leaderId: 'leader-a',
       isHost: true,
+      matchInstanceId: 'match-a',
+      matchStartedAt: 123,
     });
     const session = await loadSession();
     expect(session).toMatchObject({ mode: 'nearby', roomCode: 423, playerName: 'Alice', roomId: 'room-a', epoch: 2, leaderId: 'leader-a', isHost: true });
@@ -79,7 +85,7 @@ describe('sessionStore', () => {
     vi.useFakeTimers();
     const state = createInitialState(['Alice', 'Bob'], 6);
     state.burnedClueIds = [0];
-    saveSnapshotState(state);
+    saveSnapshotState(state, 'match-a', 123);
     await vi.advanceTimersByTimeAsync(1000); // past the write debounce
     await saveSnapshotBoard(board, 'nearby');
 
@@ -87,19 +93,31 @@ describe('sessionStore', () => {
     expect(snapshot?.mode).toBe('nearby');
     expect(snapshot?.board?.gameNumber).toBe(42);
     expect(snapshot?.state.players['alice']?.name).toBe('Alice');
+    expect(snapshot?.matchInstanceId).toBe('match-a');
+    expect(snapshot?.matchStartedAt).toBe(123);
   });
 
-  it('does not save or load a game with no completed clues', async () => {
+  it('saves and loads a game with no completed clues', async () => {
     vi.useFakeTimers();
-    saveSnapshotState(createInitialState(['Alice', 'Bob'], 6));
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(await loadSnapshot()).toBeNull();
+    saveSnapshotState(createInitialState(['Alice', 'Bob'], 6), 'match-empty', 456);
+    await vi.advanceTimersByTimeAsync(0);
+    const snapshot = await loadSnapshot();
+    expect(snapshot?.state.burnedClueIds).toEqual([]);
+    expect(snapshot?.matchInstanceId).toBe('match-empty');
+  });
 
-    storage.map.set(
-      'jeopardy/snapshot-state',
-      JSON.stringify({ state: createInitialState(['Alice', 'Bob'], 6), savedAt: 1 }),
-    );
-    expect(await loadSnapshot()).toBeNull();
+  it('establishes a zero-progress board and state as one resumable snapshot', async () => {
+    const state = createInitialState(['Alice', 'Bob'], 6);
+    await saveInitialSnapshot(state, board, 'bluetooth', 'match-initial', 789);
+
+    const snapshot = await loadSnapshot();
+    expect(snapshot).toMatchObject({
+      mode: 'bluetooth',
+      matchInstanceId: 'match-initial',
+      matchStartedAt: 789,
+    });
+    expect(snapshot?.board?.gameNumber).toBe(42);
+    expect(snapshot?.state.burnedClueIds).toEqual([]);
   });
 
   it('records the mode even for a null (demo) board', async () => {

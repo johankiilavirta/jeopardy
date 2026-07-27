@@ -17,13 +17,14 @@ export function nextCompleteGameNumber(
   steps: number,
   totalGames: number,
   getInfo: (gameNumber: number) => GameInfo | null,
+  minimumGame = 1,
 ): number {
-  let candidate = Math.max(1, Math.min(totalGames, Math.trunc(start)));
+  let candidate = Math.max(minimumGame, Math.min(totalGames, Math.trunc(start)));
   let remaining = Math.max(1, Math.trunc(steps));
 
   while (remaining > 0) {
     const next = candidate + direction;
-    if (next < 1 || next > totalGames) return candidate;
+    if (next < minimumGame || next > totalGames) return candidate;
     candidate = next;
     if (hasCompleteCategories(getInfo(candidate))) remaining -= 1;
   }

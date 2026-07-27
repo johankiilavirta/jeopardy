@@ -47,12 +47,17 @@ export interface SavedSession {
   leaderId: string;
   /** Whether this device currently believes it is the authoritative host. */
   isHost: boolean;
+  /** Stable identity for match-history upserts across reconnect/failover. */
+  matchInstanceId: string;
+  matchStartedAt: number;
   savedAt: number;
 }
 
 export interface SavedSnapshot {
   state: GameState;
   board: GameData | null;
+  matchInstanceId: string;
+  matchStartedAt: number;
   /** Connection mode the snapshot was taken in — RESUME GAME re-hosts
    *  the same kind of room. */
   mode: SessionMode;
@@ -100,12 +105,14 @@ export async function loadSession(): Promise<SavedSession | null> {
   try {
     const raw = await AsyncStorage.getItem(SESSION_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Omit<SavedSession, 'mode' | 'isHost'> & {
+    const parsed = JSON.parse(raw) as Omit<SavedSession, 'mode' | 'isHost' | 'matchInstanceId' | 'matchStartedAt'> & {
       mode?: SavedSession['mode'];
       isHost?: boolean;
       roomId?: string;
       epoch?: number;
       leaderId?: string;
+      matchInstanceId?: string;
+      matchStartedAt?: number;
     };
     // Sessions saved before connection modes existed were all relay rooms;
     // before isHost/authority existed, reconnecting never depended on role
@@ -118,6 +125,8 @@ export async function loadSession(): Promise<SavedSession | null> {
       epoch: normalizeEpoch(parsed.epoch),
       leaderId: normalizeLeaderId(parsed.leaderId),
       isHost: parsed.isHost ?? false,
+      matchInstanceId: parsed.matchInstanceId ?? parsed.roomId ?? legacyRoomId(mode, parsed.roomCode),
+      matchStartedAt: parsed.matchStartedAt ?? parsed.savedAt,
     };
     if (typeof session.roomCode !== 'number' || Date.now() - session.savedAt > SESSION_TTL_MS) {
       await AsyncStorage.removeItem(SESSION_KEY);
@@ -137,17 +146,25 @@ export async function clearSession(): Promise<void> {
 
 let snapshotTimer: ReturnType<typeof setTimeout> | null = null;
 
-/** Persist the latest state, debounced. A board with no completed clues is
- * not an in-progress game, and GAME_OVER has nothing left to resume. */
-export function saveSnapshotState(state: GameState): void {
-  if (state.status === 'GAME_OVER' || state.burnedClueIds.length === 0) return;
+/** Persist the latest playable state, including a brand-new board with no
+ * completed clues. The explicit match identity prevents failover from
+ * creating a second history entry for the same play-through. */
+export function saveSnapshotState(state: GameState, matchInstanceId: string, matchStartedAt: number): void {
+  if (state.status === 'GAME_OVER') return;
   if (snapshotTimer != null) clearTimeout(snapshotTimer);
-  snapshotTimer = setTimeout(() => {
+  const write = () => {
     snapshotTimer = null;
     AsyncStorage.setItem(
       SNAPSHOT_STATE_KEY,
-      JSON.stringify({ state, savedAt: Date.now() }),
+      JSON.stringify({ state, matchInstanceId, matchStartedAt, savedAt: Date.now() }),
     ).catch(() => {});
+  };
+  if (state.burnedClueIds.length === 0) {
+    write();
+    return;
+  }
+  snapshotTimer = setTimeout(() => {
+    write();
   }, SNAPSHOT_DEBOUNCE_MS);
 }
 
@@ -160,18 +177,49 @@ export async function saveSnapshotBoard(board: GameData | null, mode: SessionMod
   } catch {}
 }
 
+/** Atomically establish the board/state pair for a newly mounted game. This
+ * also covers a zero-progress board, so an immediate crash cannot leave a
+ * new state paired with the previous match's question data. */
+export async function saveInitialSnapshot(
+  state: GameState,
+  board: GameData | null,
+  mode: SessionMode,
+  matchInstanceId: string,
+  matchStartedAt: number,
+): Promise<void> {
+  if (state.status === 'GAME_OVER') return;
+  const savedAt = Date.now();
+  try {
+    await AsyncStorage.multiSet([
+      [
+        SNAPSHOT_STATE_KEY,
+        JSON.stringify({ state, matchInstanceId, matchStartedAt, savedAt }),
+      ],
+      [
+        SNAPSHOT_BOARD_KEY,
+        JSON.stringify({ board, mode }),
+      ],
+    ]);
+  } catch {}
+}
+
 export async function loadSnapshot(): Promise<SavedSnapshot | null> {
   try {
     const raw = await AsyncStorage.getItem(SNAPSHOT_STATE_KEY);
     if (!raw) return null;
-    const { state, savedAt } = JSON.parse(raw) as { state: GameState; savedAt: number };
+    const parsedState = JSON.parse(raw) as {
+      state: GameState;
+      matchInstanceId?: string;
+      matchStartedAt?: number;
+      savedAt: number;
+    };
+    const { state, savedAt } = parsedState;
     if (
       !state ||
       typeof state !== 'object' ||
       !state.players ||
       state.status === 'GAME_OVER' ||
-      !Array.isArray(state.burnedClueIds) ||
-      state.burnedClueIds.length === 0
+      !Array.isArray(state.burnedClueIds)
     ) {
       return null;
     }
@@ -188,7 +236,14 @@ export async function loadSnapshot(): Promise<SavedSnapshot | null> {
         board = parsed as GameData;
       }
     }
-    return { state, board, mode, savedAt };
+    return {
+      state,
+      board,
+      mode,
+      matchInstanceId: parsedState.matchInstanceId ?? `legacy-snapshot-${savedAt}`,
+      matchStartedAt: parsedState.matchStartedAt ?? savedAt,
+      savedAt,
+    };
   } catch {
     return null;
   }

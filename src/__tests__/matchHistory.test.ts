@@ -117,17 +117,45 @@ describe('recordMatch / loadMatchHistory', () => {
     expect(updated[0]!.winnerNames).toEqual(['Bob']);
   });
 
-  it('stores ongoing games and preserves a completed replay with another id', async () => {
-    const ongoing = match('game-instance', { status: 'ongoing', gameKey: '42|Alice|Bob', finishedAt: 0 });
+  it('upserts one ongoing record across reconnects and replaces it on completion', async () => {
+    const ongoing = match('game-instance|ongoing', {
+      matchInstanceId: 'game-instance',
+      status: 'ongoing',
+      gameKey: '42|Alice|Bob',
+      finishedAt: 0,
+    });
     await recordOngoingMatch(ongoing);
-    await recordOngoingMatch({ ...ongoing, id: 'disconnect-duplicate' });
+    await recordOngoingMatch({ ...ongoing, id: 'disconnect-duplicate', updatedAt: 2000 });
     expect((await loadMatchHistory()).filter(isOngoingMatch)).toHaveLength(1);
-    await recordMatch(match('completed-instance', { status: 'completed', gameKey: '42|Alice|Bob' }));
+    await recordMatch(match('game-instance|completed', {
+      matchInstanceId: 'game-instance',
+      status: 'completed',
+      gameKey: '42|Alice|Bob',
+    }));
 
     const history = await loadMatchHistory();
     expect(history).toHaveLength(1);
     expect(history.filter(isOngoingMatch)).toHaveLength(0);
-    expect(history[0]!.id).toBe('completed-instance');
+    expect(history[0]!.id).toBe('game-instance|completed');
+  });
+
+  it('keeps a replay of the same board and players as a separate instance', async () => {
+    await recordMatch(match('first|completed', {
+      matchInstanceId: 'first',
+      status: 'completed',
+      gameKey: '42|alice|bob',
+    }));
+    await recordOngoingMatch(match('second|ongoing', {
+      matchInstanceId: 'second',
+      status: 'ongoing',
+      gameKey: '42|alice|bob',
+      finishedAt: 0,
+    }));
+
+    expect((await loadMatchHistory()).map(item => item.id)).toEqual([
+      'second|ongoing',
+      'first|completed',
+    ]);
   });
 
   it('keeps the same game separate when different local usernames own it', async () => {
@@ -156,13 +184,13 @@ describe('recordMatch / loadMatchHistory', () => {
   });
 
   it('removes only the matching ongoing game', async () => {
-    await recordOngoingMatch(match('ongoing-a', { status: 'ongoing', gameKey: '1|alice|bob', finishedAt: 0 }));
-    await recordOngoingMatch(match('ongoing-b', { status: 'ongoing', gameKey: '2|alice|bob', finishedAt: 0 }));
-    await recordMatch(match('completed', { status: 'completed', gameKey: '1|alice|bob' }));
+    await recordOngoingMatch(match('ongoing-a', { matchInstanceId: 'instance-a', status: 'ongoing', gameKey: '1|alice|bob', finishedAt: 0 }));
+    await recordOngoingMatch(match('ongoing-b', { matchInstanceId: 'instance-b', status: 'ongoing', gameKey: '2|alice|bob', finishedAt: 0 }));
+    await recordMatch(match('completed', { matchInstanceId: 'completed', status: 'completed', gameKey: '1|alice|bob' }));
 
-    const history = await removeOngoingMatch('2|alice|bob');
+    const history = await removeOngoingMatch('instance-b');
 
-    expect(history.map(item => item.id)).toEqual(['completed']);
+    expect(history.map(item => item.id)).toEqual(['completed', 'instance-a|ongoing']);
   });
 
   it('caps the history at 200 matches', async () => {

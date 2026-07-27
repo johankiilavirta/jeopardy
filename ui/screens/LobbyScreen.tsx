@@ -14,7 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { relayUrls } from '../../app/relayUrl';
 import { DEFAULT_RELAY_HOST } from '../../app/relayDefaults';
 import { sanitizeText } from '../../src/sanitizeText';
-import { loadGameInfo, loadGameIndex, type GameInfo } from '../../data/gameLoader';
+import { loadGameInfo, loadGameIndex, type GameData, type GameInfo } from '../../data/gameLoader';
 import { nextCompleteGameNumber } from '../../data/gameSelection';
 import type { SessionMode } from '../../app/sessionProvider';
 import { KeyboardSheet, useKeyboardSheet } from '../components/KeyboardSheet';
@@ -47,6 +47,9 @@ interface LobbyScreenProps {
   sessionMode?: SessionMode | undefined;
   gameId?: string;
   onGameIdChange?: (id: string) => void;
+  /** A match-history restore supplies its board directly, even if this device
+   * has not imported the original question library. */
+  resumeBoard?: GameData | null;
   buzzerDelay?: string;
   onBuzzerDelayChange?: (delay: string) => void;
   /** Master toggle for in-game animations (default on). */
@@ -434,6 +437,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
       steps,
       loadGameIndex().totalGames,
       getCachedGameInfo,
+      0,
     );
     if (String(next) !== gameIdValueRef.current) gameIdChangeRef.current?.(String(next));
   }, [getCachedGameInfo]);
@@ -446,9 +450,9 @@ export function LobbyScreen(props: LobbyScreenProps) {
     onPanResponderGrant: () => {
       beginGameIdTouch();
       const current = Number(gameIdValueRef.current);
-      gameIdSwipeStartRef.current = Number.isFinite(current) && current > 0
+      gameIdSwipeStartRef.current = Number.isFinite(current) && current >= 0
         ? current
-        : fallbackGameId.current;
+        : (fallbackGameId.current ?? 0);
       gameIdSwipeActiveRef.current = false;
     },
     onPanResponderMove: (_event, gesture) => {
@@ -562,15 +566,17 @@ export function LobbyScreen(props: LobbyScreenProps) {
 
   // ── Game info loading ─────────────────────────────────────────────────────
 
-  // Stable random game number ≥ 7500 used when no specific game is chosen.
+  // Stable random imported game number used when no specific game is chosen.
   // Picked once on mount so the board doesn't re-randomise on every render.
-  const fallbackGameId = useRef<number>(0);
+  const fallbackGameId = useRef<number | null>(null);
   const randomGameAssignedRef = useRef(false);
-  if (fallbackGameId.current === 0) {
+  if (fallbackGameId.current == null) {
     const index = loadGameIndex();
-    const min = 7500;
     const max = index.totalGames;
-    fallbackGameId.current = min + Math.floor(Math.random() * (max - min + 1));
+    const min = max >= 7500 ? 7500 : 1;
+    fallbackGameId.current = max > 0
+      ? min + Math.floor(Math.random() * (max - min + 1))
+      : 0;
   }
 
   // Resolve the random choice once for the host. Keeping it in the shared
@@ -579,14 +585,26 @@ export function LobbyScreen(props: LobbyScreenProps) {
   useEffect(() => {
     if (!props.isHost || props.gameId || randomGameAssignedRef.current) return;
     randomGameAssignedRef.current = true;
-    props.onGameIdChange?.(String(fallbackGameId.current));
+    props.onGameIdChange?.(String(fallbackGameId.current ?? 0));
   }, [props.gameId, props.isHost, props.onGameIdChange]);
 
   useEffect(() => {
+    if (props.resumeBoard) {
+      const categories = (round: GameData['round1']) => round.map(category => ({
+        name: sanitizeText(category.name),
+        clueCount: category.clues.length,
+      }));
+      setRound1Categories(categories(props.resumeBoard.round1));
+      setRound2Categories(categories(props.resumeBoard.round2));
+      setAirDate(props.resumeBoard.airDate);
+      setSeasonNumber(null);
+      setGameInfoStatus('idle');
+      return;
+    }
     const id = props.gameId;
     // When no specific game is set, use the fallback random id for the board backdrop.
-    const resolvedId = (!id || !/^\d+$/.test(id) || Number(id) < 1)
-      ? String(fallbackGameId.current)
+    const resolvedId = (!id || !/^\d+$/.test(id) || Number(id) < 0)
+      ? String(fallbackGameId.current ?? 0)
       : id;
 
     if (resolvedId !== id) {
@@ -649,7 +667,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
       }
     }, 400);
     return () => clearTimeout(timer);
-  }, [props.gameId, props.relayHost, props.relayPort, props.sessionMode]);
+  }, [props.gameId, props.relayHost, props.relayPort, props.resumeBoard, props.sessionMode]);
 
   // ── Board backdrop ────────────────────────────────────────────────────────
 
@@ -1364,7 +1382,14 @@ export function LobbyScreen(props: LobbyScreenProps) {
                               <Text style={styles.gameMetadata}>
                                 {[
                                   seasonNumber != null ? `Season ${seasonNumber}` : null,
-                                  airDate ? new Date(airDate + 'T12:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : null,
+                                  airDate
+                                    ? (() => {
+                                        const date = new Date(airDate + 'T12:00:00');
+                                        return Number.isNaN(date.getTime())
+                                          ? airDate
+                                          : date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+                                      })()
+                                    : null,
                                 ].filter(Boolean).join('  ·  ')}
                               </Text>
                             )}

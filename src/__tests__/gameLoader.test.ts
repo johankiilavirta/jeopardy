@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { getVisibleBoard, loadGameInfo, toBoardDefinition, makeClueGetter } from '../../data/gameLoader.js';
+import { getVisibleBoard, loadGame, loadGameInfo, loadGameIndex, toBoardDefinition, makeClueGetter } from '../../data/gameLoader.js';
 import type { GameData } from '../../data/gameLoader.js';
+import { setImportedGameSource } from '../../data/importedGameStore.js';
 import type { BoardDefinition } from '../../ui/fixtures/board.js';
 
 /** 6 categories × 5 clues, ids laid out column-major (col*5 + row → 0..29). */
@@ -91,7 +92,50 @@ describe('round-aware board + clue mapping', () => {
 });
 
 describe('loadGameInfo', () => {
-  it('reads a bundled game preview without a relay', () => {
+  it('always reserves Game 0 for the complete built-in starter game', () => {
+    setImportedGameSource(0, () => null);
+
+    const game = loadGame(0);
+    expect(game).toMatchObject({
+      gameNumber: 0,
+      airDate: 'BUILT-IN STARTER',
+    });
+    expect(game?.round1).toHaveLength(6);
+    expect(game?.round2).toHaveLength(6);
+    expect(game?.round1.map(category => category.name)).toEqual([
+      'MATHEMATICIANS',
+      'PHYSICS',
+      'THE ENLIGHTENMENT',
+      'TRAINS',
+      'INTERNET SLANG',
+      'GEOGRAPHY',
+    ]);
+    expect(game?.round2.map(category => category.name)).toEqual([
+      'RUSSIAN WRITERS',
+      'FOREIGN HOLIDAYS',
+      'DESSERTS',
+      'HISTORICAL HORSES',
+      'THE SOLAR SYSTEM',
+      'CANADA',
+    ]);
+    expect(game?.round1.every(category => category.clues.length === 5)).toBe(true);
+    expect(game?.round2.every(category => category.clues.length === 5)).toBe(true);
+    expect(game?.round1[0]?.clues.map(clue => clue.value)).toEqual([200, 400, 600, 800, 1000]);
+    expect(game?.round2[0]?.clues.map(clue => clue.value)).toEqual([400, 800, 1200, 1600, 2000]);
+    expect(game?.final).toMatchObject({
+      category: 'VICTOR HUGO',
+      answer: 'What is Guernsey?',
+    });
+    expect(loadGameInfo(0)).toMatchObject({
+      airDate: 'BUILT-IN STARTER',
+      season: null,
+    });
+    expect(loadGameIndex().totalGames).toBe(0);
+  });
+
+  it('reads an imported game preview without a relay', () => {
+    const game = twoRoundGame();
+    setImportedGameSource(1, number => number === 1 ? game : null);
     const info = loadGameInfo(1);
     expect(info).toMatchObject({
       season: 1,

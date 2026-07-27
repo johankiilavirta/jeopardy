@@ -17,6 +17,9 @@ const config: ExpoConfig = {
   },
   extra: {
     network: !!process.env.EXPO_PUBLIC_NETWORK,
+    // Online/relay play is intentionally absent from the first public build.
+    // Developers can opt it back in without deleting the existing relay path.
+    enableOnline: process.env.EXPO_PUBLIC_ENABLE_ONLINE === '1',
     relayHost: process.env.EXPO_PUBLIC_RELAY_HOST ?? DEFAULT_RELAY_HOST,
     room: process.env.EXPO_PUBLIC_ROOM,
     // Dev solo/auto-start: how many players to wait for before auto-starting
