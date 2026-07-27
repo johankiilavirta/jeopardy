@@ -1,5 +1,5 @@
 /**
- * Data exported from J!Archive is occasionally double-escaped, leaving
+ * Imported question data is occasionally double-escaped, leaving
  * literal `\\`, `\\"`, or JSON unicode sequences visible in the game UI.
  * Decode those display artifacts without changing the stored game data.
  */

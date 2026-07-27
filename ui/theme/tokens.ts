@@ -1,5 +1,5 @@
 /**
- * Design tokens for the Jest Trivia UI.
+ * Design tokens for the JE Trivia UI.
  *
  * Classic Round One broadcast aesthetic: near-black background, deep
  * broadcast-blue cells, gold condensed values, sharp corners, 2px black
@@ -16,7 +16,7 @@ export const colors = {
   bg: APP_BACKGROUND,
   /** Deep navy cell fill — softer than the raw broadcast blue (#02029A),
    *  which overwhelms on large surfaces. Used everywhere something is
-   *  "Jest Trivia blue": board cells, clue card, score blocks, menus. */
+   *  "JE Trivia blue": board cells, clue card, score blocks, menus. */
   cell: '#111A63',
   /** Dead-navy fill for burned (already-played) cells */
   cellBurned: '#0A102E',

@@ -104,7 +104,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       }
 
       // Cinematic fade only on the genuine forward entry into Final
-      // Jest Trivia. Undo/redo landing on a wager state from inside the final
+      // JE Trivia. Undo/redo landing on a wager state from inside the final
       // round (current clue is already the sentinel) swaps directly below.
       const enteringFinal =
         incoming.status === 'FINAL_WAGER' &&

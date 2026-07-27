@@ -9,8 +9,8 @@ afterEach(() => {
 describe('relayUrls', () => {
   it('uses the hosted relay as the installed-app default', () => {
     expect(relayUrls(DEFAULT_RELAY_HOST, '8787')).toEqual({
-      ws: 'wss://jest-trivia-relay-johan.fly.dev',
-      http: 'https://jest-trivia-relay-johan.fly.dev',
+      ws: 'wss://je-trivia-relay-johan.fly.dev',
+      http: 'https://je-trivia-relay-johan.fly.dev',
     });
   });
 

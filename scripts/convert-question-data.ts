@@ -4,7 +4,7 @@
  * Usage:
  *   1. Obtain TSV source files that you are authorized to use.
  *   2. Place per-season files (for example, season1.tsv) in scripts/raw/.
- *   3. Run: npx tsx scripts/convert-jeopardy-data.ts
+ *   3. Run: npx tsx scripts/convert-question-data.ts
  *
  * TSV columns (tab-separated):
  *   round | clue_value | daily_double_value | category | comments |
@@ -60,7 +60,7 @@ const R1_VALUE_TIERS = [200, 400, 600, 800, 1000];
 const R2_VALUE_TIERS = [400, 800, 1200, 1600, 2000];
 
 // Minimum complete clues required to keep a category. 4 instead of 5
-// because jwolle1 omits clues that were pure image links on J!Archive,
+// because the supplied data can omit clues that were pure image links,
 // leaving otherwise valid categories one clue short.
 const MIN_CLUES_PER_CATEGORY = 4;
 

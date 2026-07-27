@@ -6,7 +6,7 @@
  * registry has to be spelled out file-by-file. This script derives it from
  * whatever season files exist on disk, keeping the registry in lockstep
  * with the converted data (it also runs automatically at the end of
- * scripts/convert-jeopardy-data.ts).
+ * scripts/convert-question-data.ts).
  *
  * Usage:
  *   npm run generate-registry

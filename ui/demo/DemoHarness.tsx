@@ -13,7 +13,7 @@ import { JudgementTray } from '../components/JudgementTray';
 import { ExpandingClueOverlay } from '../components/ExpandingClueOverlay';
 import type { CellRect } from '../components/BoardCell';
 
-// Demo loop driven by the real reducer with real Jest Trivia pacing: tapping a
+// Demo loop driven by the real reducer with real JE Trivia pacing: tapping a
 // cell dispatches SELECT_CLUE; the clue is "read" for 5s (buzzing locked),
 // then the buzz window opens for 5s — tap the card to BUZZ. Buzzing summons
 // the keyboard and starts your personal 10s typing timer; swipe the keyboard

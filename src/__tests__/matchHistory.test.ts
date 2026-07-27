@@ -215,11 +215,11 @@ describe('recordMatch / loadMatchHistory', () => {
   });
 
   it('returns [] on corrupt JSON', async () => {
-    store.set('jest-trivia/match-history', 'not json{{{');
+    store.set('je-trivia/match-history', 'not json{{{');
     expect(await loadMatchHistory()).toEqual([]);
 
     // Non-array JSON is rejected too
-    store.set('jest-trivia/match-history', '{"nope":true}');
+    store.set('je-trivia/match-history', '{"nope":true}');
     expect(await loadMatchHistory()).toEqual([]);
   });
 

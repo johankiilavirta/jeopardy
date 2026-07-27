@@ -49,7 +49,7 @@ files. This repository does not download or provide third-party question
 archives. `npm run export-questions` then combines the generated season files
 into:
 
-`private-question-files/jest-trivia-games.json`
+`private-question-files/je-trivia-games.json`
 
 That directory is gitignored and is not referenced by the Metro application
 graph.

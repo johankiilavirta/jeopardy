@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Jest Trivia</string>
+	<string>JE Trivia</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>JETrivia</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
@@ -27,7 +27,8 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.anonymous.jesttrivia</string>
+				<string>jetrivia</string>
+				<string>com.johank.jetrivia</string>
 			</array>
 		</dict>
 	</array>
@@ -44,14 +45,14 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>JE Trivia uses Bluetooth to host and join games with nearby players when Wi-Fi is unavailable.</string>
 	<key>NSBonjourServices</key>
 	<array>
-		<string>_jesttrivia._tcp</string>
+		<string>_jetrivia._tcp</string>
 	</array>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Jest Trivia uses Bluetooth to host and join games with nearby players when Wi-Fi is unavailable.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Jest Trivia uses your local network to find and join games hosted by nearby players.</string>
+	<string>JE Trivia uses your local network to find and join games hosted by nearby players.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

@@ -18,11 +18,11 @@ import type { GameData } from '../data/gameLoader';
 import type { SessionMode } from './sessionProvider';
 import { legacyRoomId, normalizeEpoch, normalizeLeaderId } from './sessionAuthority';
 
-const SESSION_KEY = 'jest-trivia/session';
-const SNAPSHOT_STATE_KEY = 'jest-trivia/snapshot-state';
-const SNAPSHOT_BOARD_KEY = 'jest-trivia/snapshot-board';
-const PLAYER_NAME_KEY = 'jest-trivia/player-name';
-const CONNECTION_MODE_KEY = 'jest-trivia/connection-mode';
+const SESSION_KEY = 'je-trivia/session';
+const SNAPSHOT_STATE_KEY = 'je-trivia/snapshot-state';
+const SNAPSHOT_BOARD_KEY = 'je-trivia/snapshot-board';
+const PLAYER_NAME_KEY = 'je-trivia/player-name';
+const CONNECTION_MODE_KEY = 'je-trivia/connection-mode';
 
 /** The transport used by the next game created or joined from the menu. */
 export type PreferredConnectionMode = 'bluetooth' | 'online';

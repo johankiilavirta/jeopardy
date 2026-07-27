@@ -1,5 +1,5 @@
 {
-  "name": "jest-trivia",
+  "name": "je-trivia",
   "version": "1.0.0",
   "description": "",
   "main": "index.ts",
@@ -15,7 +15,7 @@
     "solo": "tsx scripts/dev-solo.ts",
     "ui": "tsx scripts/ui-lab.ts",
     "ui:long-clue": "npm run ui -- --screen=long-clue",
-    "convert-data": "tsx scripts/convert-jeopardy-data.ts",
+    "convert-data": "tsx scripts/convert-question-data.ts",
     "export-questions": "tsx scripts/export-question-file.ts",
     "generate-registry": "tsx scripts/generate-season-registry.ts",
     "ios:fast": "tsx scripts/test-ios.ts",
@@ -32,6 +32,7 @@
     "expo": "~56.0.9",
     "expo-blur": "~56.0.3",
     "expo-constants": "~56.0.18",
+    "expo-dev-client": "~56.0.24",
     "expo-file-system": "~56.0.7",
     "expo-font": "~56.0.5",
     "expo-linear-gradient": "~56.0.4",
@@ -44,6 +45,7 @@
     "react-native-web": "^0.21.2"
   },
   "devDependencies": {
+    "@expo/ngrok": "^4.1.3",
     "@types/node": "^25.9.1",
     "@types/react": "~19.2.2",
     "@types/ws": "^8.18.1",

@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-               BuildableName = "Jeopardy.app"
-               BlueprintName = "Jeopardy"
-               ReferencedContainer = "container:Jeopardy.xcodeproj">
+               BuildableName = "JE Trivia.app"
+               BlueprintName = "JETrivia"
+               ReferencedContainer = "container:JETrivia.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -33,9 +33,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "00E356ED1AD99517003FC87E"
-               BuildableName = "JeopardyTests.xctest"
-               BlueprintName = "JeopardyTests"
-               ReferencedContainer = "container:Jeopardy.xcodeproj">
+               BuildableName = "JETriviaTests.xctest"
+               BlueprintName = "JETriviaTests"
+               ReferencedContainer = "container:JETrivia.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -55,9 +55,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "Jeopardy.app"
-            BlueprintName = "Jeopardy"
-            ReferencedContainer = "container:Jeopardy.xcodeproj">
+            BuildableName = "JE Trivia.app"
+            BlueprintName = "JETrivia"
+            ReferencedContainer = "container:JETrivia.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -72,9 +72,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "Jeopardy.app"
-            BlueprintName = "Jeopardy"
-            ReferencedContainer = "container:Jeopardy.xcodeproj">
+            BuildableName = "JE Trivia.app"
+            BlueprintName = "JETrivia"
+            ReferencedContainer = "container:JETrivia.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
