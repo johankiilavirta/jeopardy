@@ -18,6 +18,12 @@ const colIds = (col: number) => [0, 1, 2, 3, 4].map(r => col * 5 + r);
 const names = (b: BoardDefinition) => b.categories.map(c => c.name);
 
 describe('getVisibleBoard', () => {
+  it('advances through reserve categories in single-column mode', () => {
+    expect(names(getVisibleBoard(sixCatBoard(), [], 1))).toEqual(['CAT0']);
+    expect(names(getVisibleBoard(sixCatBoard(), colIds(0), 1))).toEqual(['CAT1 *']);
+    expect(names(getVisibleBoard(sixCatBoard(), [...colIds(0), ...colIds(1)], 1))).toEqual(['CAT2 *']);
+  });
+
   it('shows the first 5 categories until a column clears', () => {
     expect(names(getVisibleBoard(sixCatBoard(), [], 5))).toEqual(['CAT0', 'CAT1', 'CAT2', 'CAT3', 'CAT4']);
   });

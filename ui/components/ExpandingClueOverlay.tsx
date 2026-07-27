@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, useWindowDimensions } from 'react-native';
 import type { CellRect } from './BoardCell';
 
@@ -17,6 +17,8 @@ interface ExpandingClueOverlayProps {
    *  and this is only used to aim the grow animation at the card's
    *  visual center. */
   bottomInset?: number | undefined;
+  /** Called once the card is full-size and safe for heavier child layout. */
+  onExpanded?: (() => void) | undefined;
   children: React.ReactNode;
 }
 
@@ -34,24 +36,37 @@ const CARD_WIDTH_FRACTION = 0.9;
  *
  * Mount this keyed by clue id so each pick replays the grow.
  */
-export function ExpandingClueOverlay({ fromRect, animate, bottomInset = 0, children }: ExpandingClueOverlayProps) {
+export function ExpandingClueOverlay({ fromRect, animate, bottomInset = 0, onExpanded, children }: ExpandingClueOverlayProps) {
   const { width: ow, height: oh } = useWindowDimensions();
   const willAnimate = animate && !!fromRect;
   const progress = useRef(new Animated.Value(willAnimate ? 0 : 1)).current;
+  const onExpandedRef = useRef(onExpanded);
+  onExpandedRef.current = onExpanded;
 
-  useEffect(() => {
-    if (willAnimate) {
-      progress.setValue(0);
-      requestAnimationFrame(() => {
-        Animated.timing(progress, {
-          toValue: 1,
-          duration: EXPAND_MS,
-          // Linear: the box grows at a constant rate, matching the broadcast.
-          easing: Easing.linear,
-          useNativeDriver: true,
-        }).start();
-      });
+  useLayoutEffect(() => {
+    if (!willAnimate) {
+      onExpandedRef.current?.();
+      return;
     }
+
+    progress.setValue(0);
+    let animation: Animated.CompositeAnimation | null = null;
+    const frame = requestAnimationFrame(() => {
+      animation = Animated.timing(progress, {
+        toValue: 1,
+        duration: EXPAND_MS,
+        // Linear: the box grows at a constant rate, matching the broadcast.
+        easing: Easing.linear,
+        useNativeDriver: true,
+      });
+      animation.start(({ finished }) => {
+        if (finished) onExpandedRef.current?.();
+      });
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      animation?.stop();
+    };
   }, [willAnimate, progress]);
 
   // Calculate start parameters synchronously.

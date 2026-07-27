@@ -108,7 +108,9 @@ export function createServer(
     switch (server.history.current.status) {
       case 'CLUE_READING': {
         const text = server.history.current.activeClue?.text ?? '';
-        const ms = readingMs ?? computeReadingMs(text);
+        const ms = readingMs != null
+          ? Math.round(readingMs * 0.7)
+          : computeReadingMs(text);
         phaseTimerId = timer.set(() => fireTimerAction({ type: 'BUZZER_OPEN' }), ms);
         break;
       }

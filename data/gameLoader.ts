@@ -119,6 +119,25 @@ export function getVisibleBoard(
     return { categories: full.categories };
   }
 
+  // Single-column play is a sequential category lane: as soon as its five
+  // clues are gone, advance to the next category. This cannot use the
+  // multi-column completion/backfill algorithm below, which intentionally
+  // anchors one reserve to each original visible slot.
+  if (showCount === 1) {
+    const burned = new Set(burnedClueIds);
+    const nextIndex = full.categories.findIndex(category =>
+      category.clues.some(clue => !burned.has(clue.id)),
+    );
+    const index = nextIndex >= 0 ? nextIndex : totalCats - 1;
+    const category = full.categories[index]!;
+    return {
+      categories: [{
+        ...category,
+        name: index > 0 ? `${category.name} *` : category.name,
+      }],
+    };
+  }
+
   const visible = full.categories.slice(0, showCount);
   const reserves = full.categories.slice(showCount);
   if (reserves.length === 0) return { categories: visible };

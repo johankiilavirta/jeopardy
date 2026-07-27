@@ -2,10 +2,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Animated, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { sendAction } from '../../src/client';
 import { createKeystrokeThrottle, type KeystrokeThrottle } from '../../src/answerThrottle';
-import { computeReadingMs } from '../../src/readingTime';
 import { getBuzz, judgedPlayerId } from '../../src/reducer';
 import type { Transport } from '../../src/transport';
-import type { Action, GameState, GameStatus } from '../../src/types';
+import type { Action, ActiveClue, GameState, GameStatus } from '../../src/types';
 import type { CellRect } from '../components/BoardCell';
 import { CategoryIntro } from '../components/CategoryIntro';
 import { ExpandingClueOverlay } from '../components/ExpandingClueOverlay';
@@ -18,6 +17,7 @@ import { toBoardDefinition, makeClueGetter, getVisibleBoard } from '../../data/g
 import type { GameData, RoundNumber } from '../../data/gameLoader';
 import type { MatchResult } from '../../app/matchHistory';
 import type { SessionMode } from '../../app/sessionProvider';
+import { triggerBuzzFeedback } from '../../app/buzzFeedback';
 import { InGameSettingsScreen } from '../screens/InGameSettingsScreen';
 import { ChooseClueScreen } from '../screens/ChooseClueScreen';
 import { ScoreChart } from '../components/ScoreChart';
@@ -47,8 +47,11 @@ interface NetworkedGameProps {
   onRelayPortChange?: (port: string) => void;
   /** Master toggle for in-game animations (set in the lobby). Default on. */
   animationsEnabled?: boolean;
+  /** Vibrate locally when the shared buzz window opens. */
+  vibrationEnabled?: boolean;
+  onVibrationChange?: (enabled: boolean) => void;
   onAnimationsChange?: (enabled: boolean) => void;
-  /** How many category columns to show (4, 5, or 6). Default 6. */
+  /** How many category columns to show (1, 4, 5, or 6). Default 6. */
   visibleCategories?: number | undefined;
   onVisibleCategoriesChange?: (n: number) => void;
   isResume?: boolean | undefined;
@@ -67,13 +70,18 @@ const PROPOSAL_INTRO = ['ESTHER', 'WILL', 'YOU', 'BE', 'MY', 'GIRLFRIEND?'] as c
 
 
 
-export function NetworkedGame({ transport, serverPeerId, initialState, boardData, remotePeerConnectionStatus = 'connected', localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, onBoardVisible, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume, recentMatches, sessionMode }: NetworkedGameProps) {
+export function NetworkedGame({ transport, serverPeerId, initialState, boardData, remotePeerConnectionStatus = 'connected', localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, onBoardVisible, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, vibrationEnabled = false, onVibrationChange, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume, recentMatches, sessionMode }: NetworkedGameProps) {
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
   const [gameState, setGameState] = useState<GameState | null>(initialState?.state ?? null);
   const [showLastClueButton, setShowLastClueButton] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [expandedClueId, setExpandedClueId] = useState<number | null>(null);
+  const [optimisticSelection, setOptimisticSelection] = useState<{
+    clue: ActiveClue;
+    rect: CellRect;
+  } | null>(null);
   const fadeToBlackAnim = useRef(new Animated.Value(0)).current;
   const currentVisibleStateRef = useRef<GameState | null>(initialState?.state ?? null);
   // The newest server state, always — the fade below holds the *visible*
@@ -81,6 +89,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // latest by then (an undo may have superseded the faded-to state).
   const latestStateRef = useRef<GameState | null>(initialState?.state ?? null);
   const fjFadeActiveRef = useRef(false);
+  const lastFeedbackStatusRef = useRef<GameStatus | null>(null);
 
   useEffect(() => {
     if (!initialState?.state) return;
@@ -162,6 +171,20 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     setGameState(incoming);
   }, [initialState?.state, fadeToBlackAnim]);
 
+  // Fire after BUZZ_OPEN has committed but before that frame is displayed,
+  // keeping the physical cue aligned with the lights' instant-on frame.
+  useLayoutEffect(() => {
+    const status = gameState?.status ?? null;
+    if (
+      status === 'BUZZ_OPEN' &&
+      lastFeedbackStatusRef.current !== 'BUZZ_OPEN' &&
+      vibrationEnabled
+    ) {
+      void triggerBuzzFeedback();
+    }
+    lastFeedbackStatusRef.current = status;
+  }, [gameState?.status, vibrationEnabled]);
+
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const playerId = initialState?.playerId ?? null;
   // Deadlines (epoch ms) for the current phase and shared answer window —
@@ -212,9 +235,9 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const recoveringLocally = localRecovery !== 'none';
 
   const dispatch = useCallback((action: Action) => {
-    if (recoveringLocally) return;
+    if (recoveringLocally || remotePeerConnectionStatus === 'remote-disconnected') return;
     sendAction(transport, serverPeerId, action as unknown as Record<string, unknown>);
-  }, [transport, serverPeerId, recoveringLocally]);
+  }, [transport, serverPeerId, recoveringLocally, remotePeerConnectionStatus]);
 
   // Dev shortcut: Y key burns all-but-one clue on the current board.
   const yKeyHandlerRef = useRef<(() => void) | null>(null);
@@ -240,8 +263,54 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   }
 
   const localBuzz = gameState && playerId ? getBuzz(gameState, playerId) : undefined;
+  const activeClueId = gameState?.activeClue?.id ?? null;
+  const [optimisticBuzzClueId, setOptimisticBuzzClueId] = useState<number | null>(null);
+  const optimisticBuzzing =
+    gameState?.status === 'BUZZ_OPEN' &&
+    activeClueId != null &&
+    optimisticBuzzClueId === activeClueId &&
+    !localBuzz;
+
+  // A local tap raises the keyboard immediately instead of waiting for a
+  // host round trip. The next authoritative state either confirms the buzz
+  // (localBuzz appears) or leaves BUZZ_OPEN/the clue, which rolls it back.
+  useEffect(() => {
+    if (optimisticBuzzClueId == null) return;
+    if (
+      localBuzz ||
+      gameState?.status !== 'BUZZ_OPEN' ||
+      activeClueId !== optimisticBuzzClueId
+    ) {
+      setOptimisticBuzzClueId(null);
+    }
+  }, [activeClueId, gameState?.status, localBuzz, optimisticBuzzClueId]);
+
+  const handleBuzz = useCallback(() => {
+    if (
+      playerId == null ||
+      activeClueId == null ||
+      gameState?.status !== 'BUZZ_OPEN' ||
+      localBuzz ||
+      optimisticBuzzing ||
+      recoveringLocally ||
+      remotePeerConnectionStatus === 'remote-disconnected'
+    ) return;
+    setOptimisticBuzzClueId(activeClueId);
+    dispatch({ type: 'BUZZ', playerId });
+  }, [
+    activeClueId,
+    dispatch,
+    gameState?.status,
+    localBuzz,
+    optimisticBuzzing,
+    playerId,
+    recoveringLocally,
+    remotePeerConnectionStatus,
+  ]);
+
   const localPassed = (gameState?.passedPlayerIds ?? []).includes(playerId ?? '');
   const typing =
+    optimisticBuzzing ||
     (gameState?.status === 'BUZZ_OPEN' && localBuzz && !localBuzz.locked) ||
     (gameState?.status === 'ANSWERING' && localBuzz && !localBuzz.locked) ||
     (gameState?.status === 'FINAL_WAGER' && localBuzz && !localBuzz.locked) ||
@@ -287,10 +356,42 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   );
 
   const handleSelectClue = useCallback((clueId: number, rect: CellRect) => {
-    if (!playerId) return;
+    if (
+      !playerId ||
+      recoveringLocally ||
+      remotePeerConnectionStatus === 'remote-disconnected'
+    ) return;
+    const clue = { ...getClue(clueId), failedPlayerIds: [] };
     selectedCellRef.current = { clueId, rect };
-    dispatch({ type: 'SELECT_CLUE', playerId, clue: getClue(clueId) });
-  }, [dispatch, playerId, getClue]);
+    setExpandedClueId(null);
+    setOptimisticSelection({ clue, rect });
+    dispatch({ type: 'SELECT_CLUE', playerId, clue });
+  }, [
+    dispatch,
+    getClue,
+    playerId,
+    recoveringLocally,
+    remotePeerConnectionStatus,
+  ]);
+
+  // Reconcile the instant local card with the authoritative host selection.
+  // A rejected selection disappears instead of leaving a phantom clue open.
+  useEffect(() => {
+    if (!optimisticSelection) return;
+    if (
+      gameState?.activeClue?.id === optimisticSelection.clue.id ||
+      gameState?.status !== 'CHOOSE_CLUE'
+    ) {
+      setOptimisticSelection(null);
+      return;
+    }
+    const rollback = setTimeout(() => setOptimisticSelection(null), 2000);
+    return () => clearTimeout(rollback);
+  }, [
+    gameState?.activeClue?.id,
+    gameState?.status,
+    optimisticSelection,
+  ]);
 
   const handleSkipClue = useCallback((clueId: number) => {
     if (playerId) dispatch({ type: 'SKIP_CLUE', playerId, clueId });
@@ -315,7 +416,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // sees. Server state stays authoritative: once the buzz locks (or the
   // clue changes) the echo is ignored and the synced answer shows.
   const [localEcho, setLocalEcho] = useState<{ clueId: number; text: string } | null>(null);
-  const activeClueId = gameState?.activeClue?.id ?? null;
   // Keystrokes go out through a throttle (leading + trailing, full text
   // each time) so slow transports aren't flooded with per-key SET_ANSWERs.
   // The refs keep the throttle's send closure current without recreating
@@ -366,6 +466,16 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   }
 
   const onStand = judgedPlayerId(gameState);
+  const displayedClue = gameState.activeClue ?? optimisticSelection?.clue ?? null;
+  const displayedClueRect =
+    displayedClue && selectedCellRef.current?.clueId === displayedClue.id
+      ? selectedCellRef.current.rect
+      : null;
+  const displayedClueWillAnimate =
+    !!displayedClue &&
+    animationsEnabled &&
+    displayedClue.id !== -1 &&
+    displayedClueRect != null;
 
   // Final Wager spans three statuses — WAGER, ANSWER, and the shared
   // REVEAL used for judging — but the clue keeps its sentinel id (-1)
@@ -374,7 +484,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // bar actually shows there is ChooseClueScreen's slide (visible for the
   // wager and judging, slid away during the answer), which reads seamlessly
   // because the bar's rail matches the backdrop color.
-  const isFinalClue = gameState.activeClue?.id === -1;
+  const isFinalClue = displayedClue?.id === -1;
 
   // Everyone's answer goes on the stand at once in Final Wager; normal
   // play judges one buzzer at a time in buzz order.
@@ -470,7 +580,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         if (!recoveringLocally) sendAction(transport, serverPeerId, { type: 'REDO' });
       }}
     >
-    <View style={styles.root}>
       <View style={styles.root} {...swipeUpResponder.panHandlers}>
         <Animated.View
           style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg, opacity: fadeToBlackAnim, zIndex: 9999 }]}
@@ -508,7 +617,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           </Pressable>
         )}
 
-        {gameState.activeClue && (
+        {displayedClue && (
           <View style={StyleSheet.absoluteFill}>
             {isFinalClue && (
               <View
@@ -520,22 +629,29 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               />
             )}
             <ExpandingClueOverlay
-              key={gameState.activeClue.id}
-              animate={animationsEnabled && gameState.activeClue.id !== -1}
+              key={displayedClue.id}
+              animate={animationsEnabled && displayedClue.id !== -1}
               bottomInset={PLAYER_BAR_HEIGHT}
-              fromRect={
-                selectedCellRef.current?.clueId === gameState.activeClue.id
-                  ? selectedCellRef.current.rect
-                  : null
-              }
+              onExpanded={() => setExpandedClueId(displayedClue.id)}
+              fromRect={displayedClueRect}
             >
             <ClueScreen
-              clue={gameState.activeClue}
+              clue={displayedClue}
+              contentVisible={
+                !displayedClueWillAnimate ||
+                expandedClueId === displayedClue.id
+              }
               isFinalWagerPhase={gameState.status === 'FINAL_WAGER'}
-              canBuzz={gameState.status === 'BUZZ_OPEN' && !localBuzz}
+              canBuzz={
+                gameState.status === 'BUZZ_OPEN' &&
+                !localBuzz &&
+                !optimisticBuzzing &&
+                !recoveringLocally &&
+                remotePeerConnectionStatus !== 'remote-disconnected'
+              }
               canPass={
                 !recoveringLocally &&
-                gameState.activeClue.id !== -1 &&
+                displayedClue.id !== -1 &&
                 !localPassed &&
                 !localBuzz?.locked &&
                 (
@@ -550,6 +666,13 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               }}
               lights={lights}
               showKeyboard={typing}
+              prepareKeyboard={
+                expandedClueId === displayedClue.id &&
+                (
+                  gameState.status === 'CLUE_READING' ||
+                  gameState.status === 'BUZZ_OPEN'
+                )
+              }
               keyboardType={gameState.status === 'FINAL_WAGER' ? 'number' : 'text'}
               inputPrefix={gameState.status === 'FINAL_WAGER' ? '$' : ''}
               placeholder={gameState.status === 'FINAL_WAGER' ? 'ENTER WAGER' : 'TYPE YOUR ANSWER'}
@@ -558,7 +681,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                 if (gameState.activeClue) dispatch({ type: 'SKIP_CLUE', playerId, clueId: gameState.activeClue.id });
               }}
               canJudge={false}
-              onBuzz={() => dispatch({ type: 'BUZZ', playerId })}
+              onBuzz={handleBuzz}
               answer={shownAnswer}
               onAnswerChange={handleAnswerChange}
               onLockAnswer={text => {
@@ -577,7 +700,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               }
               reveal={
                 gameState.status === 'REVEAL' || gameState.status === 'CLUE_EXPIRED'
-                  ? { correctAnswer: gameState.activeClue.answer }
+                  ? { correctAnswer: displayedClue.answer }
                   : undefined
               }
               onDismiss={
@@ -735,6 +858,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           onQuit={onLeave ?? (() => {})}
           animationsEnabled={animationsEnabled}
           onAnimationsChange={onAnimationsChange ?? (() => {})}
+          vibrationEnabled={vibrationEnabled}
+          onVibrationChange={onVibrationChange ?? (() => {})}
           visibleCategories={visibleCategories}
           onVisibleCategoriesChange={onVisibleCategoriesChange ?? (() => {})}
           showLastClueButton={showLastClueButton}
@@ -749,7 +874,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           sessionMode={sessionMode}
         />
       )}
-    </View>
     </UndoRedoSwipe>
   );
 }

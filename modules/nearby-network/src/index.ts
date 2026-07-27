@@ -28,5 +28,11 @@ export interface NearbyNetworkNativeModule extends NativeModule<NearbyNetworkEve
   stop(): void;
 }
 
+export interface BuzzHapticsNativeModule extends NativeModule {
+  /** Returns true when the custom Core Haptics pattern was started. */
+  buzz(): boolean;
+}
+
 export default requireOptionalNativeModule<NearbyNetworkNativeModule>('NearbyNetwork');
 export const BluetoothNetwork = requireOptionalNativeModule<NearbyNetworkNativeModule>('BluetoothNetwork');
+export const BuzzHaptics = requireOptionalNativeModule<BuzzHapticsNativeModule>('BuzzHaptics');

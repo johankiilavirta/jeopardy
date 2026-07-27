@@ -20,6 +20,8 @@ interface InGameSettingsScreenProps {
   onQuit: () => void;
   animationsEnabled: boolean;
   onAnimationsChange: (enabled: boolean) => void;
+  vibrationEnabled: boolean;
+  onVibrationChange: (enabled: boolean) => void;
   visibleCategories: number;
   onVisibleCategoriesChange: (n: number) => void;
   showLastClueButton: boolean;
@@ -213,7 +215,7 @@ export function InGameSettingsScreen(props: InGameSettingsScreenProps) {
         <View style={styles.content}>
           <Text style={styles.title}>SETTINGS</Text>
 
-          <View style={styles.twoCol}>
+          <View style={styles.threeCol}>
             {/* ── Left 40%: room summary, with quit anchored at the bottom ── */}
             <View style={styles.mainColLeft}>
               <View style={styles.connectionSummary}>
@@ -256,7 +258,7 @@ export function InGameSettingsScreen(props: InGameSettingsScreenProps) {
               <View style={styles.settingGroup}>
                 <Text style={styles.label}>CATEGORIES</Text>
                 <View style={styles.catCountRow}>
-                  {([4, 5, 6] as const).map(n => {
+                  {([1, 4, 5, 6] as const).map(n => {
                     const active = props.visibleCategories === n;
                     return (
                       <Pressable
@@ -283,6 +285,23 @@ export function InGameSettingsScreen(props: InGameSettingsScreenProps) {
                 >
                   <Text style={[styles.toggleText, !props.showLastClueButton && styles.toggleTextOff]}>
                     {props.showLastClueButton ? 'SHOWN' : 'HIDDEN'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {/* ── Third column: buzz accessibility ─────────────────────── */}
+            <View style={styles.mainColBuzz}>
+              <View style={styles.settingGroup}>
+                <Text style={styles.label}>VIBRATION</Text>
+                <Pressable
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: props.vibrationEnabled }}
+                  style={styles.toggleBox}
+                  onPress={() => props.onVibrationChange(!props.vibrationEnabled)}
+                >
+                  <Text style={[styles.toggleText, !props.vibrationEnabled && styles.toggleTextOff]}>
+                    {props.vibrationEnabled ? 'ON' : 'OFF'}
                   </Text>
                 </Pressable>
               </View>
@@ -369,11 +388,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 28,
   },
-  twoCol: {
+  threeCol: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'stretch',
-    gap: 36,
+    gap: 24,
   },
   mainColLeft: {
     flex: 2,
@@ -383,6 +402,10 @@ const styles = StyleSheet.create({
   mainColRight: {
     flex: 3,
     justifyContent: 'space-between',
+    paddingBottom: 4,
+  },
+  mainColBuzz: {
+    flex: 1.5,
     paddingBottom: 4,
   },
   settingGroup: {

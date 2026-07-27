@@ -23,6 +23,7 @@ const SNAPSHOT_STATE_KEY = 'je-trivia/snapshot-state';
 const SNAPSHOT_BOARD_KEY = 'je-trivia/snapshot-board';
 const PLAYER_NAME_KEY = 'je-trivia/player-name';
 const CONNECTION_MODE_KEY = 'je-trivia/connection-mode';
+const VIBRATION_ENABLED_KEY = 'je-trivia/vibration-enabled';
 
 /** The transport used by the next game created or joined from the menu. */
 export type PreferredConnectionMode = 'bluetooth' | 'online';
@@ -89,6 +90,23 @@ export async function loadPreferredConnectionMode(): Promise<PreferredConnection
   } catch {
     // The first version stored an unversioned string. Treat it as unset so
     // existing installs pick up the current default once.
+    return null;
+  }
+}
+
+// --- Local vibration preference ---
+
+export async function saveVibrationEnabled(enabled: boolean): Promise<void> {
+  try { await AsyncStorage.setItem(VIBRATION_ENABLED_KEY, JSON.stringify({ enabled })); } catch {}
+}
+
+export async function loadVibrationEnabled(): Promise<boolean | null> {
+  try {
+    const raw = await AsyncStorage.getItem(VIBRATION_ENABLED_KEY);
+    if (!raw) return null;
+    const { enabled } = JSON.parse(raw) as { enabled?: unknown };
+    return typeof enabled === 'boolean' ? enabled : null;
+  } catch {
     return null;
   }
 }

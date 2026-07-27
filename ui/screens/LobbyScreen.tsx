@@ -53,10 +53,13 @@ interface LobbyScreenProps {
   resumeBoard?: GameData | null;
   buzzerDelay?: string;
   onBuzzerDelayChange?: (delay: string) => void;
+  /** Vibrate when buzzing opens. Default off. */
+  vibrationEnabled?: boolean | undefined;
+  onVibrationChange?: (enabled: boolean) => void;
   /** Master toggle for in-game animations (default on). */
   animationsEnabled?: boolean;
   onAnimationsChange?: (enabled: boolean) => void;
-  /** How many category columns to show (4, 5, or 6). Default 6. */
+  /** How many category columns to show (1, 4, 5, or 6). Default 6. */
   visibleCategories?: number | undefined;
   onVisibleCategoriesChange?: ((n: number) => void) | undefined;
   /** Host calls this to remove a player from the lobby. */
@@ -1278,9 +1281,21 @@ export function LobbyScreen(props: LobbyScreenProps) {
                           </Text>
                         </Pressable>
 
+                        <Text style={[styles.label, styles.stackedLabel]}>VIBRATION</Text>
+                        <Pressable
+                          accessibilityRole="switch"
+                          accessibilityState={{ checked: !!props.vibrationEnabled }}
+                          style={styles.toggleBox}
+                          onPress={() => props.onVibrationChange?.(!props.vibrationEnabled)}
+                        >
+                          <Text style={[styles.toggleText, !props.vibrationEnabled && styles.toggleTextOff]}>
+                            {props.vibrationEnabled ? 'ON' : 'OFF'}
+                          </Text>
+                        </Pressable>
+
                         <Text style={[styles.label, styles.stackedLabel]}>CATEGORIES</Text>
                         <View style={styles.catCountRow}>
-                          {([4, 5, 6] as const).map(n => {
+                          {([1, 4, 5, 6] as const).map(n => {
                             const active = (props.visibleCategories ?? 6) === n;
                             return (
                               <Pressable
