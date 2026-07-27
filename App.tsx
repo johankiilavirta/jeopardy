@@ -45,7 +45,7 @@ import {
   type SavedSnapshot,
   type PreferredConnectionMode,
 } from './app/sessionStore';
-import { buildGameKey, computeWinnerNames, deleteMatchHistoryEntry, isOngoingMatch, loadMatchHistory, matchBelongsToPlayer, recordMatch, recordOngoingMatch, type MatchResult } from './app/matchHistory';
+import { buildGameKey, computeWinnerNames, isOngoingMatch, loadMatchHistory, matchBelongsToPlayer, recordMatch, recordOngoingMatch, type MatchResult } from './app/matchHistory';
 import { SettingsScreen } from './ui/screens/SettingsScreen';
 import { MatchHistoryScreen } from './ui/screens/MatchHistoryScreen';
 import { colors } from './ui/theme/tokens';
@@ -1317,10 +1317,6 @@ export default function App() {
       setScreen({ type: 'menu' });
     });
   }, [transitionAnim]);
-  const handleDeleteMatch = useCallback((id: string) => {
-    void deleteMatchHistoryEntry(id).then(setRecentMatches);
-  }, []);
-
   /** Deliberately walk away from the current room (also cancels a pending
    *  reconnect). The snapshot survives — that's what RESUME GAME is for. */
   const handleLeave = useCallback(() => {
@@ -1594,7 +1590,6 @@ export default function App() {
             historyReady={matchHistoryLoaded}
             onBack={handleHistoryBack}
             onResumeMatch={handleResumeMatch}
-            onDeleteMatch={handleDeleteMatch}
           />
         );
       case 'demo':

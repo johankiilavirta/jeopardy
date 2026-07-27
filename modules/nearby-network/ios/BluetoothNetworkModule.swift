@@ -318,9 +318,12 @@ public final class BluetoothNetworkModule: Module {
     } else {
       maxLength = 182
     }
-    // Use the full negotiated MTU (typically ~512 bytes): a game snapshot
-    // then fits in a handful of chunks instead of dozens.
-    return max(1, maxLength - headerBytes)
+    // Some iOS-on-Mac centrals acknowledge a large notification MTU but drop
+    // the first host-to-client notifications at that size. Keep every control
+    // packet within the conservative size that works across iPhone and Mac;
+    // these lobby/heartbeat messages are small, and reliability matters more
+    // than the marginal snapshot throughput gain.
+    return max(1, min(160, maxLength - headerBytes))
   }
 
   /** Drop all buffered traffic for a peer that just disconnected: queued
