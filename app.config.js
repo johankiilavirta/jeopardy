@@ -1,11 +1,10 @@
-import type { ExpoConfig } from 'expo/config';
-import appJson from './app.json';
+const appJson = require('./app.json');
 
-// Expo evaluates this config through CommonJS, so keep the packaged default
-// self-contained rather than importing the app's TypeScript helper.
+// Keep the packaged default self-contained so local and cloud builds use the
+// same relay endpoint without loading app code.
 const DEFAULT_RELAY_HOST = 'wss://je-trivia-relay-johan.fly.dev';
 
-const config: ExpoConfig = {
+module.exports = {
   ...appJson.expo,
   ios: {
     bundleIdentifier: 'com.johank.jetrivia',
@@ -16,6 +15,9 @@ const config: ExpoConfig = {
     },
   },
   extra: {
+    eas: {
+      projectId: 'f380b3c9-8e1e-4d18-a86e-739a8a553ceb',
+    },
     network: !!process.env.EXPO_PUBLIC_NETWORK,
     // Online/relay play is intentionally absent from the first public build.
     // Developers can opt it back in without deleting the existing relay path.
@@ -31,5 +33,3 @@ const config: ExpoConfig = {
     uiLabScreen: process.env.EXPO_PUBLIC_UI_LAB_SCREEN ?? 'board',
   },
 };
-
-export default config;
