@@ -22,6 +22,12 @@ export interface GameServer {
 
 export interface ServerOptions {
   timer?: Timer;
+  /** Peer id of the room host. Only this peer may control clue narration. */
+  hostPeerId?: string;
+  /** Safety fallback if a narrating host disappears without finishing. */
+  narrationMaxMs?: number;
+  /** Hold every regular clue for host-device narration. */
+  narrationEnabled?: boolean;
   /** Reading lockout: time before the buzz window opens */
   readingMs?: number;
   /** How long the buzz window stays open */
@@ -62,6 +68,9 @@ export function createServer(
 ): GameServer {
   const {
     timer = defaultTimer,
+    hostPeerId,
+    narrationMaxMs = 60000,
+    narrationEnabled: initialNarrationEnabled = false,
     readingMs,          // undefined → dynamic per-clue computation
     buzzerMs = 20000,
     dismissMs = 5000,
@@ -81,6 +90,8 @@ export function createServer(
   };
 
   let phaseTimerId: unknown = null;
+  let narratedClueId: number | null = null;
+  let narrationEnabled = initialNarrationEnabled;
   /** Wall-clock time when the current buzz window opened (Date.now()). */
   let buzzWindowOpenAt: number | null = null;
 
@@ -105,8 +116,17 @@ export function createServer(
    *  never reset a running window. At most one phase timer is pending. */
   function armPhaseTimer(): void {
     clearPhaseTimer();
+    narratedClueId = null;
     switch (server.history.current.status) {
       case 'CLUE_READING': {
+        if (narrationEnabled) {
+          narratedClueId = server.history.current.activeClue?.id ?? null;
+          phaseTimerId = timer.set(
+            () => fireTimerAction({ type: 'BUZZER_OPEN' }),
+            narrationMaxMs,
+          );
+          break;
+        }
         const text = server.history.current.activeClue?.text ?? '';
         const ms = readingMs != null
           ? Math.round(readingMs * 0.7)
@@ -253,10 +273,68 @@ export function createServer(
   });
 
   transport.onMessage((peerId, message) => {
-    let parsed: { type: string };
+    let parsed: { type: string; clueId?: unknown; enabled?: unknown };
     try {
       parsed = JSON.parse(message);
     } catch {
+      return;
+    }
+
+    if (parsed.type === 'SET_NARRATION_ENABLED') {
+      if (hostPeerId == null || peerId !== hostPeerId || typeof parsed.enabled !== 'boolean') return;
+      narrationEnabled = parsed.enabled;
+      if (server.history.current.status === 'CLUE_READING') {
+        if (narrationEnabled) {
+          clearPhaseTimer();
+          narratedClueId = server.history.current.activeClue?.id ?? null;
+          phaseTimerId = timer.set(
+            () => fireTimerAction({ type: 'BUZZER_OPEN' }),
+            narrationMaxMs,
+          );
+        } else if (narratedClueId != null) {
+          clearPhaseTimer();
+          narratedClueId = null;
+          applyAction({ type: 'BUZZER_OPEN' });
+        }
+      }
+      return;
+    }
+
+    // Narration is a host-device concern rather than a player action. Once
+    // speech starts, replace the estimated reading timer with a generous
+    // safety timeout; the buzz window normally opens on NARRATION_FINISHED.
+    if (parsed.type === 'NARRATION_STARTED') {
+      const clueId = typeof parsed.clueId === 'number' ? parsed.clueId : null;
+      if (
+        hostPeerId != null &&
+        peerId === hostPeerId &&
+        server.history.current.status === 'CLUE_READING' &&
+        server.history.current.activeClue?.id === clueId
+      ) {
+        narrationEnabled = true;
+        clearPhaseTimer();
+        narratedClueId = clueId;
+        phaseTimerId = timer.set(
+          () => fireTimerAction({ type: 'BUZZER_OPEN' }),
+          narrationMaxMs,
+        );
+      }
+      return;
+    }
+
+    if (parsed.type === 'NARRATION_FINISHED') {
+      const clueId = typeof parsed.clueId === 'number' ? parsed.clueId : null;
+      if (
+        hostPeerId != null &&
+        peerId === hostPeerId &&
+        server.history.current.status === 'CLUE_READING' &&
+        narratedClueId === clueId &&
+        server.history.current.activeClue?.id === clueId
+      ) {
+        clearPhaseTimer();
+        narratedClueId = null;
+        applyAction({ type: 'BUZZER_OPEN' });
+      }
       return;
     }
 

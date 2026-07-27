@@ -79,6 +79,9 @@ interface MainMenuScreenProps {
   /** Vibrate when buzzing opens. Default off. */
   vibrationEnabled?: boolean | undefined;
   onVibrationChange?: ((enabled: boolean) => void) | undefined;
+  /** Read clues aloud on this device when it hosts a game. */
+  textToSpeechEnabled?: boolean | undefined;
+  onTextToSpeechChange?: ((enabled: boolean) => void) | undefined;
 }
 
 export function MainMenuScreen(props: MainMenuScreenProps) {
@@ -460,6 +463,20 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
                     >
                       <Text style={[styles.toggleText, !props.vibrationEnabled && styles.toggleTextOff]}>
                         {props.vibrationEnabled ? 'ON' : 'OFF'}
+                      </Text>
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.settingGroup}>
+                    <Text style={styles.label}>TEXT TO SPEECH</Text>
+                    <Pressable
+                      accessibilityRole="switch"
+                      accessibilityState={{ checked: !!props.textToSpeechEnabled }}
+                      style={styles.toggleBox}
+                      onPress={() => props.onTextToSpeechChange?.(!props.textToSpeechEnabled)}
+                    >
+                      <Text style={[styles.toggleText, !props.textToSpeechEnabled && styles.toggleTextOff]}>
+                        {props.textToSpeechEnabled ? 'ON' : 'OFF'}
                       </Text>
                     </Pressable>
                   </View>

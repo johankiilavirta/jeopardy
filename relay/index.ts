@@ -379,7 +379,9 @@ function startServer(portIndex: number): void {
             gameData,
             resumeState,
             Number.isFinite(buzzerDelay) && buzzerDelay >= 0 ? buzzerDelay : undefined,
+            msg.textToSpeechEnabled === true,
           );
+          serverOptions.hostPeerId = room.hostPeerId;
 
           room.phase = 'playing';
           room.gameData = gameData ?? null;

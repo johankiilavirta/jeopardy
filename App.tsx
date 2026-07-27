@@ -34,11 +34,13 @@ import {
   loadPlayerName,
   loadPreferredConnectionMode,
   loadVibrationEnabled,
+  loadTextToSpeechEnabled,
   loadSession,
   loadSnapshot,
   savePlayerName,
   savePreferredConnectionMode,
   saveVibrationEnabled,
+  saveTextToSpeechEnabled,
   saveInitialSnapshot,
   saveSession,
   saveSnapshotBoard,
@@ -227,6 +229,8 @@ export default function App() {
   const [buzzerDelay, setBuzzerDelay] = useState('-1');
   const [vibrationEnabled, setVibrationEnabled] = useState(false);
   const vibrationPreferenceChangedRef = useRef(false);
+  const [textToSpeechEnabled, setTextToSpeechEnabled] = useState(false);
+  const textToSpeechPreferenceChangedRef = useRef(false);
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
   const [visibleCategories, setVisibleCategories] = useState(6);
   const [lobbyPlayers, setLobbyPlayers] = useState<LobbyPlayer[]>([]);
@@ -786,6 +790,7 @@ export default function App() {
 
     transport.onError((err) => {
       if (isCancelled()) return;
+      console.warn(`Session ${action === 'create' ? 'create' : 'join'} failed in ${mode} mode: ${err}`);
       if (abandonKeptMountedRecovery(err)) return;
       if (screenRef.current.type === 'lobby' && !screenRef.current.isHost) {
         leaveRef.current();
@@ -820,6 +825,7 @@ export default function App() {
     const timeout = setTimeout(() => {
       if (isCancelled() || roomSettled) return;
       const err = connectionTimeoutMessage(mode);
+      console.warn(`Session ${action === 'create' ? 'create' : 'join'} timed out in ${mode} mode`);
       if (abandonKeptMountedRecovery(err)) return;
       if (action !== 'create') {
         setJoinSearching(false);
@@ -879,6 +885,7 @@ export default function App() {
           setLobbyError(null);
           if (options.autoStart && pendingResumeRef.current) {
             transport.startGame({
+              textToSpeechEnabled,
               resume: {
                 state: pendingResumeRef.current.state,
                 board: pendingResumeRef.current.board,
@@ -1054,7 +1061,7 @@ export default function App() {
         transitionAnim.setValue(0);
       }
     });
-  }, [relayHost, relayPort, playerName, disconnect, cancelReconnect, refreshResumeAvailable, handleStateUpdate, handleSocketLost, handlePeerDisconnected]);
+  }, [relayHost, relayPort, playerName, textToSpeechEnabled, disconnect, cancelReconnect, refreshResumeAvailable, handleStateUpdate, handleSocketLost, handlePeerDisconnected]);
 
   const promoteLocalSessionToHost = useCallback((session: SavedSession) => {
     // A former GUEST takes over as a reversible CANDIDATE under the dead
@@ -1133,7 +1140,10 @@ export default function App() {
           const myPeerId = myPeerIdRef.current;
           const me = players.find(p => p.peerId === myPeerId);
           if (players.length >= DEV_PLAYERS && me?.isHost) {
-            transport.startGame(DEV_GAME != null ? { gameId: DEV_GAME } : undefined);
+            transport.startGame({
+              ...(DEV_GAME != null ? { gameId: DEV_GAME } : {}),
+              textToSpeechEnabled,
+            });
           }
           break;
         }
@@ -1165,7 +1175,7 @@ export default function App() {
       transport.joinRoom(DEV_ROOM, playerName);
       setScreen({ type: 'lobby', roomCode: DEV_ROOM, isHost: false });
     });
-  }, []);
+  }, [textToSpeechEnabled]);
 
   /** Lobby finished fading out — mount the game screen waiting behind it. */
   const handleLobbyFadeOutDone = useCallback(() => {
@@ -1240,6 +1250,12 @@ export default function App() {
     // Enabling doubles as a hardware check, so players know before the next
     // clue whether their phone is actually producing feedback.
     if (enabled) void triggerBuzzFeedback();
+  }, []);
+
+  const handleTextToSpeechChange = useCallback((enabled: boolean) => {
+    textToSpeechPreferenceChangedRef.current = true;
+    setTextToSpeechEnabled(enabled);
+    if (PERSISTENCE_ENABLED) void saveTextToSpeechEnabled(enabled);
   }, []);
 
   const handleJoinNav = useCallback((sourceRect?: CellRect) => {
@@ -1373,6 +1389,7 @@ export default function App() {
     if (resume) {
       transportRef.current?.startGame({
         ...(delay != null ? { buzzerDelay: delay } : {}),
+        textToSpeechEnabled,
         resume: { state: resume.state, board: resume.board },
       });
       return;
@@ -1382,8 +1399,9 @@ export default function App() {
     transportRef.current?.startGame({
       ...(id != null ? { gameId: id } : {}),
       ...(delay != null ? { buzzerDelay: delay } : {}),
+      textToSpeechEnabled,
     });
-  }, [buzzerDelay, gameId]);
+  }, [buzzerDelay, gameId, textToSpeechEnabled]);
 
   const handleGameLeave = handleLeave;
 
@@ -1419,12 +1437,13 @@ export default function App() {
     if (!PERSISTENCE_ENABLED || UI_LAB) return;
     let stale = false;
     void (async () => {
-      const [name, session, snapshot, preferredMode, savedVibration, library] = await Promise.all([
+      const [name, session, snapshot, preferredMode, savedVibration, savedTextToSpeech, library] = await Promise.all([
         loadPlayerName(),
         loadSession(),
         loadSnapshot(),
         loadPreferredConnectionMode(),
         loadVibrationEnabled(),
+        loadTextToSpeechEnabled(),
         initializeQuestionLibrary(),
       ]);
       if (stale) return;
@@ -1446,6 +1465,9 @@ export default function App() {
       // hydration was still running.
       if (savedVibration != null && !vibrationPreferenceChangedRef.current) {
         setVibrationEnabled(savedVibration);
+      }
+      if (savedTextToSpeech != null && !textToSpeechPreferenceChangedRef.current) {
+        setTextToSpeechEnabled(savedTextToSpeech);
       }
       // Relaunch: our snapshot is stale, so join-first rather than
       // insta-promoting a candidate that could clobber the live game.
@@ -1501,6 +1523,8 @@ export default function App() {
             onImportQuestions={handleImportQuestions}
             vibrationEnabled={vibrationEnabled}
             onVibrationChange={handleVibrationChange}
+            textToSpeechEnabled={textToSpeechEnabled}
+            onTextToSpeechChange={handleTextToSpeechChange}
           />
         );
       case 'reconnecting':
@@ -1560,6 +1584,8 @@ export default function App() {
             onBuzzerDelayChange={setBuzzerDelay}
             vibrationEnabled={vibrationEnabled}
             onVibrationChange={handleVibrationChange}
+            textToSpeechEnabled={textToSpeechEnabled}
+            onTextToSpeechChange={handleTextToSpeechChange}
             animationsEnabled={animationsEnabled}
             onAnimationsChange={setAnimationsEnabled}
             visibleCategories={visibleCategories}
@@ -1601,6 +1627,8 @@ export default function App() {
             onAnimationsChange={setAnimationsEnabled}
             vibrationEnabled={vibrationEnabled}
             onVibrationChange={handleVibrationChange}
+            textToSpeechEnabled={textToSpeechEnabled}
+            onTextToSpeechChange={handleTextToSpeechChange}
             visibleCategories={visibleCategories}
             onVisibleCategoriesChange={setVisibleCategories}
             isResume={screen.isResume}

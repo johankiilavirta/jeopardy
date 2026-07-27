@@ -208,6 +208,56 @@ describe('GameServer', () => {
     expect(server.history.current.status).toBe('CLUE_EXPIRED');
   });
 
+  it('holds the buzzer for host narration and opens when speech finishes', () => {
+    const { timer, pendingMs } = createMockTimer();
+    const host = new MockTransport('host');
+    const server = createServer(host, ['Alice', 'Bob'], {
+      timer,
+      hostPeerId: 'player1',
+      narrationMaxMs: 1234,
+      narrationEnabled: true,
+    });
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    p1.send('host', selectClueMsg);
+    expect(pendingMs()).toEqual([1234]);
+    p1.send('host', JSON.stringify({ type: 'NARRATION_STARTED', clueId: 1 }));
+
+    expect(server.history.current.status).toBe('CLUE_READING');
+    expect(pendingMs()).toEqual([1234]);
+
+    // A guest or a stale callback cannot release the reading lockout.
+    p2.send('host', JSON.stringify({ type: 'NARRATION_FINISHED', clueId: 1 }));
+    p1.send('host', JSON.stringify({ type: 'NARRATION_FINISHED', clueId: 99 }));
+    expect(server.history.current.status).toBe('CLUE_READING');
+
+    p1.send('host', JSON.stringify({ type: 'NARRATION_FINISHED', clueId: 1 }));
+    expect(server.history.current.status).toBe('BUZZ_OPEN');
+    expect(pendingMs()).toEqual([20000]);
+  });
+
+  it('uses a safety timeout if host narration never reports completion', () => {
+    const { timer, pendingMs, fire } = createMockTimer();
+    const host = new MockTransport('host');
+    const server = createServer(host, ['Alice', 'Bob'], {
+      timer,
+      hostPeerId: 'player1',
+      narrationMaxMs: 4321,
+    });
+    const p1 = new MockTransport('player1');
+    MockTransport.link(host, p1);
+
+    p1.send('host', selectClueMsg);
+    p1.send('host', JSON.stringify({ type: 'NARRATION_STARTED', clueId: 1 }));
+    expect(pendingMs()).toEqual([4321]);
+
+    fire();
+    expect(server.history.current.status).toBe('BUZZ_OPEN');
+  });
+
   it('resolves two player passes immediately, then dismisses after three seconds', () => {
     const { timer, pendingMs, fire } = createMockTimer();
     const host = new MockTransport('host');

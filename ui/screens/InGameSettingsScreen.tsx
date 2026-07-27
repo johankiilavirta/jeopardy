@@ -22,6 +22,9 @@ interface InGameSettingsScreenProps {
   onAnimationsChange: (enabled: boolean) => void;
   vibrationEnabled: boolean;
   onVibrationChange: (enabled: boolean) => void;
+  textToSpeechEnabled: boolean;
+  onTextToSpeechChange: (enabled: boolean) => void;
+  showTextToSpeech?: boolean;
   visibleCategories: number;
   onVisibleCategoriesChange: (n: number) => void;
   showLastClueButton: boolean;
@@ -305,6 +308,21 @@ export function InGameSettingsScreen(props: InGameSettingsScreenProps) {
                   </Text>
                 </Pressable>
               </View>
+              {props.showTextToSpeech && (
+                <View style={styles.settingGroup}>
+                  <Text style={styles.label}>TEXT TO SPEECH</Text>
+                  <Pressable
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: props.textToSpeechEnabled }}
+                    style={styles.toggleBox}
+                    onPress={() => props.onTextToSpeechChange(!props.textToSpeechEnabled)}
+                  >
+                    <Text style={[styles.toggleText, !props.textToSpeechEnabled && styles.toggleTextOff]}>
+                      {props.textToSpeechEnabled ? 'ON' : 'OFF'}
+                    </Text>
+                  </Pressable>
+                </View>
+              )}
             </View>
           </View>
         </View>
