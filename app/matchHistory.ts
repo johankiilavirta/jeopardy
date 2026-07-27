@@ -32,6 +32,9 @@ export interface MatchPlayerResult {
 export interface MatchResult {
   /** Stable per-game instance id — recording twice upserts. */
   id: string;
+  /** Identity of this actual play-through. It survives reconnects and host
+   *  migration; replaying the same board creates a different instance. */
+  matchInstanceId?: string;
   /** Same board and player combination, useful for identifying replays. */
   gameKey?: string;
   /** Player whose device wrote this record. Optional for legacy entries. */
@@ -84,6 +87,10 @@ function gameKeyForMatch(match: MatchResult): string {
   return match.gameKey ?? buildGameKey(match.gameNumber, match.players, match.localPlayerName);
 }
 
+function instanceIdForMatch(match: MatchResult): string {
+  return match.matchInstanceId ?? match.id.replace(/\|(ongoing|completed)$/, '');
+}
+
 /** New records have an explicit owner. Legacy records belong to a username
  * only when that name appears in their player list. */
 export function matchBelongsToPlayer(match: MatchResult, playerName: string): boolean {
@@ -122,9 +129,10 @@ export function recordMatch(match: MatchResult): Promise<MatchResult[]> {
   historyWriteQueue = historyWriteQueue.then(async () => {
     const history = await loadMatchHistory();
     const completed = !isOngoingMatch(match);
-    const gameKey = gameKeyForMatch(match);
+    const instanceId = instanceIdForMatch(match);
     const updated = [match, ...history.filter(item =>
-      item.id !== match.id && !(completed && isOngoingMatch(item) && gameKeyForMatch(item) === gameKey),
+      item.id !== match.id &&
+      !(completed && isOngoingMatch(item) && instanceIdForMatch(item) === instanceId),
     )].slice(0, MAX_MATCHES);
     try {
       await AsyncStorage.setItem(MATCH_HISTORY_KEY, JSON.stringify(updated));
@@ -138,9 +146,11 @@ export function recordMatch(match: MatchResult): Promise<MatchResult[]> {
  * the same board/player key. The caller gives each game instance its own id. */
 export async function recordOngoingMatch(match: MatchResult): Promise<MatchResult[]> {
   const gameKey = gameKeyForMatch(match);
+  const matchInstanceId = instanceIdForMatch(match);
   const ongoing = {
     ...match,
-    id: `${gameKey}|ongoing`,
+    id: `${matchInstanceId}|ongoing`,
+    matchInstanceId,
     gameKey,
     status: 'ongoing',
     updatedAt: Date.now(),
@@ -149,7 +159,7 @@ export async function recordOngoingMatch(match: MatchResult): Promise<MatchResul
   historyWriteQueue = historyWriteQueue.then(async () => {
     const history = await loadMatchHistory();
     const updated = [ongoing, ...history.filter(item =>
-      !isOngoingMatch(item) || gameKeyForMatch(item) !== gameKey,
+      !isOngoingMatch(item) || instanceIdForMatch(item) !== matchInstanceId,
     )].slice(0, MAX_MATCHES);
     try {
       await AsyncStorage.setItem(MATCH_HISTORY_KEY, JSON.stringify(updated));
@@ -161,11 +171,11 @@ export async function recordOngoingMatch(match: MatchResult): Promise<MatchResul
 
 /** Remove an abandoned/no-progress ongoing entry without touching completed
  * matches or other resumable games. */
-export function removeOngoingMatch(gameKey: string): Promise<MatchResult[]> {
+export function removeOngoingMatch(matchInstanceId: string): Promise<MatchResult[]> {
   historyWriteQueue = historyWriteQueue.then(async () => {
     const history = await loadMatchHistory();
     const updated = history.filter(item =>
-      !isOngoingMatch(item) || gameKeyForMatch(item) !== gameKey,
+      !isOngoingMatch(item) || instanceIdForMatch(item) !== matchInstanceId,
     );
     try {
       await AsyncStorage.setItem(MATCH_HISTORY_KEY, JSON.stringify(updated));

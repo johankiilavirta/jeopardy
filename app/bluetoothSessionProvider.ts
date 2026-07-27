@@ -53,9 +53,9 @@ type BluetoothControl = {
 };
 
 function pickGame(gameId?: number): GameData | null {
-  if (gameId) return loadGame(gameId);
+  if (gameId != null) return loadGame(gameId);
   const index = loadGameIndex();
-  if (index.totalGames === 0) return null;
+  if (index.totalGames === 0) return loadGame(0);
   for (let i = 0; i < 5; i++) {
     const game = loadGame(getRandomGameNumber(index.totalGames));
     if (game) return game;

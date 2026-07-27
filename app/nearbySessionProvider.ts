@@ -41,12 +41,11 @@ type NearbyControl = {
   sentAt?: number;
 };
 
-/** A specific game by number, else a random real game, else null (demo
- *  board fallback when no season data is bundled). */
+/** A specific game by number, else a random imported game, else Game 0. */
 function pickGame(gameId?: number): GameData | null {
-  if (gameId) return loadGame(gameId);
+  if (gameId != null) return loadGame(gameId);
   const index = loadGameIndex();
-  if (index.totalGames === 0) return null;
+  if (index.totalGames === 0) return loadGame(0);
   for (let i = 0; i < 5; i++) {
     const game = loadGame(getRandomGameNumber(index.totalGames));
     if (game) return game;

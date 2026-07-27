@@ -37,6 +37,7 @@ import {
   loadSnapshot,
   savePlayerName,
   savePreferredConnectionMode,
+  saveInitialSnapshot,
   saveSession,
   saveSnapshotBoard,
   saveSnapshotState,
@@ -44,10 +45,15 @@ import {
   type SavedSnapshot,
   type PreferredConnectionMode,
 } from './app/sessionStore';
-import { buildGameKey, computeWinnerNames, isOngoingMatch, loadMatchHistory, matchBelongsToPlayer, recordMatch, recordOngoingMatch, removeOngoingMatch, type MatchResult } from './app/matchHistory';
+import { buildGameKey, computeWinnerNames, isOngoingMatch, loadMatchHistory, matchBelongsToPlayer, recordMatch, recordOngoingMatch, type MatchResult } from './app/matchHistory';
 import { SettingsScreen } from './ui/screens/SettingsScreen';
 import { MatchHistoryScreen } from './ui/screens/MatchHistoryScreen';
 import { colors } from './ui/theme/tokens';
+import {
+  importQuestionFile,
+  initializeQuestionLibrary,
+  type QuestionLibraryInfo,
+} from './app/questionLibrary';
 
 const CONNECTION_TIMEOUT_MS = 7000;
 const MAX_PLAYER_NAME_LENGTH = 15;
@@ -96,6 +102,7 @@ const extra = Constants.expoConfig?.extra as {
   game?: string;
   uiLab?: boolean;
   uiLabScreen?: string;
+  enableOnline?: boolean;
 } | undefined;
 
 // Read EXPO_PUBLIC_* directly: Expo inlines these into the (web) client
@@ -115,6 +122,9 @@ const DEV_PLAYERS = DEV_PLAYERS_RAW ? Math.max(1, Number(DEV_PLAYERS_RAW)) : 1;
 // Optional J!Archive game number to load for the dev session.
 const DEV_GAME = DEV_GAME_RAW ? Number(DEV_GAME_RAW) : null;
 const relayHostFromConfig = process.env.EXPO_PUBLIC_RELAY_HOST ?? extra?.relayHost ?? DEFAULT_RELAY_HOST;
+const ONLINE_PLAY_ENABLED =
+  process.env.EXPO_PUBLIC_ENABLE_ONLINE === '1' ||
+  extra?.enableOnline === true;
 
 // Session/snapshot persistence and auto-rejoin are disabled in dev
 // auto-start mode — the fixed DEV_ROOM flow owns the lifecycle there.
@@ -205,7 +215,9 @@ export default function App() {
 
   const [screen, setScreen] = useState<AppScreen>(() => (UI_LAB ? { type: 'demo' } : { type: 'menu' }));
   const [playerName, setPlayerName] = useState('');
-  const [connectionMode, setConnectionMode] = useState<PreferredConnectionMode>('online');
+  const [connectionMode, setConnectionMode] = useState<PreferredConnectionMode>(
+    ONLINE_PLAY_ENABLED ? 'online' : 'bluetooth',
+  );
   const [relayHost, setRelayHost] = useState(relayHostFromConfig);
   const [relayPort, setRelayPort] = useState('8787');
   const [gameId, setGameId] = useState('');
@@ -238,12 +250,13 @@ export default function App() {
   // duplicating. Refs because the []-dep handleStateUpdate reads them.
   const matchIdRef = useRef<string | null>(null);
   const matchStartedAtRef = useRef<number>(Date.now());
-  const pendingMatchIdentityRef = useRef<{ gameKey: string; startedAt: number } | null>(null);
   const gameNumberRef = useRef<number | null>(null);
-  /** Persistence begins only after the first clue has actually completed. */
+  /** Tracks whether this mounted game has written its constant board/session. */
   const persistenceStartedRef = useRef(false);
   const [recentMatches, setRecentMatches] = useState<MatchResult[]>([]);
   const [matchHistoryLoaded, setMatchHistoryLoaded] = useState(false);
+  const [questionLibrary, setQuestionLibrary] = useState<QuestionLibraryInfo | null>(null);
+  const [questionImportStatus, setQuestionImportStatus] = useState<string | null>(null);
 
   useEffect(() => {
     void loadMatchHistory().then(matches => {
@@ -316,24 +329,8 @@ export default function App() {
     const localPlayerName =
       (pid ? state.players[pid]?.name : undefined) ??
       sessionRef.current?.playerName;
-    const hasProgress = state.burnedClueIds.length > 0;
-    if (!hasProgress && state.status !== 'GAME_OVER') {
-      // Starting a room—or merely opening its board—is not an in-progress
-      // game. If an undo returns all the way to zero completed clues, remove
-      // the provisional resume/history records again.
-      if (persistenceStartedRef.current) {
-        persistenceStartedRef.current = false;
-        setResumeAvailable(false);
-        void clearSession();
-        void clearSnapshot();
-        const players = Object.values(state.players).map(player => ({ name: player.name }));
-        const gameKey = buildGameKey(gameNumberRef.current, players, localPlayerName);
-        matchIdRef.current = null;
-        void removeOngoingMatch(gameKey).then(setRecentMatches);
-      }
-      return;
-    }
     if (state.status === 'GAME_OVER') {
+      const finishingSession = sessionRef.current;
       persistenceStartedRef.current = false;
       sessionRef.current = null;
       setResumeAvailable(false);
@@ -352,8 +349,14 @@ export default function App() {
           finalWager: state.finalWagers?.[p.id],
         }));
         const gameKey = buildGameKey(gameNumberRef.current, players, localPlayerName);
+        const matchInstanceId =
+          matchIdRef.current ??
+          finishingSession?.matchInstanceId ??
+          createRoomId();
+        matchIdRef.current = matchInstanceId;
         void recordMatch({
-          id: `${gameKey}|completed`,
+          id: `${matchInstanceId}|completed`,
+          matchInstanceId,
           status: 'completed',
           gameKey,
           ...(localPlayerName ? { localPlayerName } : {}),
@@ -365,13 +368,31 @@ export default function App() {
         }).then(setRecentMatches);
       }
     } else {
+      const matchInstanceId =
+        matchIdRef.current ??
+        sessionRef.current?.matchInstanceId ??
+        createRoomId();
+      if (!matchIdRef.current) {
+        matchIdRef.current = matchInstanceId;
+        matchStartedAtRef.current =
+          sessionRef.current?.matchStartedAt ??
+          Date.now();
+      }
       if (!persistenceStartedRef.current) {
         persistenceStartedRef.current = true;
         const session = sessionRef.current;
         if (session) void saveSession(session);
-        void saveSnapshotBoard(boardDataRef.current, session?.mode ?? 'online');
+        void saveInitialSnapshot(
+          state,
+          boardDataRef.current,
+          session?.mode ?? 'online',
+          matchInstanceId,
+          matchStartedAtRef.current,
+        );
+      } else {
+        saveSnapshotState(state, matchInstanceId, matchStartedAtRef.current);
       }
-      saveSnapshotState(state);
+      setResumeAvailable(true);
       {
         const players = Object.values(state.players).map(p => ({
           name: p.name,
@@ -384,12 +405,9 @@ export default function App() {
           scoreHistory: p.scoreHistory,
         }));
         const gameKey = buildGameKey(gameNumberRef.current, players, localPlayerName);
-        if (!matchIdRef.current) {
-          matchIdRef.current = `${gameKey}|ongoing`;
-          matchStartedAtRef.current = Date.now();
-        }
         void recordOngoingMatch({
-          id: matchIdRef.current,
+          id: `${matchInstanceId}|ongoing`,
+          matchInstanceId,
           gameKey,
           ...(localPlayerName ? { localPlayerName } : {}),
           startedAt: matchStartedAtRef.current,
@@ -711,10 +729,8 @@ export default function App() {
     pendingGameScreenRef.current = null;
     setLobbyFadingOut(false);
     sessionRef.current = null;
-    const resumedIdentity = resume ? pendingMatchIdentityRef.current : null;
-    pendingMatchIdentityRef.current = null;
-    matchIdRef.current = resumedIdentity ? `${resumedIdentity.gameKey}|ongoing` : null;
-    matchStartedAtRef.current = resumedIdentity?.startedAt ?? Date.now();
+    matchIdRef.current = resume?.matchInstanceId ?? null;
+    matchStartedAtRef.current = resume?.matchStartedAt ?? Date.now();
     persistenceStartedRef.current = false;
     if (PERSISTENCE_ENABLED) void clearSession();
     setLobbyError(null);
@@ -871,12 +887,14 @@ export default function App() {
           // If we were on the join screen, now navigate to lobby
           if (action !== 'create') {
             const roomCode = typeof action === 'object' ? action.join : 0;
-            setJoinSearching(false);
-            if (transitionHeldRef.current) {
+            // A room response is the first proof that this code is real and
+            // joinable. Only now cover the join screen and hand off.
+            fadeToBlackAndHold(() => {
+              setJoinSearching(false);
               transitionHeldRef.current = false;
               transitionRevealAfterCommitRef.current = true;
-            }
-            setScreen({ type: 'lobby', roomCode, isHost: false });
+              setScreen({ type: 'lobby', roomCode, isHost: false });
+            });
           }
           break;
         case 'game-started': {
@@ -924,7 +942,10 @@ export default function App() {
               epoch: roomAuthority.epoch,
               leaderId: roomAuthority.leaderId,
               isHost: action === 'create',
+              matchInstanceId: matchIdRef.current ?? roomAuthority.roomId,
+              matchStartedAt: matchStartedAtRef.current,
             };
+            matchIdRef.current = session.matchInstanceId;
             sessionRef.current = { ...session, savedAt: Date.now() };
           }
           break;
@@ -962,6 +983,8 @@ export default function App() {
             epoch: incomingAuthority.epoch,
             leaderId: incomingAuthority.leaderId,
             isHost: false,
+            matchInstanceId: sessionRef.current?.matchInstanceId ?? incomingAuthority.roomId,
+            matchStartedAt: sessionRef.current?.matchStartedAt ?? matchStartedAtRef.current,
             savedAt: Date.now(),
           };
           // Keep the game mounted while demoting: rejoining the newer host
@@ -1042,6 +1065,8 @@ export default function App() {
         state: initialGameState.state,
         board: boardData,
         mode: session.mode,
+        matchInstanceId: session.matchInstanceId,
+        matchStartedAt: session.matchStartedAt,
         savedAt: Date.now(),
       }
       : null;
@@ -1100,7 +1125,7 @@ export default function App() {
           const myPeerId = myPeerIdRef.current;
           const me = players.find(p => p.peerId === myPeerId);
           if (players.length >= DEV_PLAYERS && me?.isHost) {
-            transport.startGame(DEV_GAME ? { gameId: DEV_GAME } : undefined);
+            transport.startGame(DEV_GAME != null ? { gameId: DEV_GAME } : undefined);
           }
           break;
         }
@@ -1164,14 +1189,21 @@ export default function App() {
 
   const handleResumeMatch = useCallback((match: MatchResult) => {
     if (!match.state || !isOngoingMatch(match)) return;
-    const gameKey = match.gameKey ?? buildGameKey(match.gameNumber, match.players, match.localPlayerName);
-    pendingMatchIdentityRef.current = { gameKey, startedAt: match.startedAt ?? Date.now() };
+    const matchInstanceId =
+      match.matchInstanceId ??
+      match.id.replace(/\|(ongoing|completed)$/, '');
     const snapshot: SavedSnapshot = {
       state: match.state,
       board: match.board ?? null,
       mode: match.mode ?? connectionMode,
+      matchInstanceId,
+      matchStartedAt: match.startedAt ?? Date.now(),
       savedAt: match.updatedAt ?? Date.now(),
     };
+    // Keep the lobby's game picker truthful. The board below is still the
+    // authority for the restore, so this works even when the local library is
+    // absent or ordered differently.
+    setGameId(match.board ? String(match.board.gameNumber) : '');
     // The room-created handler owns the single reveal animation. Finish the
     // black fade before changing screens so the lobby handoff cannot race a
     // second fade animation and flash NEW GAME underneath it.
@@ -1220,6 +1252,11 @@ export default function App() {
       setJoinError('Enter a Bluetooth or online room code');
       return;
     }
+    if (!ONLINE_PLAY_ENABLED && roomMode === 'online') {
+      setJoinSearching(false);
+      setJoinError('Online rooms are not available in this release');
+      return;
+    }
     if (roomMode !== connectionMode) {
       setJoinSearching(false);
       setJoinError(`This is a ${roomMode.toUpperCase()} room. Change Connection in Settings to join it.`);
@@ -1228,17 +1265,30 @@ export default function App() {
     const attempt = joinAttemptRef.current + 1;
     joinAttemptRef.current = attempt;
     setJoinError(null);
-    fadeToBlackAndHold(() => {
-      setJoinSearching(true);
-      connectAndDo({ join: code }, undefined, connectionMode, {
-        timeoutMs: 8000,
-        isCancelled: () => joinAttemptRef.current !== attempt,
-      });
+    setJoinSearching(true);
+    connectAndDo({ join: code }, undefined, connectionMode, {
+      timeoutMs: 8000,
+      isCancelled: () => joinAttemptRef.current !== attempt,
     });
-  }, [connectAndDo, connectionMode, fadeToBlackAndHold]);
+  }, [connectAndDo, connectionMode]);
   const handleConnectionModeChange = useCallback((mode: PreferredConnectionMode) => {
-    setConnectionMode(mode);
-    if (PERSISTENCE_ENABLED) void savePreferredConnectionMode(mode);
+    const allowedMode = ONLINE_PLAY_ENABLED ? mode : 'bluetooth';
+    setConnectionMode(allowedMode);
+    if (PERSISTENCE_ENABLED) void savePreferredConnectionMode(allowedMode);
+  }, []);
+  const handleImportQuestions = useCallback(() => {
+    setQuestionImportStatus('Reading and indexing…');
+    void importQuestionFile().then(info => {
+      if (!info) {
+        setQuestionImportStatus(null);
+        return;
+      }
+      setQuestionLibrary(info);
+      setGameId('');
+      setQuestionImportStatus(`${info.gameCount.toLocaleString()} games ready`);
+    }).catch((error: unknown) => {
+      setQuestionImportStatus(error instanceof Error ? error.message : 'Could not load that question file');
+    });
   }, []);
   // Settings now live inside MainMenuScreen (gradient panel); no separate route needed.
   const handleHistory = useCallback(() => {
@@ -1311,9 +1361,10 @@ export default function App() {
       });
       return;
     }
-    const id = gameId ? Number(gameId) : null;
+    const parsedId = gameId === '' ? null : Number(gameId);
+    const id = parsedId != null && Number.isInteger(parsedId) && parsedId >= 0 ? parsedId : null;
     transportRef.current?.startGame({
-      ...(id ? { gameId: id } : {}),
+      ...(id != null ? { gameId: id } : {}),
       ...(delay != null ? { buzzerDelay: delay } : {}),
     });
   }, [buzzerDelay, gameId]);
@@ -1352,11 +1403,12 @@ export default function App() {
     if (!PERSISTENCE_ENABLED || UI_LAB) return;
     let stale = false;
     void (async () => {
-      const [name, session, snapshot, preferredMode] = await Promise.all([
+      const [name, session, snapshot, preferredMode, library] = await Promise.all([
         loadPlayerName(),
         loadSession(),
         loadSnapshot(),
         loadPreferredConnectionMode(),
+        initializeQuestionLibrary(),
       ]);
       if (stale) return;
       if (name) {
@@ -1369,10 +1421,15 @@ export default function App() {
         void savePlayerName(fallbackName);
       }
       setResumeAvailable(!!snapshot);
-      if (preferredMode) setConnectionMode(preferredMode);
+      setQuestionLibrary(library);
+      if (preferredMode && (ONLINE_PLAY_ENABLED || preferredMode === 'bluetooth')) {
+        setConnectionMode(preferredMode);
+      }
       // Relaunch: our snapshot is stale, so join-first rather than
       // insta-promoting a candidate that could clobber the live game.
-      if (session) startReconnectRef.current(session, { promoteDelayMs: RETURNING_GUEST_PROMOTE_MS });
+      if (session && (ONLINE_PLAY_ENABLED || session.mode !== 'online')) {
+        startReconnectRef.current(session, { promoteDelayMs: RETURNING_GUEST_PROMOTE_MS });
+      }
     })();
     return () => { stale = true; };
   }, []);
@@ -1416,6 +1473,10 @@ export default function App() {
             onRelayPortChange={setRelayPort}
             connectionMode={connectionMode}
             onConnectionModeChange={handleConnectionModeChange}
+            onlinePlayEnabled={ONLINE_PLAY_ENABLED}
+            questionLibrary={questionLibrary}
+            questionImportStatus={questionImportStatus}
+            onImportQuestions={handleImportQuestions}
           />
         );
       case 'reconnecting':
@@ -1470,6 +1531,7 @@ export default function App() {
             sessionMode={transportRef.current?.mode}
             gameId={gameId}
             onGameIdChange={setGameId}
+            resumeBoard={pendingResumeRef.current?.board ?? null}
             buzzerDelay={buzzerDelay}
             onBuzzerDelayChange={setBuzzerDelay}
             animationsEnabled={animationsEnabled}

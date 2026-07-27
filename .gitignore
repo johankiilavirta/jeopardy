@@ -3,3 +3,4 @@ dist/
 .expo/
 .netlify/
 scripts/raw/
+private-question-files/

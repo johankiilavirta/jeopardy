@@ -17,6 +17,7 @@ import { NumberKeyboard } from '../components/NumberKeyboard';
 import type { CellRect } from '../components/BoardCell';
 import { colors, type as typeTokens } from '../theme/tokens';
 import type { PreferredConnectionMode } from '../../app/sessionStore';
+import type { QuestionLibraryInfo } from '../../app/questionLibrary';
 
 const SCREEN_TOP_PADDING = 64;
 const SCREEN_SIDE_PADDING = 32;
@@ -72,6 +73,10 @@ interface MainMenuScreenProps {
   onRelayPortChange?: (port: string) => void;
   connectionMode?: PreferredConnectionMode | undefined;
   onConnectionModeChange?: ((mode: PreferredConnectionMode) => void) | undefined;
+  onlinePlayEnabled?: boolean | undefined;
+  questionLibrary?: QuestionLibraryInfo | null | undefined;
+  questionImportStatus?: string | null | undefined;
+  onImportQuestions?: (() => void) | undefined;
 }
 
 export function MainMenuScreen(props: MainMenuScreenProps) {
@@ -399,7 +404,34 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
                     </Pressable>
                   </View>
 
-                  {props.connectionMode != null && props.onConnectionModeChange && (
+                  {props.onImportQuestions && (
+                    <View style={styles.settingGroup}>
+                      <Text style={styles.label}>QUESTION FILE</Text>
+                      <Pressable
+                        style={styles.input}
+                        accessibilityRole="button"
+                        accessibilityLabel="Load one or more question JSON files"
+                        onPress={props.onImportQuestions}
+                      >
+                        <Text
+                          style={styles.inputText}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.55}
+                        >
+                          {props.questionLibrary ? 'REPLACE JSON FILES' : 'LOAD JSON FILES'}
+                        </Text>
+                      </Pressable>
+                      <Text style={styles.questionStatus} numberOfLines={2}>
+                        {props.questionImportStatus ??
+                          (props.questionLibrary
+                            ? `${props.questionLibrary.gameCount.toLocaleString()} IMPORTED GAMES · ${props.questionLibrary.sourceName}`
+                            : 'BUILT-IN GAME 0 READY · NO FILE LOADED')}
+                      </Text>
+                    </View>
+                  )}
+
+                  {props.onlinePlayEnabled && props.connectionMode != null && props.onConnectionModeChange && (
                     <View style={styles.settingGroup}>
                       <Text style={styles.label}>BLUETOOTH</Text>
                       <Pressable
@@ -419,6 +451,7 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
                 </View>
 
                 {/* ── Right column: advanced connection settings ── */}
+                {props.onlinePlayEnabled && (
                 <View style={styles.settingsColRight}>
                   <Pressable
                     style={styles.advancedToggle}
@@ -485,6 +518,7 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
                     </View>
                   )}
                 </View>
+                )}
               </View>
 
             </View>
@@ -664,6 +698,14 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   inputPlaceholder: { color: '#333' },
+  questionStatus: {
+    marginTop: 2,
+    fontFamily: typeTokens.ui500,
+    fontSize: 10,
+    lineHeight: 13,
+    color: '#555',
+    letterSpacing: 0.5,
+  },
   toggleBox: {
     paddingVertical: 2,
   },

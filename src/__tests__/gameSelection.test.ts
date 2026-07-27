@@ -36,4 +36,10 @@ describe('game selection', () => {
     expect(nextCompleteGameNumber(1, -1, 4, 5, () => info(5))).toBe(1);
     expect(nextCompleteGameNumber(5, 1, 4, 5, () => info(5))).toBe(5);
   });
+
+  it('can include reserved Game 0 when the caller opts into it', () => {
+    expect(nextCompleteGameNumber(1, -1, 1, 5, () => info(5), 0)).toBe(0);
+    expect(nextCompleteGameNumber(0, -1, 3, 5, () => info(5), 0)).toBe(0);
+    expect(nextCompleteGameNumber(0, 1, 1, 0, () => info(5), 0)).toBe(0);
+  });
 });
