@@ -108,6 +108,45 @@ describe('recordMatch / loadMatchHistory', () => {
     expect(await loadMatchHistory()).toEqual(afterB);
   });
 
+  it('shows only the newest legacy snapshot for the same game and players', async () => {
+    store.set('jeopardy/match-history', JSON.stringify([
+      match('375|esther|me|ongoing-reconnect', {
+        gameNumber: 375,
+        localPlayerName: 'Me',
+        gameKey: '375|me|esther',
+        status: 'ongoing',
+        updatedAt: 2000,
+        finishedAt: 0,
+        players: [
+          { name: 'Me', score: 1000, correct: 5, incorrect: 0 },
+          { name: 'Esther', score: 0, correct: 0, incorrect: 0 },
+        ],
+      }),
+      match('375|esther|me|ongoing', {
+        gameNumber: 375,
+        localPlayerName: 'Me',
+        gameKey: '375|me|esther',
+        status: 'ongoing',
+        updatedAt: 1000,
+        finishedAt: 0,
+      }),
+    ]));
+
+    const history = await loadMatchHistory();
+    expect(history).toHaveLength(1);
+    expect(history[0]!.updatedAt).toBe(2000);
+    expect(history[0]!.players[0]!.score).toBe(1000);
+  });
+
+  it('keeps explicit modern replay instances separate', async () => {
+    store.set('jeopardy/match-history', JSON.stringify([
+      match('second|ongoing', { matchInstanceId: 'second', gameKey: '375|me|esther', updatedAt: 2000 }),
+      match('first|ongoing', { matchInstanceId: 'first', gameKey: '375|me|esther', updatedAt: 1000 }),
+    ]));
+
+    expect((await loadMatchHistory()).map(item => item.matchInstanceId)).toEqual(['second', 'first']);
+  });
+
   it('upserts by id: re-finishing after an undo replaces the entry', async () => {
     await recordMatch(match('a'));
     await recordMatch(match('game-1', { winnerNames: ['Alice'] }));
