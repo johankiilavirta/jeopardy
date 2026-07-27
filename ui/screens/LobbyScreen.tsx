@@ -56,6 +56,9 @@ interface LobbyScreenProps {
   /** Vibrate when buzzing opens. Default off. */
   vibrationEnabled?: boolean | undefined;
   onVibrationChange?: (enabled: boolean) => void;
+  /** Read clues aloud on the host device. */
+  textToSpeechEnabled?: boolean | undefined;
+  onTextToSpeechChange?: (enabled: boolean) => void;
   /** Master toggle for in-game animations (default on). */
   animationsEnabled?: boolean;
   onAnimationsChange?: (enabled: boolean) => void;
@@ -1292,6 +1295,22 @@ export function LobbyScreen(props: LobbyScreenProps) {
                             {props.vibrationEnabled ? 'ON' : 'OFF'}
                           </Text>
                         </Pressable>
+
+                        {props.isHost && (
+                          <>
+                            <Text style={[styles.label, styles.stackedLabel]}>TEXT TO SPEECH</Text>
+                            <Pressable
+                              accessibilityRole="switch"
+                              accessibilityState={{ checked: !!props.textToSpeechEnabled }}
+                              style={styles.toggleBox}
+                              onPress={() => props.onTextToSpeechChange?.(!props.textToSpeechEnabled)}
+                            >
+                              <Text style={[styles.toggleText, !props.textToSpeechEnabled && styles.toggleTextOff]}>
+                                {props.textToSpeechEnabled ? 'ON' : 'OFF'}
+                              </Text>
+                            </Pressable>
+                          </>
+                        )}
 
                         <Text style={[styles.label, styles.stackedLabel]}>CATEGORIES</Text>
                         <View style={styles.catCountRow}>

@@ -28,6 +28,8 @@ import {
   saveInitialSnapshot,
   saveSnapshotBoard,
   saveSnapshotState,
+  loadTextToSpeechEnabled,
+  saveTextToSpeechEnabled,
 } from '../../app/sessionStore';
 
 const board: GameData = {
@@ -66,6 +68,14 @@ describe('sessionStore', () => {
     });
     const session = await loadSession();
     expect(session).toMatchObject({ mode: 'nearby', roomCode: 423, playerName: 'Alice', roomId: 'room-a', epoch: 2, leaderId: 'leader-a', isHost: true });
+  });
+
+  it('round-trips the host text-to-speech preference', async () => {
+    expect(await loadTextToSpeechEnabled()).toBeNull();
+    await saveTextToSpeechEnabled(true);
+    expect(await loadTextToSpeechEnabled()).toBe(true);
+    await saveTextToSpeechEnabled(false);
+    expect(await loadTextToSpeechEnabled()).toBe(false);
   });
 
   it('defaults legacy sessions (no mode/isHost/authority) to an online guest', async () => {

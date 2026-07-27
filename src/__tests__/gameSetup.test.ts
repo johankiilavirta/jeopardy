@@ -52,6 +52,11 @@ describe('buildServerOptions', () => {
     expect(buildServerOptions(null, null, 0).readingMs).toBe(0);
     expect(buildServerOptions(null, null, 2.5).readingMs).toBe(2500);
   });
+
+  it('passes host narration into server creation', () => {
+    expect(buildServerOptions(null, null, undefined, true).narrationEnabled).toBe(true);
+    expect(buildServerOptions(null, null, undefined, false).narrationEnabled).toBeUndefined();
+  });
 });
 
 describe('validateResumeState', () => {

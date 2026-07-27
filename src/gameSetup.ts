@@ -42,7 +42,8 @@ export function buildServerOptions(
   gameData: SetupGameData | null,
   resumeState: GameState | null,
   buzzerDelay?: number,
-): { totalClues: number; finalClue: { category: string; text: string; answer: string } | null; readingMs?: number; initialState?: GameState } {
+  narrationEnabled = false,
+): { totalClues: number; finalClue: { category: string; text: string; answer: string } | null; readingMs?: number; initialState?: GameState; narrationEnabled?: boolean } {
   const totalClues = resumeState
     ? resumeState.totalClues
     : gameData
@@ -54,6 +55,7 @@ export function buildServerOptions(
   return {
     totalClues,
     finalClue: gameData?.final ?? null,
+    ...(narrationEnabled ? { narrationEnabled: true } : {}),
     ...(readingMs != null ? { readingMs } : {}),
     ...(resumeState ? { initialState: resumeState } : {}),
   };

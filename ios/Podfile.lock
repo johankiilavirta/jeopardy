@@ -226,6 +226,8 @@ PODS:
   - ExpoModulesWorklets (56.0.15):
     - ExpoModulesCore
     - ExpoModulesJSI
+  - ExpoSpeech (56.0.3):
+    - ExpoModulesCore
   - EXUpdatesInterface (56.0.2):
     - ExpoModulesCore
   - FBLazyVector (0.85.3)
@@ -2132,6 +2134,7 @@ DEPENDENCIES:
   - ExpoModulesCore (from `../node_modules/expo-modules-core/ExpoModulesCore.podspec`)
   - ExpoModulesJSI (from `../node_modules/expo-modules-jsi/apple`)
   - ExpoModulesWorklets (from `../node_modules/expo-modules-core/ExpoModulesWorklets.podspec`)
+  - ExpoSpeech (from `../node_modules/expo-speech/ios`)
   - EXUpdatesInterface (from `../node_modules/expo-updates-interface/ios`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
@@ -2253,6 +2256,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-modules-jsi/apple"
   ExpoModulesWorklets:
     :podspec: "../node_modules/expo-modules-core/ExpoModulesWorklets.podspec"
+  ExpoSpeech:
+    :path: "../node_modules/expo-speech/ios"
   EXUpdatesInterface:
     :path: "../node_modules/expo-updates-interface/ios"
   FBLazyVector:
@@ -2432,6 +2437,7 @@ SPEC CHECKSUMS:
   ExpoModulesCore: 9e28a48944385b7bab96d1fd72728d851aa2c634
   ExpoModulesJSI: 8028268310770bed2f3f3aec6e7bf150714841b1
   ExpoModulesWorklets: 3a5a7126f22ccacf3189bdf0be37022efd5e4578
+  ExpoSpeech: fe3706df8653ab8c16ff88251e33fab79b07a420
   EXUpdatesInterface: 25408a97d682355eb9fb37e5aa6e22caece1881f
   FBLazyVector: 24e62c765683b8d89006a88a2c8f5cf019f0074d
   hermes-engine: 2d52355d8bcebd6f887b119863a20a2c41f33fd1

@@ -166,6 +166,7 @@ export class BluetoothSessionProvider implements SessionProvider {
     resumeState: GameState | null;
     isResume: boolean;
     buzzerDelay?: number;
+    textToSpeechEnabled?: boolean;
     timeout: ReturnType<typeof setTimeout>;
   } | null = null;
   private controlCbs: ((message: SessionControlMessage) => void)[] = [];
@@ -224,7 +225,7 @@ export class BluetoothSessionProvider implements SessionProvider {
     BluetoothNetwork.browse(roomCode);
   }
 
-  startGame(options?: { gameId?: number; buzzerDelay?: number; resume?: object }): void {
+  startGame(options?: { gameId?: number; buzzerDelay?: number; textToSpeechEnabled?: boolean; resume?: object }): void {
     if (this.role !== 'host' || !BluetoothNetwork) return;
 
     const resume = options?.resume as { state?: GameState; board?: GameData | null } | undefined;
@@ -234,7 +235,7 @@ export class BluetoothSessionProvider implements SessionProvider {
 
     const gameData = resumeState ? (resume?.board ?? null) : pickGame(options?.gameId);
     if (!this.remotePeerId || !this.remoteSupportsBoardPreload) {
-      this.beginGame(gameData, resumeState, !!resumeState, !!this.remotePeerId, options?.buzzerDelay);
+      this.beginGame(gameData, resumeState, !!resumeState, !!this.remotePeerId, options?.buzzerDelay, options?.textToSpeechEnabled);
       return;
     }
 
@@ -247,6 +248,7 @@ export class BluetoothSessionProvider implements SessionProvider {
       resumeState,
       isResume: !!resumeState,
       ...(options?.buzzerDelay != null ? { buzzerDelay: options.buzzerDelay } : {}),
+      ...(options?.textToSpeechEnabled != null ? { textToSpeechEnabled: options.textToSpeechEnabled } : {}),
       timeout: setTimeout(() => {
         if (this.pendingStart?.startId !== startId) return;
         this.pendingStart = null;
@@ -268,6 +270,7 @@ export class BluetoothSessionProvider implements SessionProvider {
     isResume: boolean,
     sendBoardInStart = false,
     buzzerDelay?: number,
+    textToSpeechEnabled?: boolean,
   ): void {
     if (!BluetoothNetwork) return;
     const playerNames = this.remotePlayerName
@@ -293,7 +296,10 @@ export class BluetoothSessionProvider implements SessionProvider {
     this.gameServer = createServer(
       this.serverTransport,
       playerNames,
-      buildServerOptions(gameData, resumeState, buzzerDelay),
+      {
+        ...buildServerOptions(gameData, resumeState, buzzerDelay, textToSpeechEnabled),
+        hostPeerId: 'bluetooth-host',
+      },
     );
 
     const started = { type: 'game-started', serverPeerId: SERVER_PEER_ID, board: gameData, isResume, ...this.authorityFields() };
@@ -483,7 +489,7 @@ export class BluetoothSessionProvider implements SessionProvider {
       if (pending && control.startId === pending.startId) {
         clearTimeout(pending.timeout);
         this.pendingStart = null;
-        this.beginGame(pending.gameData, pending.resumeState, pending.isResume, false, pending.buzzerDelay);
+        this.beginGame(pending.gameData, pending.resumeState, pending.isResume, false, pending.buzzerDelay, pending.textToSpeechEnabled);
         return;
       }
       if (this.phase === 'playing') {

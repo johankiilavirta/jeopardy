@@ -125,7 +125,7 @@ export function JoinGameScreen(props: JoinGameScreenProps) {
   useEffect(() => {
     if (props.error) {
       const failedCode = codeRef.current;
-      transitionClueText('FAILED TO JOIN ROOM', () => {
+      transitionClueText(`FAILED TO JOIN ROOM\n\n${props.error.toUpperCase()}`, () => {
         if (codeRef.current !== failedCode) return;
         codeRef.current = '';
         lastSubmittedCode.current = null;

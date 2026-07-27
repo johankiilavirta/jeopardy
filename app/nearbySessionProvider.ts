@@ -196,7 +196,7 @@ export class NearbySessionProvider implements SessionProvider {
     NearbyNetwork.browse();
   }
 
-  startGame(options?: { gameId?: number; buzzerDelay?: number; resume?: object }): void {
+  startGame(options?: { gameId?: number; buzzerDelay?: number; textToSpeechEnabled?: boolean; resume?: object }): void {
     if (this.role !== 'host' || !NearbyNetwork) return;
 
     // Resuming a saved game? The snapshot carries the full GameState plus
@@ -230,7 +230,10 @@ export class NearbySessionProvider implements SessionProvider {
     this.gameServer = createServer(
       this.serverTransport,
       playerNames,
-      buildServerOptions(gameData, resumeState, options?.buzzerDelay),
+      {
+        ...buildServerOptions(gameData, resumeState, options?.buzzerDelay, options?.textToSpeechEnabled),
+        hostPeerId: 'local-host',
+      },
     );
 
     const started = { type: 'game-started', serverPeerId: SERVER_PEER_ID, board: gameData, isResume: !!resumeState, ...this.authorityFields() };

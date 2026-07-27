@@ -50,6 +50,9 @@ interface NetworkedGameProps {
   /** Vibrate locally when the shared buzz window opens. */
   vibrationEnabled?: boolean;
   onVibrationChange?: (enabled: boolean) => void;
+  /** Read each regular clue aloud on the host device. */
+  textToSpeechEnabled?: boolean;
+  onTextToSpeechChange?: (enabled: boolean) => void;
   onAnimationsChange?: (enabled: boolean) => void;
   /** How many category columns to show (1, 4, 5, or 6). Default 6. */
   visibleCategories?: number | undefined;
@@ -70,7 +73,7 @@ const PROPOSAL_INTRO = ['ESTHER', 'WILL', 'YOU', 'BE', 'MY', 'GIRLFRIEND?'] as c
 
 
 
-export function NetworkedGame({ transport, serverPeerId, initialState, boardData, remotePeerConnectionStatus = 'connected', localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, onBoardVisible, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, vibrationEnabled = false, onVibrationChange, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume, recentMatches, sessionMode }: NetworkedGameProps) {
+export function NetworkedGame({ transport, serverPeerId, initialState, boardData, remotePeerConnectionStatus = 'connected', localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, onBoardVisible, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, vibrationEnabled = false, onVibrationChange, textToSpeechEnabled = false, onTextToSpeechChange, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume, recentMatches, sessionMode }: NetworkedGameProps) {
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
@@ -184,6 +187,81 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     }
     lastFeedbackStatusRef.current = status;
   }, [gameState?.status, vibrationEnabled]);
+
+  // Narration is deliberately driven only by the host phone. The server
+  // replaces its estimated reading timer when NARRATION_STARTED arrives and
+  // opens buzzing only after this device reports completion.
+  useEffect(() => {
+    const clue = gameState?.activeClue;
+    if (
+      !localIsHost ||
+      !textToSpeechEnabled ||
+      gameState?.status !== 'CLUE_READING' ||
+      !clue
+    ) return;
+
+    let cancelled = false;
+    let started = false;
+    let settled = false;
+    let speech: typeof import('expo-speech') | null = null;
+    const finish = () => {
+      if (!started || settled) return;
+      settled = true;
+      transport.send(serverPeerId, JSON.stringify({
+        type: 'NARRATION_FINISHED',
+        clueId: clue.id,
+      }));
+    };
+
+    void (async () => {
+      started = true;
+      transport.send(serverPeerId, JSON.stringify({
+        type: 'NARRATION_STARTED',
+        clueId: clue.id,
+      }));
+      try {
+        // Load lazily so a stale development client that predates
+        // ExpoSpeech can still launch and play with narration disabled.
+        speech = await import('expo-speech');
+        await speech.stop();
+        if (cancelled) return;
+        speech.speak(clue.text, {
+          onDone: finish,
+          onStopped: finish,
+          onError: finish,
+        });
+      } catch (error) {
+        console.warn('Text to speech is unavailable in this app build', error);
+        finish();
+        onTextToSpeechChange?.(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      finish();
+      void speech?.stop();
+    };
+  }, [
+    gameState?.activeClue?.id,
+    gameState?.activeClue?.text,
+    gameState?.status,
+    localIsHost,
+    onTextToSpeechChange,
+    serverPeerId,
+    textToSpeechEnabled,
+    transport,
+  ]);
+
+  // Keep the authoritative host setting current when it is changed between
+  // clues from the in-game settings sheet.
+  useEffect(() => {
+    if (!localIsHost) return;
+    transport.send(serverPeerId, JSON.stringify({
+      type: 'SET_NARRATION_ENABLED',
+      enabled: textToSpeechEnabled,
+    }));
+  }, [localIsHost, serverPeerId, textToSpeechEnabled, transport]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const playerId = initialState?.playerId ?? null;
@@ -860,6 +938,9 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           onAnimationsChange={onAnimationsChange ?? (() => {})}
           vibrationEnabled={vibrationEnabled}
           onVibrationChange={onVibrationChange ?? (() => {})}
+          textToSpeechEnabled={textToSpeechEnabled}
+          onTextToSpeechChange={onTextToSpeechChange ?? (() => {})}
+          showTextToSpeech={localIsHost}
           visibleCategories={visibleCategories}
           onVisibleCategoriesChange={onVisibleCategoriesChange ?? (() => {})}
           showLastClueButton={showLastClueButton}
