@@ -27,7 +27,7 @@ interface AnswerKeyboardProps {
   onBackspace: () => void;
   /** Shows the compact number deck without dismissing the answer sheet. */
   onNumbers?: () => void;
-  /** Final Jeopardy: the keys swap cell navy for the round's charcoal. */
+  /** Final Wager: the keys swap cell navy for the round's charcoal. */
   final?: boolean;
 }
 

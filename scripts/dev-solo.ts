@@ -3,7 +3,7 @@
  * wired so the app skips the menu/lobby and drops straight into a game.
  *
  *   npm run solo                 # solo, real game #1, web
- *   npm run solo -- --game=4321  # pick a J!Archive game number
+ *   npm run solo -- --game=4321  # pick a source game number
  *   npm run solo -- --players=2  # wait for 2 tabs before starting
  *   npm run solo -- --room=623   # fixed online room code (default 623)
  *

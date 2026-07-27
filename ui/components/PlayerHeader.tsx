@@ -37,11 +37,11 @@ interface PlayerHeaderProps {
   animationsEnabled?: boolean;
   /** Whether to hide scores and display '?' instead. */
   hideScores?: boolean;
-  /** Final Jeopardy: the bugs swap cell navy for the round's charcoal. */
-  finalJeopardy?: boolean;
+  /** Final Wager: the bugs swap cell navy for the round's charcoal. */
+  finalWager?: boolean;
 }
 
-export function PlayerHeader({ players, currentTurnPlayerId, localPlayerId, disconnectedPlayerId, hostPlayerId, promotingPlayerId, judgingPlayerId, animationsEnabled = true, hideScores = false, finalJeopardy = false }: PlayerHeaderProps) {
+export function PlayerHeader({ players, currentTurnPlayerId, localPlayerId, disconnectedPlayerId, hostPlayerId, promotingPlayerId, judgingPlayerId, animationsEnabled = true, hideScores = false, finalWager = false }: PlayerHeaderProps) {
   // While an answer is being judged, only the judged player is highlighted.
   const highlightId = judgingPlayerId ?? currentTurnPlayerId;
 
@@ -63,7 +63,7 @@ export function PlayerHeader({ players, currentTurnPlayerId, localPlayerId, disc
           }
           animationsEnabled={animationsEnabled}
           hideScore={hideScores}
-          finalJeopardy={finalJeopardy}
+          finalWager={finalWager}
         />
       ))}
     </View>

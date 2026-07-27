@@ -1,7 +1,7 @@
 /**
- * Design tokens for the Jeopardy UI.
+ * Design tokens for the JE Trivia UI.
  *
- * Classic Jeopardy! broadcast aesthetic: near-black background, deep
+ * Classic Round One broadcast aesthetic: near-black background, deep
  * broadcast-blue cells, gold condensed values, sharp corners, 2px black
  * grid lines.
  */
@@ -16,18 +16,18 @@ export const colors = {
   bg: APP_BACKGROUND,
   /** Deep navy cell fill — softer than the raw broadcast blue (#02029A),
    *  which overwhelms on large surfaces. Used everywhere something is
-   *  "Jeopardy blue": board cells, clue card, score blocks, menus. */
+   *  "JE Trivia blue": board cells, clue card, score blocks, menus. */
   cell: '#111A63',
   /** Dead-navy fill for burned (already-played) cells */
   cellBurned: '#0A102E',
   /** A recessed layer sitting visually "behind" the cell blue — between
    *  cell and the near-black background. */
   cellRecessed: '#0F1440',
-  /** Final Jeopardy surface — `cell` drained of its navy: a charcoal of
+  /** Final Wager surface — `cell` drained of its navy: a charcoal of
    *  the same depth, with just a whisper of blue left in so it still
    *  reads as family. */
   cellFinal: '#1B1B22',
-  /** Final Jeopardy recessed layer — `cellRecessed`'s charcoal twin. */
+  /** Final Wager recessed layer — `cellRecessed`'s charcoal twin. */
   cellFinalRecessed: '#141419',
   /** Classic gold for dollar values */
   gold: '#E5B20D',

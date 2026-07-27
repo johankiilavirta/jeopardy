@@ -3,7 +3,7 @@ import ExpoModulesCore
 import Foundation
 
 public final class BluetoothNetworkModule: Module {
-  fileprivate let queue = DispatchQueue(label: "jeopardy.bluetooth-network")
+  fileprivate let queue = DispatchQueue(label: "je-trivia.bluetooth-network")
   fileprivate let serviceUUID = CBUUID(string: "7D8F2E4D-4C53-4D4F-9D6E-4A7C37A1E001")
   fileprivate let txUUID = CBUUID(string: "7D8F2E4D-4C53-4D4F-9D6E-4A7C37A1E002")
   fileprivate let rxUUID = CBUUID(string: "7D8F2E4D-4C53-4D4F-9D6E-4A7C37A1E003")
@@ -318,9 +318,12 @@ public final class BluetoothNetworkModule: Module {
     } else {
       maxLength = 182
     }
-    // Use the full negotiated MTU (typically ~512 bytes): a game snapshot
-    // then fits in a handful of chunks instead of dozens.
-    return max(1, maxLength - headerBytes)
+    // Some iOS-on-Mac centrals acknowledge a large notification MTU but drop
+    // the first host-to-client notifications at that size. Keep every control
+    // packet within the conservative size that works across iPhone and Mac;
+    // these lobby/heartbeat messages are small, and reliability matters more
+    // than the marginal snapshot throughput gain.
+    return max(1, min(160, maxLength - headerBytes))
   }
 
   /** Drop all buffered traffic for a peer that just disconnected: queued

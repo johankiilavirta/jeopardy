@@ -1,22 +1,23 @@
 /**
- * Download and convert jwolle1 J!Archive TSV files into per-season JSON bundles.
+ * Convert locally supplied TSV files into per-season JSON bundles.
  *
  * Usage:
- *   npx tsx scripts/convert-jeopardy-data.ts
+ *   1. Obtain TSV source files that you are authorized to use.
+ *   2. Place per-season files (for example, season1.tsv) in scripts/raw/.
+ *   3. Run: npx tsx scripts/convert-question-data.ts
  *
  * TSV columns (tab-separated):
  *   round | clue_value | daily_double_value | category | comments |
  *   answer (= clue text) | question (= correct response) | air_date | notes
  *
  * Rounds in the dataset:
- *   1 = Jeopardy! round     ($200/$400/$600/$800/$1000, normalized)
- *   2 = Double Jeopardy!    ($400/$800/$1200/$1600/$2000, normalized)
- *   3 = Final Jeopardy!     (single clue, skipped)
+ *   1 = first round         ($200/$400/$600/$800/$1000, normalized)
+ *   2 = second round        ($400/$800/$1200/$1600/$2000, normalized)
+ *   3 = final round         (single clue, skipped)
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execSync } from 'node:child_process';
 import { generateSeasonRegistry } from './generate-season-registry';
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -50,7 +51,6 @@ interface SeasonIndex {
 
 // ── Config ─────────────────────────────────────────────────────────
 
-const DATASET_URL = 'https://github.com/jwolle1/jeopardy_clue_dataset/releases/download/v41/jeopardy_dataset_seasons_1-41.zip';
 const RAW_DIR = path.join(__dirname, 'raw');
 const OUT_DIR = path.join(__dirname, '..', 'data', 'seasons');
 
@@ -60,54 +60,12 @@ const R1_VALUE_TIERS = [200, 400, 600, 800, 1000];
 const R2_VALUE_TIERS = [400, 800, 1200, 1600, 2000];
 
 // Minimum complete clues required to keep a category. 4 instead of 5
-// because jwolle1 omits clues that were pure image links on J!Archive,
+// because the supplied data can omit clues that were pure image links,
 // leaving otherwise valid categories one clue short.
 const MIN_CLUES_PER_CATEGORY = 4;
 
 // A game must have at least this many round-1 categories to be kept.
 const MIN_R1_CATEGORIES = 5;
-
-// ── Download ───────────────────────────────────────────────────────
-
-function download() {
-  fs.mkdirSync(RAW_DIR, { recursive: true });
-
-  // Only look for per-season TSVs (season1.tsv … season41.tsv).
-  // The zip also contains combined_season1-41.tsv and other files —
-  // we ignore those to avoid double-counting clues.
-  const existing = fs.readdirSync(RAW_DIR).filter(f => /^season\d+\.tsv$/.test(f));
-  if (existing.length > 0) {
-    console.log(`Found ${existing.length} existing season TSV(s), skipping download`);
-    return;
-  }
-
-  const zipPath = path.join(RAW_DIR, 'dataset.zip');
-  console.log('Downloading dataset...');
-  execSync(`curl -L -o "${zipPath}" "${DATASET_URL}"`, { stdio: 'inherit' });
-
-  console.log('Extracting...');
-  execSync(`unzip -o "${zipPath}" -d "${RAW_DIR}"`, { stdio: 'inherit' });
-  fs.unlinkSync(zipPath);
-
-  // Move only the per-season TSVs out of the nested subdirectory.
-  const findSeasonTsvs = (dir: string): string[] => {
-    const results: string[] = [];
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) results.push(...findSeasonTsvs(fullPath));
-      else if (/^season\d+\.tsv$/.test(entry.name)) results.push(fullPath);
-    }
-    return results;
-  };
-
-  const tsvPaths = findSeasonTsvs(RAW_DIR);
-  for (const tsvPath of tsvPaths) {
-    const dest = path.join(RAW_DIR, path.basename(tsvPath));
-    if (tsvPath !== dest) fs.renameSync(tsvPath, dest);
-  }
-
-  console.log(`Extracted ${tsvPaths.length} season TSV(s)`);
-}
 
 // ── Parsing ────────────────────────────────────────────────────────
 
@@ -176,7 +134,7 @@ function buildCategories(
 // ── Main ───────────────────────────────────────────────────────────
 
 function main() {
-  download();
+  fs.mkdirSync(RAW_DIR, { recursive: true });
 
   const tsvFiles = fs.readdirSync(RAW_DIR)
     .filter(f => /^season\d+\.tsv$/.test(f))
@@ -186,7 +144,7 @@ function main() {
     });
 
   if (tsvFiles.length === 0) {
-    console.error('No season TSV files found. Something went wrong with the download.');
+    console.error('No season TSV files found. Add licensed source files to scripts/raw/ before running this command.');
     process.exit(1);
   }
 

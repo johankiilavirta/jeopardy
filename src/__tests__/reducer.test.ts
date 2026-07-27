@@ -219,14 +219,14 @@ describe('PASS_CLUE', () => {
     expect(state.status).toBe('BUZZ_OPEN');
   });
 
-  it('is a no-op for duplicate passes and Final Jeopardy', () => {
+  it('is a no-op for duplicate passes and Final Wager', () => {
     let state = openClue(createInitialState(['Alice', 'Bob']), 'alice');
     state = reducer(state, { type: 'PASS_CLUE', playerId: 'alice' });
     expect(reducer(state, { type: 'PASS_CLUE', playerId: 'alice' })).toBe(state);
 
     const finalState: GameState = {
       ...state,
-      status: 'FINAL_JEOPARDY_WAGER',
+      status: 'FINAL_WAGER',
       activeClue: { id: -1, category: 'FINAL', text: 'TOPIC', answer: 'A', value: 0, failedPlayerIds: [] },
       passedPlayerIds: [],
     };
@@ -849,13 +849,13 @@ describe('buzz stats', () => {
     expect(next.players['bob']).toMatchObject({ buzzCount: 0, reactionMsTotal: 0 });
   });
 
-  it('Final Jeopardy leaves buzz counters untouched', () => {
+  it('Final Wager leaves buzz counters untouched', () => {
     let state = createInitialState(['Alice', 'Bob'], 1, { category: 'C', text: 'T', answer: 'A' });
     state = reducer(state, { type: 'SKIP_CLUE', playerId: 'alice', clueId: 1 });
-    expect(state.status).toBe('FINAL_JEOPARDY_WAGER');
+    expect(state.status).toBe('FINAL_WAGER');
     state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice', answer: '0' });
     state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob', answer: '0' });
-    expect(state.status).toBe('FINAL_JEOPARDY_ANSWER');
+    expect(state.status).toBe('FINAL_ANSWER');
     state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice', answer: 'X' });
     state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob', answer: 'Y' });
     expect(state.status).toBe('REVEAL');

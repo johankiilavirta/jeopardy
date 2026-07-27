@@ -89,7 +89,7 @@ interface RevealInfo {
 
 interface ClueScreenProps {
   clue: ActiveClue;
-  isFinalJeopardyWager?: boolean;
+  isFinalWagerPhase?: boolean;
   /** Tap-to-buzz is live (buzz window open and this player hasn't buzzed). */
   canBuzz?: boolean | undefined;
   /** This player buzzed and is still typing — the keyboard is up. */
@@ -145,7 +145,7 @@ interface ClueScreenProps {
 
 export function ClueScreen({
   clue,
-  isFinalJeopardyWager = false,
+  isFinalWagerPhase = false,
   canBuzz,
   showKeyboard,
   canJudge,
@@ -172,7 +172,7 @@ export function ClueScreen({
   clueTextOpacity,
   caretColor,
 }: ClueScreenProps) {
-  const isFinalJeopardy = clue.id === -1;
+  const isFinalRound = clue.id === -1;
   // Wagers stay numeric. Regular answer entry can switch between the two
   // decks without closing the sheet or disturbing the typed answer.
   const [activeKeyboardType, setActiveKeyboardType] = useState<'text' | 'number'>(keyboardType);
@@ -212,7 +212,7 @@ export function ClueScreen({
   // closure changed).
   useEffect(() => {
     if (
-      isFinalJeopardyWager ||
+      isFinalWagerPhase ||
       bodyHeight <= 0 ||
       answerMeasureHeight <= 0 ||
       renderedClueHeight <= 0
@@ -224,7 +224,7 @@ export function ClueScreen({
     answerMeasureHeight,
     availableClueHeight,
     bodyHeight,
-    isFinalJeopardyWager,
+    isFinalWagerPhase,
     renderedClueHeight,
   ]);
 
@@ -286,18 +286,18 @@ export function ClueScreen({
   // brings it back. Only a swipe-down with at least one character locks
   // for real. `dismissed` resets whenever `showKeyboard` drops (lock,
   // phase change, timer expiry).
-  const [dismissed, setDismissed] = useState(() => isFinalJeopardy);
+  const [dismissed, setDismissed] = useState(() => isFinalRound);
   useEffect(() => {
-    if (!showKeyboard) setDismissed(isFinalJeopardy);
-  }, [showKeyboard, isFinalJeopardy]);
+    if (!showKeyboard) setDismissed(isFinalRound);
+  }, [showKeyboard, isFinalRound]);
   // The wager and answer phases share one mounted card (same sentinel clue
   // id), and for the last player to lock a wager `showKeyboard` never
   // drops across the transition — the wager keyboard would ride straight
   // into the answer screen, holding the category header at opacity 0.
-  // Every final-jeopardy phase starts with the keyboard put away instead.
+  // Every final-wager phase starts with the keyboard put away instead.
   useEffect(() => {
-    if (isFinalJeopardy) setDismissed(true);
-  }, [isFinalJeopardy, isFinalJeopardyWager]);
+    if (isFinalRound) setDismissed(true);
+  }, [isFinalRound, isFinalWagerPhase]);
 
   // Keyboard slide animation. The keyboard is summoned by the game phase —
   // it rises when this player buzzes and drops when their answer locks
@@ -808,7 +808,7 @@ export function ClueScreen({
         <Pressable
           style={[
             styles.card,
-            isFinalJeopardy && { backgroundColor: 'transparent', paddingHorizontal: 0 },
+            isFinalRound && { backgroundColor: 'transparent', paddingHorizontal: 0 },
           ]}
           onPress={handleTap}
         >
@@ -817,7 +817,7 @@ export function ClueScreen({
           <Animated.View
             style={[
               styles.header,
-              isFinalJeopardyWager && styles.headerFinalWager,
+              isFinalWagerPhase && styles.headerFinalWager,
               { opacity: headerFade },
             ]}
           >
@@ -838,7 +838,7 @@ export function ClueScreen({
           </Animated.View>
 
           <View style={styles.body} onLayout={handleBodyLayout}>
-            {!isFinalJeopardyWager && (
+            {!isFinalWagerPhase && (
               <View
                 pointerEvents="none"
                 accessibilityElementsHidden
@@ -869,7 +869,7 @@ export function ClueScreen({
                 ref={clueTextRef}
                 style={[
                   styles.clueText,
-                  isFinalJeopardyWager
+                  isFinalWagerPhase
                     ? styles.wagerCategoryText
                     : { fontSize: clueFontSize, lineHeight: clueLineHeight(clueFontSize) },
                 ]}
@@ -940,7 +940,7 @@ export function ClueScreen({
           <View
             style={[
               styles.sheet,
-              isFinalJeopardy && styles.sheetFinal,
+              isFinalRound && styles.sheetFinal,
               { minHeight: minSheetHeight },
             ]}
             onLayout={handleSheetLayout}
@@ -982,7 +982,7 @@ export function ClueScreen({
                     <NumberKeyboard
                       onInsert={insertChar}
                       onBackspace={backspaceChar}
-                      final={isFinalJeopardy}
+                      final={isFinalRound}
                       {...(keyboardType === 'text' ? { onLetters: () => setActiveKeyboardType('text') } : {})}
                       {...(onMaxWager ? { onMaxWager } : {})}
                     />
@@ -991,7 +991,7 @@ export function ClueScreen({
                       onInsert={insertChar}
                       onBackspace={backspaceChar}
                       onNumbers={() => setActiveKeyboardType('number')}
-                      final={isFinalJeopardy}
+                      final={isFinalRound}
                     />
                   )}
                 </View>
@@ -1196,7 +1196,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: SHEET_RADIUS,
     overflow: 'hidden',
   },
-  // Final Jeopardy: the sheet trades its recessed navy for the round's
+  // Final Wager: the sheet trades its recessed navy for the round's
   // recessed charcoal, matching the score bugs and judging tabs.
   sheetFinal: {
     backgroundColor: colors.cellFinalRecessed,

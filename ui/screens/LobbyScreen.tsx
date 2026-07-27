@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  Alert,
   Easing,
   PanResponder,
   Pressable,
@@ -71,9 +72,9 @@ const EXIT_COMMIT_DISTANCE = 100;
 const EXIT_COMMIT_VELOCITY = 0.5;
 const START_COMMIT_DISTANCE = 90;
 const START_COMMIT_VELOCITY = 0.5;
-// Keep the implementation below intact for a future re-enable, but do not
-// let the settings panel compete with the GAME # picker for vertical drags.
-const ENABLE_SETTINGS_VERTICAL_DISMISS = false;
+// Settings may be pulled down from the top of their scroll content to dismiss.
+// Individual field responders take precedence while their keyboards are open.
+const ENABLE_SETTINGS_VERTICAL_DISMISS = true;
 const EMPTY_BURNED: number[] = [];
 const LOBBY_VALUES = [200, 400, 600, 800, 1000] as const;
 
@@ -91,6 +92,7 @@ interface LobbySlotBugProps {
 function LobbySlotBug({ player, slotIndex, localIsHost, settingsOpen, onSettings, onKick }: LobbySlotBugProps) {
   const isHostSlot = slotIndex === 0;
   const filled = player != null;
+  const canKick = !isHostSlot && localIsHost && filled;
   const nameOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -116,8 +118,8 @@ function LobbySlotBug({ player, slotIndex, localIsHost, settingsOpen, onSettings
     }
   }, [filled, isHostSlot, localIsHost, nameOpacity, player?.peerId]);
 
-  return (
-    <View style={bugStyles.bug}>
+  const content = (
+    <>
       {(isHostSlot || filled) && (
         <Text style={[bugStyles.roleLabel, !isHostSlot && bugStyles.roleLabelHidden]} allowFontScaling={false}>
           {isHostSlot ? 'HOST' : ''}
@@ -138,7 +140,7 @@ function LobbySlotBug({ player, slotIndex, localIsHost, settingsOpen, onSettings
       {/* Settings gear — only on host slot, only visible to the host */}
       {isHostSlot && localIsHost && (
         <Pressable
-          style={bugStyles.actionBtn}
+          style={bugStyles.settingsBtn}
           onPress={onSettings}
           accessibilityRole="button"
           accessibilityLabel="Open game settings"
@@ -147,13 +149,29 @@ function LobbySlotBug({ player, slotIndex, localIsHost, settingsOpen, onSettings
         </Pressable>
       )}
 
-      {/* Kick button — only on guest slot, only visible to host when slot is filled */}
-      {!isHostSlot && localIsHost && filled && (
-        <Pressable style={[bugStyles.actionBtn, bugStyles.kickBtn]} onPress={onKick}>
-          <Text style={bugStyles.kickText}>KICK</Text>
-        </Pressable>
-      )}
-    </View>
+    </>
+  );
+
+  if (!canKick) return <View style={bugStyles.bug}>{content}</View>;
+
+  return (
+    <Pressable
+      style={({ pressed }) => [bugStyles.bug, pressed && bugStyles.bugPressed]}
+      accessibilityRole="button"
+      accessibilityLabel={`Remove ${player.name} from the lobby`}
+      onPress={() => {
+        Alert.alert(
+          'Remove player?',
+          `Remove ${player.name} from this lobby?`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Remove', style: 'destructive', onPress: onKick },
+          ],
+        );
+      }}
+    >
+      {content}
+    </Pressable>
   );
 }
 
@@ -192,38 +210,17 @@ const bugStyles = StyleSheet.create({
     letterSpacing: 1.5,
     fontFamily: typeTokens.ui500,
   },
-  actionBtn: {
+  bugPressed: {
+    opacity: 0.8,
+  },
+  settingsBtn: {
     position: 'absolute',
     top: 10,
     right: 10,
     width: 32,
     height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.cellRecessed,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  closeIcon: {
-    fontFamily: typeTokens.ui700,
-    fontSize: 22,
-    lineHeight: 22,
-    color: colors.categoryText,
-  },
-  kickBtn: {
-    borderRadius: 16,
-    width: 32,
-    height: 32,
-    paddingHorizontal: 0,
-    top: 10,
-    right: 10,
-  },
-  kickText: {
-    fontFamily: typeTokens.ui700,
-    fontSize: 10,
-    letterSpacing: 1.2,
-    color: '#E25550',
   },
 });
 
@@ -764,7 +761,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
   }, [realBoard, codeVisible, categoriesVisible]);
 
   // ── R1/R2 category toggle ─────────────────────────────────────────────────
-  // Tapping a category header fades in the Double Jeopardy category name.
+  // Tapping a category header fades in the Round Two category name.
 
   const catAnimsRef = useRef<Animated.Value[]>([]);
   const toggledColsRef = useRef<Set<number>>(new Set());
@@ -1058,7 +1055,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                     style={[styles.catOverlayCol, { width: colW, left: col * (colW + colGap) }]}
                     onPress={() => handleCategoryPress(col)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Toggle Double Jeopardy category: ${r2Name}`}
+                    accessibilityLabel={`Toggle Round Two category: ${r2Name}`}
                   >
                     {/* R2 name fades in over the R1 name when toggled */}
                     <Animated.View
@@ -1124,18 +1121,24 @@ export function LobbyScreen(props: LobbyScreenProps) {
           {/* Settings panel — phase 1: gradient grows from bottom; phase 2: content fades in */}
           {props.isHost && showAdvanced && (() => {
             const SETTINGS_COMMIT = 60;
+            // The settings content is a nested ScrollView. Capture a downward
+            // pull only when that view is already at its top edge; otherwise
+            // the ScrollView can take the responder back mid-drag and make
+            // the top chevron flicker.
+            const shouldCaptureSettingsDismiss = (gesture: { dx: number; dy: number }) => {
+              const isDown =
+                ENABLE_SETTINGS_VERTICAL_DISMISS &&
+                gesture.dy > 10 &&
+                Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.5 &&
+                settingsScrollOffsetRef.current <= 0;
+              const isHorizontal =
+                Math.abs(gesture.dx) > 10 &&
+                Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5;
+              return isDown || isHorizontal;
+            };
             const settingsPanResponder = PanResponder.create({
-              onMoveShouldSetPanResponder: (_e, gesture) => {
-                const isDown =
-                  ENABLE_SETTINGS_VERTICAL_DISMISS &&
-                  gesture.dy > 10 &&
-                  Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.5 &&
-                  settingsScrollOffsetRef.current <= 0;
-                const isHorizontal =
-                  Math.abs(gesture.dx) > 10 &&
-                  Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5;
-                return isDown || isHorizontal;
-              },
+              onMoveShouldSetPanResponder: (_e, gesture) => shouldCaptureSettingsDismiss(gesture),
+              onMoveShouldSetPanResponderCapture: (_e, gesture) => shouldCaptureSettingsDismiss(gesture),
               onPanResponderGrant: () => {
                 settingsAxisRef.current = null;
                 settingsDragYRef.current = 0;
@@ -1173,6 +1176,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                 settingsDragX.setValue(0);
                 settingsDragY.setValue(0);
               },
+              onPanResponderTerminationRequest: () => false,
             });
 
             // Chevron interpolations — mirror lobby pattern exactly.
@@ -1206,11 +1210,6 @@ export function LobbyScreen(props: LobbyScreenProps) {
                 <Animated.View
                   style={[StyleSheet.absoluteFill, { opacity: settingsContentOpacity }]}
                 >
-                  {/* Drag handle / tap to close */}
-                  <Pressable style={styles.settingsDragHandle} onPress={closeSettings}>
-                    <View style={styles.settingsDragPill} />
-                  </Pressable>
-
                 {/* Drag-left → right-side ">" chevron */}
                 <Animated.View pointerEvents="none" style={[styles.exitIcon, styles.exitIconRight, { opacity: settingsLeftDragChevOpacity, transform: [{ translateX: settingsLeftDragChevTransX }] }]}>
                   <View style={styles.chevron}>
@@ -1397,7 +1396,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                             <View style={styles.categoryTwoCol}>
                               <View style={styles.categorySubCol}>
                                 <Text style={styles.label}>
-                                  {'JEOPARDY!' + (round1Categories.some(c => c.clueCount < 5) ? ' *' : '')}
+                                  {'ROUND ONE' + (round1Categories.some(c => c.clueCount < 5) ? ' *' : '')}
                                 </Text>
                                 {round1Categories.map(({ name, clueCount }, i) => (
                                   <View key={i} style={styles.categoryRow}>
@@ -1410,7 +1409,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
                               {round2Categories && (
                                 <View style={styles.categorySubCol}>
                                   <Text style={styles.label}>
-                                    {'DOUBLE!' + (round2Categories.some(c => c.clueCount < 5) ? ' *' : '')}
+                                    {'ROUND TWO' + (round2Categories.some(c => c.clueCount < 5) ? ' *' : '')}
                                   </Text>
                                   {round2Categories.map(({ name, clueCount }, i) => (
                                     <View key={i} style={styles.categoryRow}>
@@ -1431,13 +1430,6 @@ export function LobbyScreen(props: LobbyScreenProps) {
               </View>
             );
           })()}
-
-          {/* Error status line */}
-          {props.error && (
-            <View style={styles.statusLineWrap}>
-              <Text style={styles.statusLine}>{props.error}</Text>
-            </View>
-          )}
 
         </Animated.View>
 
@@ -1613,17 +1605,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   // Phase 2: content layer (opacity animated after gradient finishes).
-  settingsDragHandle: {
-    alignItems: 'center',
-    paddingTop: 14,
-    paddingBottom: 10,
-  },
-  settingsDragPill: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-  },
   settingsScroll: {
     flex: 1,
   },
@@ -1777,20 +1758,6 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 6,
     fontStyle: 'italic',
-  },
-  // ── Error status ────────────────────────────────────────────────────────
-  statusLineWrap: {
-    position: 'absolute',
-    left: 24,
-    bottom: 20,
-    height: 40,
-    justifyContent: 'center',
-  },
-  statusLine: {
-    fontFamily: typeTokens.ui500,
-    fontSize: 13,
-    letterSpacing: 0.5,
-    color: 'rgba(255,255,255,0.65)',
   },
   // ── Category R1/R2 toggle overlay ───────────────────────────────────────
   catOverlayRow: {

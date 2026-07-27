@@ -13,7 +13,7 @@ import type { GameData } from '../data/gameLoader';
 import type { SessionMode } from './sessionProvider';
 import type { GameState } from '../src/types';
 
-const MATCH_HISTORY_KEY = 'jeopardy/match-history';
+const MATCH_HISTORY_KEY = 'je-trivia/match-history';
 const MAX_MATCHES = 200;
 
 export interface MatchPlayerResult {
@@ -44,7 +44,7 @@ export interface MatchResult {
   startedAt?: number;
   updatedAt?: number;
   finishedAt: number;
-  /** J!Archive game number, when known. */
+  /** Source game number, when known. */
   gameNumber: number | null;
   players: MatchPlayerResult[];
   /** All names sharing the top score (more than one on a tie). */

@@ -36,7 +36,7 @@ export interface ServerOptions {
    *  When set, `playerNames` is ignored — seats reattach to the state's
    *  players by name matching on connect. */
   initialState?: GameState;
-  /** Final Jeopardy clue if available */
+  /** Final Wager clue if available */
   finalClue?: { category: string; text: string; answer: string } | null;
 }
 
@@ -45,14 +45,14 @@ const CLIENT_ACTIONS = new Set(['SELECT_CLUE', 'BUZZ', 'SET_ANSWER', 'LOCK_ANSWE
 
 /** Undo/redo land only on these statuses; the transient in-clue phases
  *  (CLUE_READING, BUZZ_OPEN, ANSWERING, CLUE_EXPIRED) are skipped over.
- *  The Final Jeopardy phases are boundaries too: each step un-does one
+ *  The Final Wager phases are boundaries too: each step un-does one
  *  locked wager/answer instead of blowing through the whole final round
  *  back to the regular board. */
 const UNDO_BOUNDARY_STATUSES: ReadonlySet<GameStatus> = new Set([
   'CHOOSE_CLUE',
   'REVEAL',
-  'FINAL_JEOPARDY_WAGER',
-  'FINAL_JEOPARDY_ANSWER',
+  'FINAL_WAGER',
+  'FINAL_ANSWER',
 ]);
 
 export function createServer(
@@ -133,7 +133,7 @@ export function createServer(
    *  entries are cleared. A timer-fired lock keeps the last synced answer. */
   function syncAnswerTimers(): void {
     const state = server.history.current;
-    if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING' && state.status !== 'FINAL_JEOPARDY_WAGER' && state.status !== 'FINAL_JEOPARDY_ANSWER') {
+    if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING' && state.status !== 'FINAL_WAGER' && state.status !== 'FINAL_ANSWER') {
       clearAnswerTimers();
       return;
     }
@@ -147,7 +147,7 @@ export function createServer(
     for (const buzz of state.buzzes) {
       if (!buzz.locked && !answerTimerIds.has(buzz.playerId)) {
         const playerId = buzz.playerId;
-        const isFinal = state.status === 'FINAL_JEOPARDY_WAGER' || state.status === 'FINAL_JEOPARDY_ANSWER';
+        const isFinal = state.status === 'FINAL_WAGER' || state.status === 'FINAL_ANSWER';
         const remainingMs = isFinal ? 30000 : (buzzWindowOpenAt != null
           ? Math.max(50, Math.round((buzzWindowOpenAt + buzzerMs - Date.now()) / 100) * 100)
           : answerMs);

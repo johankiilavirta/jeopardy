@@ -1,8 +1,8 @@
 /**
  * Reusable bottom-sheet keyboard container with swipe-to-dismiss.
  *
- * Encapsulates the animated show/hide, PanResponder drag, grabber bar,
- * and dismiss-layer overlay that was previously duplicated across screens.
+ * Encapsulates the animated show/hide, PanResponder drag, and dismiss-layer
+ * overlay that was previously duplicated across screens.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -186,7 +186,7 @@ interface KeyboardSheetProps {
 }
 
 /**
- * Renders the dismiss overlay + animated bottom sheet with grabber.
+ * Renders the dismiss overlay + animated bottom sheet.
  * Place at the end of your screen's root View.
  */
 export function KeyboardSheet({ controls, children }: KeyboardSheetProps) {
@@ -212,7 +212,6 @@ export function KeyboardSheet({ controls, children }: KeyboardSheetProps) {
         >
           <View style={[styles.sheet, { height: r.panelHeight + SHEET_BOTTOM_OVERHANG }]}>
             <Pressable onPress={() => {}} style={[styles.sheetInner, { height: r.panelHeight }]}>
-              <View style={styles.grabber} />
               <View style={styles.keypad}>
                 {children}
               </View>
@@ -251,15 +250,6 @@ const styles = StyleSheet.create({
   sheetInner: {
     paddingHorizontal: 12,
     paddingBottom: 14,
-  },
-  grabber: {
-    alignSelf: 'center',
-    width: 44,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    marginTop: 10,
-    marginBottom: 10,
   },
   keypad: {
     flex: 1,

@@ -19,7 +19,7 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.join(scriptDirectory, '..');
 const seasonsDirectory = path.join(projectRoot, 'data', 'seasons');
 const outputDirectory = path.join(projectRoot, 'private-question-files');
-const outputFile = path.join(outputDirectory, 'jeopardy-games.json');
+const outputFile = path.join(outputDirectory, 'je-trivia-games.json');
 
 function arrayContents(raw: string, fileName: string): string {
   const trimmed = raw.trim();

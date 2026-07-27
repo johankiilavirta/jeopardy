@@ -13,7 +13,7 @@ import { JudgementTray } from '../components/JudgementTray';
 import { ExpandingClueOverlay } from '../components/ExpandingClueOverlay';
 import type { CellRect } from '../components/BoardCell';
 
-// Demo loop driven by the real reducer with real Jeopardy pacing: tapping a
+// Demo loop driven by the real reducer with real JE Trivia pacing: tapping a
 // cell dispatches SELECT_CLUE; the clue is "read" for 5s (buzzing locked),
 // then the buzz window opens for 5s — tap the card to BUZZ. Buzzing summons
 // the keyboard and starts your personal 10s typing timer; swipe the keyboard
@@ -29,7 +29,7 @@ const PHASE_TIMERS: Partial<Record<GameStatus, { ms: number; action: Action }>> 
   CLUE_EXPIRED: { ms: 5000, action: { type: 'DISMISS_CLUE' } },
 };
 
-/** Final Jeopardy gives each player a fresh 30-second window for both the
+/** Final Wager gives each player a fresh 30-second window for both the
  *  wager and answer phases (mirrors NetworkedGame). */
 const FINAL_ANSWER_MS = 30000;
 
@@ -74,11 +74,11 @@ function initialStateFor(screen: string | undefined): GameState {
     case 'final-wager':
       return {
         ...yourTurnFresh,
-        status: 'FINAL_JEOPARDY_WAGER',
+        status: 'FINAL_WAGER',
         currentTurnPlayerId: null,
         activeClue: {
           id: -1,
-          category: 'FINAL JEOPARDY',
+          category: 'FINAL WAGER',
           text: 'ACRONYMS',
           answer: 'NASA',
           value: 0,
@@ -113,13 +113,13 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
     !localBuzz.locked &&
     (state.status === 'BUZZ_OPEN' ||
       state.status === 'ANSWERING' ||
-      state.status === 'FINAL_JEOPARDY_WAGER' ||
-      state.status === 'FINAL_JEOPARDY_ANSWER');
+      state.status === 'FINAL_WAGER' ||
+      state.status === 'FINAL_ANSWER');
 
   useEffect(() => {
     if (
-      state.status === 'FINAL_JEOPARDY_WAGER' ||
-      state.status === 'FINAL_JEOPARDY_ANSWER'
+      state.status === 'FINAL_WAGER' ||
+      state.status === 'FINAL_ANSWER'
     ) {
       const deadline = Date.now() + FINAL_ANSWER_MS;
       setPhaseDeadline(deadline);
@@ -194,7 +194,7 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
         >
           <ClueScreen
             clue={state.activeClue}
-            isFinalJeopardyWager={state.status === 'FINAL_JEOPARDY_WAGER'}
+            isFinalWagerPhase={state.status === 'FINAL_WAGER'}
             canBuzz={state.status === 'BUZZ_OPEN' && !localBuzz}
             canPass={
               state.activeClue.id !== -1 &&
@@ -214,11 +214,11 @@ export function DemoHarness({ initialScreen }: { initialScreen?: string } = {}) 
                 : null
             }
             showKeyboard={typing}
-            keyboardType={state.status === 'FINAL_JEOPARDY_WAGER' ? 'number' : 'text'}
-            inputPrefix={state.status === 'FINAL_JEOPARDY_WAGER' ? '$' : ''}
-            placeholder={state.status === 'FINAL_JEOPARDY_WAGER' ? 'ENTER WAGER' : 'TYPE YOUR ANSWER'}
+            keyboardType={state.status === 'FINAL_WAGER' ? 'number' : 'text'}
+            inputPrefix={state.status === 'FINAL_WAGER' ? '$' : ''}
+            placeholder={state.status === 'FINAL_WAGER' ? 'ENTER WAGER' : 'TYPE YOUR ANSWER'}
             onMaxWager={
-              state.status === 'FINAL_JEOPARDY_WAGER'
+              state.status === 'FINAL_WAGER'
                 ? () => dispatch({ type: 'SET_ANSWER', playerId: LOCAL_PLAYER_ID, text: String(state.players[LOCAL_PLAYER_ID]?.score ?? 0) })
                 : undefined
             }

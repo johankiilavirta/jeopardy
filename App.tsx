@@ -45,7 +45,7 @@ import {
   type SavedSnapshot,
   type PreferredConnectionMode,
 } from './app/sessionStore';
-import { buildGameKey, computeWinnerNames, deleteMatchHistoryEntry, isOngoingMatch, loadMatchHistory, matchBelongsToPlayer, recordMatch, recordOngoingMatch, type MatchResult } from './app/matchHistory';
+import { buildGameKey, computeWinnerNames, isOngoingMatch, loadMatchHistory, matchBelongsToPlayer, recordMatch, recordOngoingMatch, type MatchResult } from './app/matchHistory';
 import { SettingsScreen } from './ui/screens/SettingsScreen';
 import { MatchHistoryScreen } from './ui/screens/MatchHistoryScreen';
 import { colors } from './ui/theme/tokens';
@@ -119,7 +119,7 @@ const DEV_ROOM = DEV_ROOM_RAW ? Number(DEV_ROOM_RAW) : null;
 // straight into the game). Set EXPO_PUBLIC_PLAYERS=2 and open a second tab for
 // a multiplayer dev session.
 const DEV_PLAYERS = DEV_PLAYERS_RAW ? Math.max(1, Number(DEV_PLAYERS_RAW)) : 1;
-// Optional J!Archive game number to load for the dev session.
+// Optional source game number to load for the dev session.
 const DEV_GAME = DEV_GAME_RAW ? Number(DEV_GAME_RAW) : null;
 const relayHostFromConfig = process.env.EXPO_PUBLIC_RELAY_HOST ?? extra?.relayHost ?? DEFAULT_RELAY_HOST;
 const ONLINE_PLAY_ENABLED =
@@ -1317,10 +1317,6 @@ export default function App() {
       setScreen({ type: 'menu' });
     });
   }, [transitionAnim]);
-  const handleDeleteMatch = useCallback((id: string) => {
-    void deleteMatchHistoryEntry(id).then(setRecentMatches);
-  }, []);
-
   /** Deliberately walk away from the current room (also cancels a pending
    *  reconnect). The snapshot survives — that's what RESUME GAME is for. */
   const handleLeave = useCallback(() => {
@@ -1594,7 +1590,6 @@ export default function App() {
             historyReady={matchHistoryLoaded}
             onBack={handleHistoryBack}
             onResumeMatch={handleResumeMatch}
-            onDeleteMatch={handleDeleteMatch}
           />
         );
       case 'demo':

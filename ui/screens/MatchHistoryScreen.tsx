@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Easing, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated, Easing, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { isOngoingMatch, matchBelongsToPlayer, type MatchResult } from '../../app/matchHistory';
 import { Board } from '../components/Board';
@@ -14,7 +14,6 @@ interface MatchHistoryScreenProps {
   historyReady: boolean;
   onBack: () => void;
   onResumeMatch: (match: MatchResult) => void;
-  onDeleteMatch: (id: string) => void;
 }
 
 const PLAYER_COLORS = ['#5B8DEF', '#E8A035'];
@@ -139,7 +138,7 @@ function Chevron({ flipped = false }: { flipped?: boolean }) {
   );
 }
 
-export function MatchHistoryScreen({ matches, playerName, historyReady, onBack, onResumeMatch, onDeleteMatch }: MatchHistoryScreenProps) {
+export function MatchHistoryScreen({ matches, playerName, historyReady, onBack, onResumeMatch }: MatchHistoryScreenProps) {
   const [selectedMatch, setSelectedMatch] = useState<MatchResult | null>(null);
   const [boardSize, setBoardSize] = useState({ width: 0, height: 0 });
   const { width, height } = useWindowDimensions();
@@ -151,7 +150,6 @@ export function MatchHistoryScreen({ matches, playerName, historyReady, onBack, 
   const boardRevealStartedRef = useRef(false);
   const exitDragRef = useRef(0);
   const exitDirectionRef = useRef<-1 | 1 | null>(null);
-  const longPressedMatchIdRef = useRef<string | null>(null);
   const handleBoardReady = useCallback(() => {
     if (boardRevealStartedRef.current) return;
     boardRevealStartedRef.current = true;
@@ -302,24 +300,6 @@ export function MatchHistoryScreen({ matches, playerName, historyReady, onBack, 
       // Older history entries are local data; a bad record should be inert.
     }
   };
-  const confirmDeleteMatch = (match: MatchResult) => {
-    longPressedMatchIdRef.current = match.id;
-    Alert.alert(
-      'Delete match?',
-      'This removes this match from local history on this device.',
-      [
-        { text: 'Cancel', style: 'cancel', onPress: () => { longPressedMatchIdRef.current = null; } },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            longPressedMatchIdRef.current = null;
-            onDeleteMatch(match.id);
-          },
-        },
-      ],
-    );
-  };
   const totalFlex = 6.25;
   const boardGap = grid.lineWidth;
   const contentHeight = Math.max(0, boardSize.height - boardGap * 5);
@@ -362,15 +342,7 @@ export function MatchHistoryScreen({ matches, playerName, historyReady, onBack, 
                     width: clueWidth,
                     height: clueHeight,
                   }]}
-                  onPress={() => {
-                    if (longPressedMatchIdRef.current === match.id) {
-                      longPressedMatchIdRef.current = null;
-                      return;
-                    }
-                    openMatch(match);
-                  }}
-                  onLongPress={() => confirmDeleteMatch(match)}
-                  delayLongPress={500}
+                  onPress={() => openMatch(match)}
                 >
                   <Text style={styles.tileGame} numberOfLines={1}>{match.gameNumber != null ? `#${match.gameNumber}` : 'DEMO'}</Text>
                   <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={[styles.tileResult, ongoing ? styles.ongoing : result === 'W' ? styles.win : result === 'L' ? styles.loss : styles.tie]}>{resultLabel}</Text>

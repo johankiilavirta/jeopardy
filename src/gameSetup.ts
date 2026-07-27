@@ -37,7 +37,7 @@ export function validateResumeState(state: unknown): GameState | null {
 
 /** Map game data (or its absence → demo board) and an optional resume
  *  state to the ServerOptions that start the game. Both rounds count
- *  toward totalClues so play spans Jeopardy! + Double Jeopardy!. */
+ *  toward totalClues so play spans Round One + Round Two!. */
 export function buildServerOptions(
   gameData: SetupGameData | null,
   resumeState: GameState | null,

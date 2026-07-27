@@ -32,7 +32,7 @@ describe('buildServerOptions', () => {
     expect(opts.initialState).toBeUndefined();
   });
 
-  it('counts both rounds and arms Final Jeopardy for a full game', () => {
+  it('counts both rounds and arms Final Wager for a full game', () => {
     const opts = buildServerOptions(fullGame(), null);
     expect(opts.totalClues).toBe(22);
     expect(opts.finalClue).toEqual({ category: 'FJ', text: 'Q', answer: 'A' });

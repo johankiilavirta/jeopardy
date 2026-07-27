@@ -6,8 +6,8 @@ export type GameStatus =
   | 'ANSWERING'
   | 'REVEAL'
   | 'GAME_OVER'
-  | 'FINAL_JEOPARDY_WAGER'
-  | 'FINAL_JEOPARDY_ANSWER';
+  | 'FINAL_WAGER'
+  | 'FINAL_ANSWER';
 
 export interface Player {
   id: string;
@@ -56,7 +56,7 @@ export interface GameState {
   passedPlayerIds?: string[];
   /** Board dimensions */
   totalClues: number;
-  /** Final Jeopardy clue if available */
+  /** Final Wager clue if available */
   finalClue?: { category: string; text: string; answer: string } | null;
   /** Final wagers submitted by players */
   finalWagers?: Record<string, number>;

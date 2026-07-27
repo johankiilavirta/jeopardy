@@ -85,7 +85,7 @@ class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
       URLQueryItem(name: "inlineSourceMap", value: "false"),
       URLQueryItem(name: "modulesOnly", value: "false"),
       URLQueryItem(name: "runModule", value: "true"),
-      URLQueryItem(name: "app", value: Bundle.main.bundleIdentifier ?? "com.anonymous.jeopardy"),
+      URLQueryItem(name: "app", value: Bundle.main.bundleIdentifier ?? "com.anonymous.je-trivia"),
     ]
     return components.url
 #else

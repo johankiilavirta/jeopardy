@@ -6,7 +6,7 @@
  *   npm run ui -- --screen=clue   # a clue already on screen
  *   npm run ui -- --screen=long-clue # oversized clue + pull-down pass fixture
  *   npm run ui -- --screen=judge  # answer-reveal / judging fixture
- *   npm run ui -- --screen=final-wager  # Final Jeopardy wager fixture
+ *   npm run ui -- --screen=final-wager  # Final Wager fixture
  */
 import { spawn } from 'child_process';
 

@@ -8,8 +8,8 @@ Pod::Spec.new do |s|
   s.summary          = package['description']
   s.description      = package['description']
   s.license          = package['license']
-  s.author           = 'Jeopardy'
-  s.homepage         = 'https://github.com/johankiilavirta/jeopardy'
+  s.author           = 'JE Trivia'
+  s.homepage         = 'https://github.com/johankiilavirta/je-trivia'
   s.platforms        = { :ios => '16.4' }
   s.source           = { :path => '.' }
   s.static_framework = true
