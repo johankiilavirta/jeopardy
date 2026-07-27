@@ -13,6 +13,7 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 import {
   buildGameKey,
   computeWinnerNames,
+  deleteMatchHistoryEntry,
   isOngoingMatch,
   loadMatchHistory,
   matchBelongsToPlayer,
@@ -191,6 +192,15 @@ describe('recordMatch / loadMatchHistory', () => {
     const history = await removeOngoingMatch('instance-b');
 
     expect(history.map(item => item.id)).toEqual(['completed', 'instance-a|ongoing']);
+  });
+
+  it('deletes only the selected history entry', async () => {
+    await recordMatch(match('keep'));
+    await recordMatch(match('delete'));
+
+    const history = await deleteMatchHistoryEntry('delete');
+
+    expect(history.map(item => item.id)).toEqual(['keep']);
   });
 
   it('caps the history at 200 matches', async () => {

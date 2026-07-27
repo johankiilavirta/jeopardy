@@ -184,3 +184,16 @@ export function removeOngoingMatch(matchInstanceId: string): Promise<MatchResult
   });
   return historyWriteQueue;
 }
+
+/** Remove exactly one local history tile. */
+export function deleteMatchHistoryEntry(id: string): Promise<MatchResult[]> {
+  historyWriteQueue = historyWriteQueue.then(async () => {
+    const history = await loadMatchHistory();
+    const updated = history.filter(item => item.id !== id);
+    try {
+      await AsyncStorage.setItem(MATCH_HISTORY_KEY, JSON.stringify(updated));
+    } catch {}
+    return updated;
+  });
+  return historyWriteQueue;
+}
