@@ -129,6 +129,8 @@ interface ClueScreenProps {
   keyboardType?: 'text' | 'number';
   /** Called when MAX WAGER is pressed on the number keyboard */
   onMaxWager?: (() => void) | undefined;
+  /** Clamp numeric input to this ceiling (e.g. player's score for wagers). */
+  maxInputValue?: number | undefined;
   /** Prefix for the answer text (e.g. '$') */
   inputPrefix?: string;
   /** Placeholder when answer is empty */
@@ -169,6 +171,7 @@ export function ClueScreen({
   lights,
   keyboardType = 'text',
   onMaxWager,
+  maxInputValue,
   inputPrefix = '',
   placeholder = 'TYPE YOUR ANSWER',
   keyboardBottomInset = 0,
@@ -688,6 +691,8 @@ export function ClueScreen({
     onPass,
     onUnlockAnswer,
     setDismissed,
+    maxInputValue,
+    keyboardType,
   });
   stateRef.current = {
     canBuzz,
@@ -703,13 +708,26 @@ export function ClueScreen({
     onPass,
     onUnlockAnswer,
     setDismissed,
+    maxInputValue,
+    keyboardType,
   };
 
   // Stable key callbacks (same latest-ref pattern as the keydown handler),
   // so the memoized AnswerKeyboard's 30 keys never re-render while typing.
   const insertChar = useCallback((ch: string) => {
     const s = stateRef.current;
-    s.onAnswerChange?.((s.answer ?? '') + ch);
+    let next = (s.answer ?? '') + ch;
+    // For number fields: strip leading zeros and clamp to max value.
+    if (s.keyboardType === 'number') {
+      next = next.replace(/^0+/, '');
+      if (s.maxInputValue != null && next.length > 0) {
+        const n = parseInt(next, 10);
+        if (Number.isFinite(n) && n > s.maxInputValue) {
+          next = String(Math.max(0, s.maxInputValue));
+        }
+      }
+    }
+    s.onAnswerChange?.(next);
   }, []);
   const backspaceChar = useCallback(() => {
     const s = stateRef.current;
