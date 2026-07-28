@@ -782,7 +782,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
               keyboardType={gameState.status === 'FINAL_WAGER' ? 'number' : 'text'}
               inputPrefix={gameState.status === 'FINAL_WAGER' ? '$' : ''}
               placeholder={gameState.status === 'FINAL_WAGER' ? 'ENTER WAGER' : 'TYPE YOUR ANSWER'}
-              onMaxWager={gameState.status === 'FINAL_WAGER' ? () => handleAnswerChange(String(gameState.players[playerId]?.score ?? 0)) : undefined}
+              maxInputValue={gameState.status === 'FINAL_WAGER' ? Math.max(0, gameState.players[playerId]?.score ?? 0) : undefined}
+              onMaxWager={gameState.status === 'FINAL_WAGER' ? () => handleAnswerChange(String(Math.max(0, gameState.players[playerId]?.score ?? 0))) : undefined}
               onSkip={() => {
                 if (gameState.activeClue) dispatch({ type: 'SKIP_CLUE', playerId, clueId: gameState.activeClue.id });
               }}

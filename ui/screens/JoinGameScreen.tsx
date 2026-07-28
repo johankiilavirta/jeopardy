@@ -182,7 +182,7 @@ export function JoinGameScreen(props: JoinGameScreenProps) {
   }, [cardProgress, contentOpacity, targetRect, targetTextRect]);
 
   const handleCodeChange = useCallback((next: string) => {
-    const digits = next.replace(/\D/g, '').slice(0, 3);
+    const digits = next.replace(/\D/g, '').replace(/^0+/, '').slice(0, 3);
     if (digits === codeRef.current) return;
     codeRef.current = digits;
     props.onCodeChange();

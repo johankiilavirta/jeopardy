@@ -400,10 +400,10 @@ export function LobbyScreen(props: LobbyScreenProps) {
     if (keyboardFieldRef.current === 'buzzerDelay') {
       const current = !props.buzzerDelay || Number(props.buzzerDelay) < 0 ? '' : props.buzzerDelay;
       if (digit === '.' && current.includes('.')) return;
-      props.onBuzzerDelayChange?.(`${current}${digit}`.replace(/[^0-9.]/g, ''));
+      props.onBuzzerDelayChange?.(`${current}${digit}`.replace(/[^0-9.]/g, '').replace(/^0+(?=\d)/, ''));
       return;
     }
-    props.onGameIdChange?.(`${props.gameId ?? ''}${digit}`.replace(/\D/g, '').slice(0, 6));
+    props.onGameIdChange?.(`${props.gameId ?? ''}${digit}`.replace(/\D/g, '').replace(/^0+/, '').slice(0, 6));
   }, [props]);
 
   const backspaceGameId = useCallback(() => {
