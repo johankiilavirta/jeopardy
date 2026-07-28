@@ -18,6 +18,28 @@ import type { GameData, RoundNumber } from '../../data/gameLoader';
 import type { MatchResult } from '../../app/matchHistory';
 import type { SessionMode } from '../../app/sessionProvider';
 import { triggerBuzzFeedback } from '../../app/buzzFeedback';
+import { lookupSpokenText } from '../../app/ttsCache';
+
+// Lazily resolved best-quality English voice (Premium > Enhanced > default).
+let bestVoicePromise: Promise<string | undefined> | null = null;
+async function getBestEnglishVoice(): Promise<string | undefined> {
+  if (!bestVoicePromise) {
+    bestVoicePromise = (async () => {
+      try {
+        const speech = await import('expo-speech');
+        const voices = await speech.getAvailableVoicesAsync();
+        const english = voices.filter(v => v.language.startsWith('en'));
+        const quality = (v: { quality?: string; identifier: string }) =>
+          v.identifier.toLowerCase().includes('premium') ? 2 : v.quality === 'Enhanced' ? 1 : 0;
+        english.sort((a, b) => quality(b) - quality(a));
+        return english[0]?.identifier;
+      } catch {
+        return undefined;
+      }
+    })();
+  }
+  return bestVoicePromise;
+}
 import { InGameSettingsScreen } from '../screens/InGameSettingsScreen';
 import { ChooseClueScreen } from '../screens/ChooseClueScreen';
 import { ScoreChart } from '../components/ScoreChart';
@@ -197,7 +219,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       !localIsHost ||
       !textToSpeechEnabled ||
       gameState?.status !== 'CLUE_READING' ||
-      !clue
+      !clue ||
+      expandedClueId !== clue.id
     ) return;
 
     let cancelled = false;
@@ -223,9 +246,13 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         // Load lazily so a stale development client that predates
         // ExpoSpeech can still launch and play with narration disabled.
         speech = await import('expo-speech');
-        await speech.stop();
+        const [, voiceId] = await Promise.all([speech.stop(), getBestEnglishVoice()]);
         if (cancelled) return;
-        speech.speak(clue.text, {
+        const spokenText = boardData?.gameNumber != null
+          ? (lookupSpokenText(boardData.gameNumber, clue.id) ?? clue.text)
+          : clue.text;
+        speech.speak(spokenText, {
+          ...(voiceId !== undefined && { voice: voiceId }),
           onDone: finish,
           onStopped: finish,
           onError: finish,
@@ -243,6 +270,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       void speech?.stop();
     };
   }, [
+    expandedClueId,
     gameState?.activeClue?.id,
     gameState?.activeClue?.text,
     gameState?.status,

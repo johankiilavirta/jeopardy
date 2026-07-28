@@ -384,7 +384,7 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
                 {/* ── Left column: player identity + connection mode ── */}
                 <View style={styles.settingsColLeft}>
                   <View style={styles.settingGroup}>
-                    <Text style={styles.label}>PLAYER NAME</Text>
+                    <Text style={styles.label} numberOfLines={1}>PLAYER NAME</Text>
                     <Pressable
                       style={styles.input}
                       accessibilityRole="button"
@@ -410,7 +410,7 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
 
                   {props.onImportQuestions && (
                     <View style={styles.settingGroup}>
-                      <Text style={styles.label}>QUESTION FILE</Text>
+                      <Text style={styles.label} numberOfLines={1}>QUESTION BANK</Text>
                       <Pressable
                         style={styles.input}
                         accessibilityRole="button"
@@ -423,7 +423,7 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
                           adjustsFontSizeToFit
                           minimumFontScale={0.55}
                         >
-                          {props.questionLibrary ? 'REPLACE JSON FILES' : 'LOAD JSON FILES'}
+                          {props.questionLibrary ? 'UPLOAD & REPLACE' : 'LOAD JSON FILES'}
                         </Text>
                       </Pressable>
                       <Text style={styles.questionStatus} numberOfLines={2}>
@@ -437,7 +437,7 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
 
                   {props.onlinePlayEnabled && props.connectionMode != null && props.onConnectionModeChange && (
                     <View style={styles.settingGroup}>
-                      <Text style={styles.label}>BLUETOOTH</Text>
+                      <Text style={styles.label} numberOfLines={1}>BLUETOOTH</Text>
                       <Pressable
                         accessibilityRole="switch"
                         accessibilityState={{ checked: props.connectionMode === 'bluetooth' }}
@@ -452,9 +452,12 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
                       </Pressable>
                     </View>
                   )}
+                </View>
 
+                {/* ── Right column: toggles + advanced ── */}
+                <View style={styles.settingsColRight}>
                   <View style={styles.settingGroup}>
-                    <Text style={styles.label}>VIBRATION</Text>
+                    <Text style={styles.label} numberOfLines={1}>VIBRATION</Text>
                     <Pressable
                       accessibilityRole="switch"
                       accessibilityState={{ checked: !!props.vibrationEnabled }}
@@ -468,7 +471,7 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
                   </View>
 
                   <View style={styles.settingGroup}>
-                    <Text style={styles.label}>TEXT TO SPEECH</Text>
+                    <Text style={styles.label} numberOfLines={1}>TEXT TO SPEECH</Text>
                     <Pressable
                       accessibilityRole="switch"
                       accessibilityState={{ checked: !!props.textToSpeechEnabled }}
@@ -480,77 +483,76 @@ export function MainMenuScreen(props: MainMenuScreenProps) {
                       </Text>
                     </Pressable>
                   </View>
-                </View>
 
-                {/* ── Right column: advanced connection settings ── */}
-                {props.onlinePlayEnabled && (
-                <View style={styles.settingsColRight}>
-                  <Pressable
-                    style={styles.advancedToggle}
-                    onPress={() => {
-                      sheet.close();
-                      setShowAdvanced(!showAdvanced);
-                    }}
-                  >
-                    <Text style={styles.advancedToggleText}>
-                      {showAdvanced ? '▾ ADVANCED' : '▸ ADVANCED'}
-                    </Text>
-                  </Pressable>
+                  {props.onlinePlayEnabled && (
+                    <>
+                      <Pressable
+                        style={styles.advancedToggle}
+                        onPress={() => {
+                          sheet.close();
+                          setShowAdvanced(!showAdvanced);
+                        }}
+                      >
+                        <Text style={styles.advancedToggleText}>
+                          {showAdvanced ? '▾ ADVANCED' : '▸ ADVANCED'}
+                        </Text>
+                      </Pressable>
 
-                  {showAdvanced && (
-                    <View
-                      style={styles.advancedSection}
-                      onLayout={event => {
-                        advancedYRef.current = event.nativeEvent.layout.y;
-                      }}
-                    >
-                      <View style={styles.settingGroup}>
-                        <Text style={styles.label}>RELAY HOST</Text>
-                        <Pressable
-                          style={styles.input}
-                          accessibilityRole="button"
+                      {showAdvanced && (
+                        <View
+                          style={styles.advancedSection}
                           onLayout={event => {
-                            fieldLayoutRef.current.relayHost = {
-                              y: advancedYRef.current + event.nativeEvent.layout.y,
-                              height: event.nativeEvent.layout.height,
-                            };
+                            advancedYRef.current = event.nativeEvent.layout.y;
                           }}
-                          onPress={() => openKeyboard('relayHost')}
                         >
-                          <Text
-                            style={[styles.inputText, !props.relayHost && styles.inputPlaceholder]}
-                            numberOfLines={1}
-                            adjustsFontSizeToFit
-                            minimumFontScale={0.5}
-                          >
-                            {props.relayHost || 'LOCALHOST'}
-                          </Text>
-                        </Pressable>
-                      </View>
+                          <View style={styles.settingGroup}>
+                            <Text style={styles.label}>RELAY HOST</Text>
+                            <Pressable
+                              style={styles.input}
+                              accessibilityRole="button"
+                              onLayout={event => {
+                                fieldLayoutRef.current.relayHost = {
+                                  y: advancedYRef.current + event.nativeEvent.layout.y,
+                                  height: event.nativeEvent.layout.height,
+                                };
+                              }}
+                              onPress={() => openKeyboard('relayHost')}
+                            >
+                              <Text
+                                style={[styles.inputText, !props.relayHost && styles.inputPlaceholder]}
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.5}
+                              >
+                                {props.relayHost || 'LOCALHOST'}
+                              </Text>
+                            </Pressable>
+                          </View>
 
-                      <View style={styles.settingGroup}>
-                        <Text style={styles.label}>RELAY PORT</Text>
-                        <Pressable
-                          style={styles.input}
-                          accessibilityRole="button"
-                          onLayout={event => {
-                            fieldLayoutRef.current.relayPort = {
-                              y: advancedYRef.current + event.nativeEvent.layout.y,
-                              height: event.nativeEvent.layout.height,
-                            };
-                          }}
-                          onPress={() => openKeyboard('relayPort')}
-                        >
-                          <Text style={[styles.inputText, !props.relayPort && styles.inputPlaceholder]}>
-                            {props.relayPort || '8787'}
-                          </Text>
-                        </Pressable>
-                      </View>
-                      <Text style={styles.buildTag}>{BUILD_TAG}</Text>
-                    </View>
+                          <View style={styles.settingGroup}>
+                            <Text style={styles.label}>RELAY PORT</Text>
+                            <Pressable
+                              style={styles.input}
+                              accessibilityRole="button"
+                              onLayout={event => {
+                                fieldLayoutRef.current.relayPort = {
+                                  y: advancedYRef.current + event.nativeEvent.layout.y,
+                                  height: event.nativeEvent.layout.height,
+                                };
+                              }}
+                              onPress={() => openKeyboard('relayPort')}
+                            >
+                              <Text style={[styles.inputText, !props.relayPort && styles.inputPlaceholder]}>
+                                {props.relayPort || '8787'}
+                              </Text>
+                            </Pressable>
+                          </View>
+                          <Text style={styles.buildTag}>{BUILD_TAG}</Text>
+                        </View>
+                      )}
+                    </>
                   )}
                 </View>
-                )}
               </View>
 
             </View>
@@ -690,15 +692,14 @@ const styles = StyleSheet.create({
     gap: 36,
   },
   settingsColLeft: {
-    flex: 2,
+    flex: 1,
     gap: 24,
   },
   settingsColRight: {
-    flex: 3,
+    flex: 1,
+    gap: 24,
   },
-  settingGroup: {
-    minHeight: 58,
-  },
+  settingGroup: {},
   settingsTitle: {
     fontFamily: typeTokens.board,
     fontSize: 28,

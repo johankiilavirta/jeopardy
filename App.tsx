@@ -58,6 +58,7 @@ import {
   initializeQuestionLibrary,
   type QuestionLibraryInfo,
 } from './app/questionLibrary';
+import { initializeTtsCache } from './app/ttsCache';
 import { triggerBuzzFeedback } from './app/buzzFeedback';
 
 const CONNECTION_TIMEOUT_MS = 7000;
@@ -1437,6 +1438,7 @@ export default function App() {
     if (!PERSISTENCE_ENABLED || UI_LAB) return;
     let stale = false;
     void (async () => {
+      try { initializeTtsCache(); } catch {}
       const [name, session, snapshot, preferredMode, savedVibration, savedTextToSpeech, library] = await Promise.all([
         loadPlayerName(),
         loadSession(),
