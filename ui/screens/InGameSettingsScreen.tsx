@@ -223,7 +223,7 @@ export function InGameSettingsScreen(props: InGameSettingsScreenProps) {
             <View style={styles.mainColLeft}>
               <View style={styles.connectionSummary}>
                 <View style={styles.connSubLeft}>
-                  <Text style={styles.connSubLabel}>ROOM CODE</Text>
+                  <Text style={styles.connSubLabel}>ROOM</Text>
                   <Text style={[styles.connValue, styles.roomCodeValue]}>
                     {props.roomCode ?? '???'}
                   </Text>

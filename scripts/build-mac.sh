@@ -12,6 +12,9 @@ CURRENT_USER="$(id -un)"
 DEST_DIR="/Users/$CURRENT_USER/Applications"
 DEST="$DEST_DIR/JE Trivia.app"
 
+echo "▸ Clearing stale DerivedData…"
+rm -rf "$BUILD_DIR"
+
 echo "▸ Building $SCHEME ($CONFIG)…"
 xcodebuild \
   -workspace "$WORKSPACE" \

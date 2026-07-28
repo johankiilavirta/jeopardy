@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { File, FileMode, Paths } from 'expo-file-system';
 import type { GameData } from '../data/gameLoader';
 import { setImportedGameSource } from '../data/importedGameStore';
+import { clearTtsCache, generateTtsCacheInBackground } from './ttsCache';
 
 const LIBRARY_KEY = 'je-trivia/question-library-v1';
 const LIBRARY_FILE_NAME = 'question-library.json';
@@ -346,6 +347,8 @@ export async function importQuestionFile(): Promise<QuestionLibraryInfo | null> 
     activeLibrary = stored;
     gameCache.clear();
     setImportedGameSource(stored.entries.length, loadImportedGame);
+    clearTtsCache();
+    generateTtsCacheInBackground(loadImportedGame, stored.entries.length);
     return getQuestionLibraryInfo();
   } catch (error) {
     if (temporary.exists) temporary.delete();

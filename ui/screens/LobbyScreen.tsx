@@ -534,7 +534,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
     if (!initialRevealDoneRef.current) return;
     const newText = canStart
       ? 'SWIPE UP TO START GAME'
-      : 'SHARE THIS ' + (props.sessionMode ?? 'ONLINE').toUpperCase() + ' ROOM CODE';
+      : 'SHARE THIS ' + (props.sessionMode ?? 'ONLINE').toUpperCase() + ' ROOM';
     Animated.timing(codeLabelOpacity, {
       toValue: 0,
       duration: 170,
@@ -714,7 +714,7 @@ export function LobbyScreen(props: LobbyScreenProps) {
     setCodeLabelText(
       canStartRef.current
         ? 'SWIPE UP TO START GAME'
-        : 'SHARE THIS ' + (sessionModeRef.current ?? 'ONLINE').toUpperCase() + ' ROOM CODE',
+        : 'SHARE THIS ' + (sessionModeRef.current ?? 'ONLINE').toUpperCase() + ' ROOM',
     );
     // Fallback: if categories never arrive, reveal the code block alone after 800ms.
     revealTimerRef.current = setTimeout(() => {
@@ -1267,38 +1267,42 @@ export function LobbyScreen(props: LobbyScreenProps) {
                     <View style={styles.settingsTwoCol}>
                       {/* ── Left column: quick toggles ── */}
                       <View style={styles.settingsColLeft}>
-                        <Text style={styles.label}>ANIMATIONS</Text>
-                        <Pressable
-                          style={styles.toggleBox}
-                          onPress={() =>
-                            props.onAnimationsChange?.(!(props.animationsEnabled ?? true))
-                          }
-                        >
-                          <Text
-                            style={[
-                              styles.toggleText,
-                              !(props.animationsEnabled ?? true) && styles.toggleTextOff,
-                            ]}
+                        <View>
+                          <Text style={styles.label} numberOfLines={1}>ANIMATIONS</Text>
+                          <Pressable
+                            style={styles.toggleBox}
+                            onPress={() =>
+                              props.onAnimationsChange?.(!(props.animationsEnabled ?? true))
+                            }
                           >
-                            {(props.animationsEnabled ?? true) ? 'ON' : 'OFF'}
-                          </Text>
-                        </Pressable>
+                            <Text
+                              style={[
+                                styles.toggleText,
+                                !(props.animationsEnabled ?? true) && styles.toggleTextOff,
+                              ]}
+                            >
+                              {(props.animationsEnabled ?? true) ? 'ON' : 'OFF'}
+                            </Text>
+                          </Pressable>
+                        </View>
 
-                        <Text style={[styles.label, styles.stackedLabel]}>VIBRATION</Text>
-                        <Pressable
-                          accessibilityRole="switch"
-                          accessibilityState={{ checked: !!props.vibrationEnabled }}
-                          style={styles.toggleBox}
-                          onPress={() => props.onVibrationChange?.(!props.vibrationEnabled)}
-                        >
-                          <Text style={[styles.toggleText, !props.vibrationEnabled && styles.toggleTextOff]}>
-                            {props.vibrationEnabled ? 'ON' : 'OFF'}
-                          </Text>
-                        </Pressable>
+                        <View>
+                          <Text style={styles.label} numberOfLines={1}>VIBRATION</Text>
+                          <Pressable
+                            accessibilityRole="switch"
+                            accessibilityState={{ checked: !!props.vibrationEnabled }}
+                            style={styles.toggleBox}
+                            onPress={() => props.onVibrationChange?.(!props.vibrationEnabled)}
+                          >
+                            <Text style={[styles.toggleText, !props.vibrationEnabled && styles.toggleTextOff]}>
+                              {props.vibrationEnabled ? 'ON' : 'OFF'}
+                            </Text>
+                          </Pressable>
+                        </View>
 
                         {props.isHost && (
-                          <>
-                            <Text style={[styles.label, styles.stackedLabel]}>TEXT TO SPEECH</Text>
+                          <View>
+                            <Text style={styles.label} numberOfLines={1}>TEXT TO SPEECH</Text>
                             <Pressable
                               accessibilityRole="switch"
                               accessibilityState={{ checked: !!props.textToSpeechEnabled }}
@@ -1309,58 +1313,62 @@ export function LobbyScreen(props: LobbyScreenProps) {
                                 {props.textToSpeechEnabled ? 'ON' : 'OFF'}
                               </Text>
                             </Pressable>
-                          </>
+                          </View>
                         )}
 
-                        <Text style={[styles.label, styles.stackedLabel]}>CATEGORIES</Text>
-                        <View style={styles.catCountRow}>
-                          {([1, 4, 5, 6] as const).map(n => {
-                            const active = (props.visibleCategories ?? 6) === n;
-                            return (
-                              <Pressable
-                                key={n}
-                                style={styles.catCountBtn}
-                                onPress={() => props.onVisibleCategoriesChange?.(n)}
-                              >
-                                <Text style={[styles.catCountText, active && styles.catCountTextActive]}>
-                                  {n}
-                                </Text>
-                              </Pressable>
-                            );
-                          })}
+                        <View>
+                          <Text style={styles.label} numberOfLines={1}>CATEGORIES</Text>
+                          <View style={styles.catCountRow}>
+                            {([1, 4, 5, 6] as const).map(n => {
+                              const active = (props.visibleCategories ?? 6) === n;
+                              return (
+                                <Pressable
+                                  key={n}
+                                  style={styles.catCountBtn}
+                                  onPress={() => props.onVisibleCategoriesChange?.(n)}
+                                >
+                                  <Text style={[styles.catCountText, active && styles.catCountTextActive]}>
+                                    {n}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
                         </View>
-                        <Text style={[styles.label, styles.stackedLabel]}>BUZZER DELAY</Text>
-                        <View
-                          style={styles.buzzerDelayTouchArea}
-                          {...buzzerDelayResponder.panHandlers}
-                          onTouchStart={() => setBuzzerDelayGestureActive(true)}
-                          onTouchEnd={() => setBuzzerDelayGestureActive(false)}
-                          onTouchCancel={() => setBuzzerDelayGestureActive(false)}
-                        >
-                          <Pressable
-                            style={styles.buzzerDelayInput}
-                            accessibilityRole="button"
-                            accessibilityLabel={`Buzzer delay ${Number(props.buzzerDelay) < 0 || !props.buzzerDelay ? 'default' : props.buzzerDelay}`}
-                            onLayout={event => {
-                              buzzerDelayLayoutRef.current = {
-                                y: advancedYRef.current + event.nativeEvent.layout.y,
-                                height: event.nativeEvent.layout.height,
-                              };
-                            }}
-                            onPress={() => {
-                              if (buzzerDelaySwipeActiveRef.current) {
-                                buzzerDelaySwipeActiveRef.current = false;
-                                return;
-                              }
-                              keyboardFieldRef.current = 'buzzerDelay';
-                              setKeyboardField('buzzerDelay');
-                              sheet.open();
-                            }}
+                        <View>
+                          <Text style={styles.label} numberOfLines={1}>BUZZER DELAY</Text>
+                          <View
+                            style={styles.buzzerDelayTouchArea}
+                            {...buzzerDelayResponder.panHandlers}
+                            onTouchStart={() => setBuzzerDelayGestureActive(true)}
+                            onTouchEnd={() => setBuzzerDelayGestureActive(false)}
+                            onTouchCancel={() => setBuzzerDelayGestureActive(false)}
                           >
-                            <Text style={styles.buzzerDelayText}>
-                              {!props.buzzerDelay || Number(props.buzzerDelay) < 0 ? 'DEFAULT' : props.buzzerDelay}
-                            </Text>
-                          </Pressable>
+                            <Pressable
+                              style={styles.buzzerDelayInput}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Buzzer delay ${Number(props.buzzerDelay) < 0 || !props.buzzerDelay ? 'default' : props.buzzerDelay}`}
+                              onLayout={event => {
+                                buzzerDelayLayoutRef.current = {
+                                  y: advancedYRef.current + event.nativeEvent.layout.y,
+                                  height: event.nativeEvent.layout.height,
+                                };
+                              }}
+                              onPress={() => {
+                                if (buzzerDelaySwipeActiveRef.current) {
+                                  buzzerDelaySwipeActiveRef.current = false;
+                                  return;
+                                }
+                                keyboardFieldRef.current = 'buzzerDelay';
+                                setKeyboardField('buzzerDelay');
+                                sheet.open();
+                              }}
+                            >
+                              <Text style={styles.buzzerDelayText}>
+                                {!props.buzzerDelay || Number(props.buzzerDelay) < 0 ? 'DEFAULT' : props.buzzerDelay}
+                              </Text>
+                            </Pressable>
+                          </View>
                         </View>
                       </View>
 
@@ -1666,13 +1674,14 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   settingsColLeft: {
-    width: 130,
+    width: 148,
+    gap: 20,
   },
   settingsColRight: {
     flex: 1,
   },
   stackedLabel: {
-    marginTop: 20,
+    marginTop: 0,
   },
   toggleBox: {
     paddingVertical: 2,
@@ -1688,10 +1697,10 @@ const styles = StyleSheet.create({
   catCountRow: {
     flexDirection: 'row',
     gap: 14,
+    alignSelf: 'flex-start',
   },
   catCountBtn: {
     paddingVertical: 2,
-    paddingHorizontal: 2,
   },
   catCountBtnActive: {},
   catCountText: {
