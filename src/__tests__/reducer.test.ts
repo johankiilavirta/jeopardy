@@ -480,7 +480,7 @@ describe('TIMEOUT', () => {
     expect(state.status).toBe('REVEAL');
   });
 
-  it('is rejected outside BUZZ_OPEN', () => {
+  it('is rejected outside server-timed phases', () => {
     const idle = createInitialState(['Alice', 'Bob']);
     expect(reducer(idle, { type: 'TIMEOUT' })).toBe(idle);
 
@@ -552,6 +552,7 @@ describe('JUDGE_ANSWER', () => {
     expect(state.status).toBe('REVEAL'); // alice's answer is up next
     expect(state.players['bob']!.score).toBe(0); // unchanged score
     expect(state.activeClue!.failedPlayerIds).toContain('bob');
+    expect(state.activeClue!.wrongPlayerIds).not.toContain('bob');
     expect(judgedPlayerId(state)).toBe('alice');
   });
 
@@ -601,6 +602,44 @@ describe('JUDGE_ANSWER', () => {
     expect(state.players['bob']!.score).toBe(-200);
     expect(state.currentTurnPlayerId).toBe('alice');
     expect(state.burnedClueIds).toContain(1);
+  });
+
+  it('picker wrong while the other player does not answer: transfers control', () => {
+    let state = createInitialState(['Alice', 'Bob']);
+    state = openClue(state, 'alice', 1, 200);
+    state = reducer(state, { type: 'BUZZ', playerId: 'alice' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice', answer: 'NOPE' });
+    state = reducer(state, { type: 'TIMEOUT' });
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'alice', correct: false });
+
+    expect(state.status).toBe('CHOOSE_CLUE');
+    expect(state.currentTurnPlayerId).toBe('bob');
+  });
+
+  it('picker wrong and opponent judged for no points: transfers control to opponent', () => {
+    let state = bothAnswered(createInitialState(['Alice', 'Bob']), 1, 200);
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: false, penalty: false });
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'alice', correct: false });
+
+    expect(state.status).toBe('CHOOSE_CLUE');
+    expect(state.currentTurnPlayerId).toBe('bob');
+  });
+
+  it('the uniquely lowest scorer selects first in Round Two', () => {
+    let state = createInitialState(['Alice', 'Bob'], 2, null, [1]);
+    state = {
+      ...state,
+      players: {
+        ...state.players,
+        alice: { ...state.players['alice']!, score: 100 },
+      },
+    };
+    state = bothAnswered(state, 1, 200);
+    state = reducer(state, { type: 'JUDGE_ANSWER', playerId: 'bob', correct: true });
+
+    expect(state.status).toBe('CHOOSE_CLUE');
+    expect(state.players['bob']!.score).toBe(200);
+    expect(state.currentTurnPlayerId).toBe('alice');
   });
 
   it('only the judged player can be judged', () => {

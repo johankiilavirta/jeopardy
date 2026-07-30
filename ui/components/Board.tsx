@@ -12,6 +12,7 @@ interface BoardProps {
   burnedClueIds: number[];
   locked: boolean;
   onSelectClue?: ((clueId: number, rect: CellRect) => void) | undefined;
+  onCellRect?: ((clueId: number, rect: CellRect) => void) | undefined;
   onSkipClue?: ((clueId: number) => void) | undefined;
   /**
    * Increments to 1 the first time Round Two starts, triggering the
@@ -86,7 +87,7 @@ function shuffle(n: number): number[] {
   return a;
 }
 
-function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boardAnimKey = 0, onReady, categoryMaxFontSize = 44 }: BoardProps) {
+function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onCellRect, onSkipClue, boardAnimKey = 0, onReady, categoryMaxFontSize = 44 }: BoardProps) {
   // Lobby metadata can arrive directly from the relay rather than through
   // gameLoader, so normalize it here as well. Fitting and rendering must use
   // the same display string or escaped quotes/backslashes can cause ellipses.
@@ -361,6 +362,7 @@ function BoardImpl({ board, burnedClueIds, locked, onSelectClue, onSkipClue, boa
                 disabled={locked}
                 empty={!clue}
                 onPress={rect => clue && onSelectClue?.(clue.id, rect)}
+                onRect={clue && onCellRect ? rect => onCellRect(clue.id, rect) : undefined}
                 onSkip={clue && onSkipClue ? () => onSkipClue(clue.id) : undefined}
                 flashDelay={cellDelays && !dead ? cellDelays[cellIdx] : undefined}
                 onFinalValueLayout={() => markFinalValueLayout(cellIdx)}
@@ -381,6 +383,7 @@ export const Board = memo(BoardImpl, (a, b) =>
   a.board === b.board &&
   a.locked === b.locked &&
   a.onSelectClue === b.onSelectClue &&
+  a.onCellRect === b.onCellRect &&
   a.onSkipClue === b.onSkipClue &&
   a.boardAnimKey === b.boardAnimKey &&
   a.onReady === b.onReady &&

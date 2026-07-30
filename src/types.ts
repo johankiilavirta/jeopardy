@@ -28,8 +28,10 @@ export interface ActiveClue {
   text: string;
   answer: string;
   value: number;
-  /** Which players have already been judged wrong on this clue */
+  /** Which players have already been retired from judging on this clue. */
   failedPlayerIds: string[];
+  /** Players explicitly judged wrong (as opposed to skipped with no penalty). */
+  wrongPlayerIds?: string[];
 }
 
 /** One player's attempt at the active clue, in buzz order. */
@@ -56,6 +58,8 @@ export interface GameState {
   passedPlayerIds?: string[];
   /** Board dimensions */
   totalClues: number;
+  /** Exact Round One clue ids, used for the authoritative Round Two handoff. */
+  round1ClueIds?: number[];
   /** Final Wager clue if available */
   finalClue?: { category: string; text: string; answer: string } | null;
   /** Final wagers submitted by players */
@@ -121,7 +125,7 @@ export interface PassClueAction {
 }
 
 /** A player's input closes. Swipe-down sends the final text in `answer`;
- *  the server's personal-timer fallback omits it (last synced text stands). */
+ *  a server deadline may omit it, preserving the last synced text. */
 export interface LockAnswerAction {
   type: 'LOCK_ANSWER';
   playerId: string;

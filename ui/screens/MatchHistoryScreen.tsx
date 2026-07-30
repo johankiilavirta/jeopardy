@@ -251,40 +251,46 @@ export function MatchHistoryScreen({ matches, playerName, historyReady, onBack, 
   if (selectedMatch) {
     const sorted = [...selectedMatch.players].sort((a, b) => b.score - a.score);
     const totalFirstBuzzes = sorted.reduce((sum, p) => sum + (p.firstBuzzCount ?? 0), 0);
+    const chartWidth = Math.max(220, Math.min((width - 120) * 0.5, 520));
+    const chartHeight = Math.max(140, Math.min(height - 100, 240));
     return (
       <View style={[styles.root, { marginBottom: -insets.bottom }]} {...exitResponder.panHandlers}>
         <Pressable style={styles.backButton} onPress={() => setSelectedMatch(null)}>
           <Text style={styles.backText}>← BACK</Text>
         </Pressable>
         <View style={styles.detailContent}>
-          <Text style={styles.detailTitle}>{isOngoingMatch(selectedMatch) ? 'ONGOING GAME' : 'GAME OVER'}</Text>
-          {selectedMatch.gameNumber != null && <Text style={styles.detailDate}>GAME #{selectedMatch.gameNumber}</Text>}
-          {sorted.map((player, index) => {
-            const total = player.correct + player.incorrect;
-            const correctness = total ? Math.round((player.correct / total) * 100) : 0;
-            const buzzCount = player.buzzCount ?? 0;
-            const firstBuzzPct = totalFirstBuzzes ? Math.round(((player.firstBuzzCount ?? 0) / totalFirstBuzzes) * 100) : 0;
-            const averageReaction = buzzCount ? Math.round((player.reactionMsTotal ?? 0) / buzzCount) : null;
-            return (
-              <View key={`${player.name}-${index}`} style={styles.playerRow}>
-                <Text style={styles.score}>{player.name}: ${player.score.toLocaleString()}</Text>
-                <Text style={styles.stats}>{player.correct} correct · {player.incorrect} incorrect · {correctness}% correctness</Text>
-                {buzzCount > 0 && <Text style={styles.stats}>{firstBuzzPct}% buzzed first · {averageReaction}ms average reaction</Text>}
-              </View>
-            );
-          })}
-          {isOngoingMatch(selectedMatch) && (
-            <Pressable style={styles.resumeButton} onPress={() => onResumeMatch(selectedMatch)}>
-              <Text style={styles.resumeText}>OPEN NEW LOBBY</Text>
-            </Pressable>
-          )}
-          {!isOngoingMatch(selectedMatch) && (
-            <ScoreChart
-              players={sorted.map((player, index) => ({ name: player.name, color: PLAYER_COLORS[index % PLAYER_COLORS.length]!, scores: player.scoreHistory ?? [player.score] }))}
-              width={Math.min(width - 48, 400)}
-              height={140}
-            />
-          )}
+          <View style={styles.detailColumns}>
+            <View style={styles.detailStatsColumn}>
+              <Text style={styles.detailTitle}>{isOngoingMatch(selectedMatch) ? 'ONGOING GAME' : 'GAME OVER'}</Text>
+              {selectedMatch.gameNumber != null && <Text style={styles.detailDate}>GAME #{selectedMatch.gameNumber}</Text>}
+              {sorted.map((player, index) => {
+                const total = player.correct + player.incorrect;
+                const correctness = total ? Math.round((player.correct / total) * 100) : 0;
+                const buzzCount = player.buzzCount ?? 0;
+                const firstBuzzPct = totalFirstBuzzes ? Math.round(((player.firstBuzzCount ?? 0) / totalFirstBuzzes) * 100) : 0;
+                const averageReaction = buzzCount ? Math.round((player.reactionMsTotal ?? 0) / buzzCount) : null;
+                return (
+                  <View key={`${player.name}-${index}`} style={styles.playerRow}>
+                    <Text style={styles.score}>{player.name}: ${player.score.toLocaleString()}</Text>
+                    <Text style={styles.stats}>{player.correct} correct · {player.incorrect} incorrect · {correctness}% correctness</Text>
+                    {buzzCount > 0 && <Text style={styles.stats}>{firstBuzzPct}% buzzed first · {averageReaction}ms average reaction</Text>}
+                  </View>
+                );
+              })}
+              {isOngoingMatch(selectedMatch) && (
+                <Pressable style={styles.resumeButton} onPress={() => onResumeMatch(selectedMatch)}>
+                  <Text style={styles.resumeText}>OPEN NEW LOBBY</Text>
+                </Pressable>
+              )}
+            </View>
+            <View style={styles.detailChartColumn}>
+              <ScoreChart
+                players={sorted.map((player, index) => ({ name: player.name, color: PLAYER_COLORS[index % PLAYER_COLORS.length]!, scores: player.scoreHistory ?? [player.score] }))}
+                width={chartWidth}
+                height={chartHeight}
+              />
+            </View>
+          </View>
         </View>
         <ExitChevrons pageX={pageX} visible={chevronVisible} />
       </View>
@@ -412,10 +418,13 @@ const styles = StyleSheet.create({
   statLabel: { marginTop: 1, fontFamily: typeTokens.ui700, fontSize: 11, letterSpacing: 1.6, color: '#fff' },
   backButton: { position: 'absolute', top: 16, left: 16, padding: 8, zIndex: 2 },
   backText: { fontFamily: typeTokens.ui500, fontSize: 16, color: colors.gold },
-  detailContent: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
+  detailContent: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36 },
+  detailColumns: { width: '100%', maxWidth: 1040, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 32 },
+  detailStatsColumn: { flex: 1, alignItems: 'flex-start' },
+  detailChartColumn: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   detailTitle: { fontFamily: typeTokens.board, fontSize: 36, color: colors.gold },
   detailDate: { marginTop: 6, fontFamily: typeTokens.ui500, fontSize: 14, color: 'rgba(255,255,255,0.55)' },
-  playerRow: { width: '100%', maxWidth: 400, marginTop: 20 },
+  playerRow: { width: '100%', maxWidth: 440, marginTop: 20 },
   score: { fontFamily: typeTokens.ui700, fontSize: 20, color: '#fff' },
   stats: { marginTop: 3, fontFamily: typeTokens.ui500, fontSize: 14, color: 'rgba(255,255,255,0.65)' },
   resumeButton: { marginTop: 28, backgroundColor: colors.gold, paddingHorizontal: 22, paddingVertical: 13 },

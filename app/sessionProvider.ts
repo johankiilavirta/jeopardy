@@ -16,6 +16,8 @@ export interface SessionProvider extends Transport {
   createRoom(playerName: string, requestedRoomCode?: number, authority?: SessionAuthority, options?: { candidate?: boolean }): void;
   joinRoom(roomCode: number, playerName: string, authority?: SessionAuthority): void;
   startGame(options?: { gameId?: number; buzzerDelay?: number; textToSpeechEnabled?: boolean; resume?: object }): void;
+  /** Remove the other player while keeping the host's game/server alive. */
+  kickRemotePlayer?(): void;
   stop(): void;
 
   onControlMessage(cb: (message: SessionControlMessage) => void): void;

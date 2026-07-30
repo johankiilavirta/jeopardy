@@ -18,6 +18,8 @@ const SETTINGS_COMMIT = 60;
 interface InGameSettingsScreenProps {
   onClose: () => void;
   onQuit: () => void;
+  /** Host-only removal that leaves the current game running locally. */
+  onKickPlayer?: (() => void) | undefined;
   animationsEnabled: boolean;
   onAnimationsChange: (enabled: boolean) => void;
   vibrationEnabled: boolean;
@@ -234,14 +236,26 @@ export function InGameSettingsScreen(props: InGameSettingsScreenProps) {
                 </View>
               </View>
 
-              <Pressable
-                style={styles.quitBtn}
-                onPress={props.onQuit}
-                accessibilityRole="button"
-                accessibilityLabel="Quit current game"
-              >
-                <Text style={styles.quitText}>QUIT GAME</Text>
-              </Pressable>
+              <View>
+                {props.onKickPlayer && (
+                  <Pressable
+                    style={styles.kickBtn}
+                    onPress={props.onKickPlayer}
+                    accessibilityRole="button"
+                    accessibilityLabel="Kick other player"
+                  >
+                    <Text style={styles.kickText}>KICK PLAYER</Text>
+                  </Pressable>
+                )}
+                <Pressable
+                  style={styles.quitBtn}
+                  onPress={props.onQuit}
+                  accessibilityRole="button"
+                  accessibilityLabel="Quit current game"
+                >
+                  <Text style={styles.quitText}>QUIT GAME</Text>
+                </Pressable>
+              </View>
             </View>
 
             {/* ── Right 60%: game display settings ── */}
@@ -504,7 +518,6 @@ const styles = StyleSheet.create({
   // ── QUIT GAME ────────────────────────────────────────────────────────────
   quitBtn: {
     paddingVertical: 8,
-    marginTop: 24,
     alignItems: 'flex-start',
     alignSelf: 'stretch',
   },
@@ -512,5 +525,15 @@ const styles = StyleSheet.create({
     fontFamily: typeTokens.board,
     fontSize: 24,
     color: '#C96B68',
+  },
+  kickBtn: {
+    paddingVertical: 8,
+    alignItems: 'flex-start',
+    alignSelf: 'stretch',
+  },
+  kickText: {
+    fontFamily: typeTokens.board,
+    fontSize: 24,
+    color: colors.gold,
   },
 });
