@@ -38,7 +38,11 @@ function createMockTimer() {
   };
 }
 
-function lastStateFrom(messages: [string, string][]): { state: GameState; playerId: string } {
+function lastStateFrom(messages: [string, string][]): {
+  state: GameState;
+  playerId: string;
+  buzzOpensAt?: number | null;
+} {
   const last = messages[messages.length - 1]!;
   return JSON.parse(last[1]);
 }
@@ -104,6 +108,32 @@ describe('GameServer', () => {
     expect(p2State.state.status).toBe('CLUE_READING');
     expect(p1State.playerId).toBe('alice');
     expect(p2State.playerId).toBe('bob');
+  });
+
+  it('broadcasts the authoritative reveal-delay deadline to every player', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    const { timer, pendingMs, fire } = createMockTimer();
+    const host = new MockTransport('host');
+    createServer(host, ['Alice', 'Bob'], { timer, readingMs: 5000 });
+
+    const p1 = new MockTransport('player1');
+    const p2 = new MockTransport('player2');
+    const p1Messages = captureMessages(p1);
+    const p2Messages = captureMessages(p2);
+    MockTransport.link(host, p1);
+    MockTransport.link(host, p2);
+
+    p1.send('host', selectClueMsg);
+
+    // Configured reading delays retain the existing 0.7 cadence.
+    expect(pendingMs()).toEqual([3500]);
+    expect(lastStateFrom(p1Messages).buzzOpensAt).toBe(1_003_500);
+    expect(lastStateFrom(p2Messages).buzzOpensAt).toBe(1_003_500);
+
+    fire();
+    expect(lastStateFrom(p1Messages).state.status).toBe('BUZZ_OPEN');
+    expect(lastStateFrom(p1Messages).buzzOpensAt).toBeNull();
+    expect(lastStateFrom(p2Messages).buzzOpensAt).toBeNull();
   });
 
   it('lets a client SKIP_CLUE — burns it and broadcasts to both players', () => {

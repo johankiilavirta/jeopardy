@@ -17,6 +17,9 @@ const defaultTimer: Timer = {
 export interface GameServer {
   history: GameHistory;
   playerPeers: Map<string, string>; // peerId -> playerId
+  /** Wall-clock time when the current reading lockout will end.
+   *  Null when there is no deterministic deadline (for example TTS). */
+  buzzOpensAt: number | null;
   stop(): void;
 }
 
@@ -85,6 +88,7 @@ export function createServer(
   const server: GameServer = {
     history: createHistory(initialState),
     playerPeers: new Map(),
+    buzzOpensAt: null,
     stop() {
       clearPhaseTimer();
       clearAnswerTimers();
@@ -120,6 +124,7 @@ export function createServer(
   function armPhaseTimer(): void {
     clearPhaseTimer();
     narratedClueId = null;
+    server.buzzOpensAt = null;
     switch (server.history.current.status) {
       case 'CLUE_READING': {
         if (narrationEnabled) {
@@ -134,6 +139,7 @@ export function createServer(
         const ms = readingMs != null
           ? Math.round(readingMs * 0.7)
           : computeReadingMs(text);
+        server.buzzOpensAt = Date.now() + ms;
         phaseTimerId = timer.set(() => fireTimerAction({ type: 'BUZZER_OPEN' }), ms);
         break;
       }
@@ -266,6 +272,7 @@ export function createServer(
       playerId: server.playerPeers.get(peerId) ?? null,
       canUndo: canUndo(server.history),
       canRedo: canRedo(server.history),
+      buzzOpensAt: server.buzzOpensAt,
     }));
   }
 
@@ -297,11 +304,13 @@ export function createServer(
       if (server.history.current.status === 'CLUE_READING') {
         if (narrationEnabled) {
           clearPhaseTimer();
+          server.buzzOpensAt = null;
           narratedClueId = server.history.current.activeClue?.id ?? null;
           phaseTimerId = timer.set(
             () => fireTimerAction({ type: 'BUZZER_OPEN' }),
             narrationMaxMs,
           );
+          broadcastState(transport, server);
         } else if (narratedClueId != null) {
           clearPhaseTimer();
           narratedClueId = null;
@@ -324,11 +333,13 @@ export function createServer(
       ) {
         narrationEnabled = true;
         clearPhaseTimer();
+        server.buzzOpensAt = null;
         narratedClueId = clueId;
         phaseTimerId = timer.set(
           () => fireTimerAction({ type: 'BUZZER_OPEN' }),
           narrationMaxMs,
         );
+        broadcastState(transport, server);
       }
       return;
     }
@@ -438,6 +449,7 @@ function broadcastState(transport: Transport, server: GameServer): void {
       playerId,
       canUndo: cu,
       canRedo: cr,
+      buzzOpensAt: server.buzzOpensAt,
     }));
   }
 }
