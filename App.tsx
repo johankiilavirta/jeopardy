@@ -147,7 +147,7 @@ type AppScreen =
   | { type: 'demo' };
 
 type LocalRecoveryState = 'none' | 'reconnecting' | 'promoting';
-type PeerConnectionStatus = 'connected' | 'remote-disconnected';
+type PeerConnectionStatus = 'connected' | 'remote-disconnected' | 'local-disconnected';
 
 function randomPlayerName(): string {
   return `Player ${String(Math.floor(1000 + Math.random() * 9000))}`;
@@ -561,6 +561,7 @@ export default function App() {
       );
       transportRef.current = transport;
       let settled = false;
+      let syncingGame = false;
 
       const retry = () => {
         if (!isActiveReconnect() || settled) return;
@@ -599,6 +600,15 @@ export default function App() {
               setPeerConnectionStatus(isMissedLiveness(msg) ? 'remote-disconnected' : 'connected');
             }
             break;
+          case 'self-liveness':
+            if (messageMatchesSessionAuthority(msg, session)) {
+              setPeerConnectionStatus(isMissedLiveness(msg) ? 'local-disconnected' : 'connected');
+            }
+            break;
+          case 'player-kicked':
+            finishReconnect();
+            leaveRef.current();
+            break;
           case 'game-started': {
             const incomingAuthority = authorityFromMessage(msg);
             if (
@@ -608,11 +618,13 @@ export default function App() {
               retry();
               return;
             }
-            settled = true;
+            if (syncingGame) break;
+            syncingGame = true;
+            // A control message only proves that we found the room. Recovery
+            // is not complete until the server reattaches our seat and sends
+            // the first full STATE_UPDATE below.
+            if (ctl.timer != null) clearTimeout(ctl.timer);
             clearTimeout(welcomeTimeout);
-            finishReconnect();
-            setLocalRecovery('none');
-            setPeerConnectionStatus('connected');
             const joinedSession = {
               ...session,
               ...(incomingAuthority ?? {}),
@@ -627,10 +639,26 @@ export default function App() {
             // Stay on the Reconnecting screen until the first STATE_UPDATE
             // arrives, so the game mounts with real state (see connectAndDo).
             let gameMounted = false;
+            ctl.timer = setTimeout(() => {
+              ctl.timer = null;
+              retry();
+            }, CONNECTION_TIMEOUT_MS);
             createClient(transport, (state, pid, cu, cr) => {
-              handleStateUpdate(state, pid, cu, cr);
-              if (!gameMounted) {
+              const firstUpdate = !gameMounted;
+              if (firstUpdate) {
+                // Ignore a late snapshot from an attempt that already timed
+                // out and was stopped in favor of a newer provider.
+                if (!isActiveReconnect() || settled) return;
                 gameMounted = true;
+                settled = true;
+                finishReconnect();
+                setLocalRecovery('none');
+                setPeerConnectionStatus('connected');
+                sessionRef.current = joinedSession;
+                if (persistenceStartedRef.current) void saveSession(joinedSession);
+              }
+              handleStateUpdate(state, pid, cu, cr);
+              if (firstUpdate) {
                 setScreen(gameScreen);
                 if (keepGameMounted) {
                   // The game screen never remounted, so onBoardVisible won't
@@ -648,8 +676,6 @@ export default function App() {
             }
             // Keep the match id across a reconnect — it's the same game.
             gameNumberRef.current = board?.gameNumber ?? null;
-            sessionRef.current = joinedSession;
-            if (persistenceStartedRef.current) void saveSession(joinedSession);
             break;
           }
           case 'lobby-update': {
@@ -862,10 +888,20 @@ export default function App() {
             setPeerConnectionStatus(isMissedLiveness(msg) ? 'remote-disconnected' : 'connected');
           }
           break;
+        case 'self-liveness':
+          if (!sessionRef.current || messageMatchesSessionAuthority(msg, sessionRef.current)) {
+            setPeerConnectionStatus(isMissedLiveness(msg) ? 'local-disconnected' : 'connected');
+          }
+          break;
         case 'client-screen-ready':
           if (!sessionRef.current || messageMatchesSessionAuthority(msg, sessionRef.current)) {
             setPeerConnectionStatus('connected');
           }
+          break;
+        case 'player-kicked':
+          roomSettled = true;
+          clearTimeout(timeout);
+          leaveRef.current();
           break;
         case 'room-created':
           roomSettled = true;
@@ -1412,6 +1448,11 @@ export default function App() {
     setLobbyPlayers(prev => prev.filter(p => p.peerId !== peerId));
   }, []);
 
+  /** Host removes the guest without tearing down the host-owned game server. */
+  const handleKickPlayerInGame = useCallback(() => {
+    transportRef.current?.kickRemotePlayer?.();
+  }, []);
+
   // Menu-overlay actions: abandon the current session, then do the action.
   const handleOverlayNewGame = useCallback(() => {
     fadeToBlackAndHold(() => {
@@ -1605,13 +1646,18 @@ export default function App() {
             serverPeerId={screen.serverPeerId}
             initialState={initialGameState}
             boardData={boardData}
-            remotePeerConnectionStatus={peerConnectionStatus}
+            peerConnectionStatus={peerConnectionStatus}
             localIsHost={sessionRef.current?.isHost ?? false}
             localRecovery={localRecovery}
             roomCode={screen.roomCode}
             relayHost={relayHost}
             relayPort={relayPort}
             onLeave={handleGameLeave}
+            onKickPlayer={
+              transportRef.current.kickRemotePlayer
+                ? handleKickPlayerInGame
+                : undefined
+            }
             onNewGame={handleOverlayNewGame}
             onJoinGame={handleOverlayJoinGame}
             onBoardVisible={() => {

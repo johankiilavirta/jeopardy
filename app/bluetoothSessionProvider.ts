@@ -30,6 +30,7 @@ const AUTHORITY_SCAN_MS = 1000;
  *  silently demotes; a guest joining the candidate commits it early. */
 const CANDIDATE_COMMIT_MS = 3000;
 type Role = 'host' | 'guest';
+type LivenessState = 'connected' | 'missed' | 'dead';
 
 type BluetoothControl = {
   __nearby: true;
@@ -50,6 +51,8 @@ type BluetoothControl = {
   startId?: number;
   message?: string;
   sentAt?: number;
+  /** Host's authoritative view of whether it can hear the guest. */
+  guestLivenessState?: LivenessState;
 };
 
 function pickGame(gameId?: number): GameData | null {
@@ -137,6 +140,10 @@ export class BluetoothSessionProvider implements SessionProvider {
   private playerName = '';
   private remotePeerId: string | null = null;
   private remotePlayerName: string | null = null;
+  /** Retained after transport loss so the host can evict a disconnected
+   *  seat and reject that player's automatic reconnect. */
+  private lastRemotePlayerName: string | null = null;
+  private kickedPlayerName: string | null = null;
   private hostAuthorityAccepted = false;
   private targetRoomCode: number | null = null;
   private localEndpoint: InProcessTransport | null = null;
@@ -157,9 +164,10 @@ export class BluetoothSessionProvider implements SessionProvider {
   private lastHostSeenAt = 0;
   private lastGuestSeenAt = 0;
   private hostDisconnectEmitted = false;
-  private hostLivenessState: 'connected' | 'missed' | 'dead' = 'connected';
+  private hostLivenessState: LivenessState = 'connected';
   private guestDisconnectEmitted = false;
-  private guestLivenessState: 'connected' | 'missed' | 'dead' = 'connected';
+  private guestLivenessState: LivenessState = 'connected';
+  private reportedSelfLivenessState: LivenessState = 'connected';
   private pendingStart: {
     startId: number;
     gameData: GameData | null;
@@ -333,6 +341,33 @@ export class BluetoothSessionProvider implements SessionProvider {
     if (this.role === 'host') this.localEndpoint?.broadcast(message);
     else if (BluetoothNetwork && this.remotePeerId) BluetoothNetwork.send(this.remotePeerId, message);
   }
+  kickRemotePlayer(): void {
+    if (this.role !== 'host') return;
+    const peerId = this.remotePeerId;
+    const playerName = this.remotePlayerName ?? this.lastRemotePlayerName;
+    if (!peerId && !playerName) return;
+
+    // Send the removal before detaching the peer. The guest handles this as
+    // an intentional leave, so it clears its saved auto-rejoin session.
+    if (peerId) {
+      this.sendControl(peerId, {
+        type: 'player-kicked',
+        ...this.authorityFields(),
+      });
+    }
+
+    this.kickedPlayerName = playerName;
+    this.stopHeartbeat();
+    this.guestDisconnectEmitted = true;
+    this.guestLivenessState = 'dead';
+    this.remotePeerId = null;
+    this.remotePlayerName = null;
+    this.remoteSupportsBoardPreload = false;
+    if (peerId) this.serverTransport?.disconnectRemote(peerId);
+    this.emitControl({ type: 'guest-liveness', state: 'dead', ...this.authorityFields() });
+    if (this.phase === 'lobby') this.emitLobby();
+    if (this.phase === 'playing') this.startAuthorityScan();
+  }
   onPeerConnected(cb: (peerId: string, playerName?: string) => void): void { this.connectCbs.push(cb); }
   onPeerDisconnected(cb: (peerId: string) => void): void { this.disconnectCbs.push(cb); }
   onMessage(cb: (peerId: string, message: string) => void): void { this.messageCbs.push(cb); }
@@ -396,7 +431,10 @@ export class BluetoothSessionProvider implements SessionProvider {
   }
 
   private handleNativeDisconnected(peerId: string): void {
-    const wasGameplayPeer = this.role === 'guest' || this.remotePeerId === peerId;
+    // A watchdog may already have declared this exact peer dead and cleared
+    // remotePeerId. Ignore the later native disconnect in that case; emitting
+    // it twice used to start two competing reconnect/promote flows in App.
+    const wasGameplayPeer = this.remotePeerId === peerId;
     if (this.remotePeerId === peerId) {
       this.remotePeerId = null;
       this.remotePlayerName = null;
@@ -443,8 +481,13 @@ export class BluetoothSessionProvider implements SessionProvider {
         this.sendControl(peerId, { type: 'room-error', message: 'Incompatible Bluetooth game version' });
         return;
       }
+      if (this.kickedPlayerName === control.playerName) {
+        this.sendControl(peerId, { type: 'player-kicked', ...this.authorityFields() });
+        return;
+      }
       this.remotePeerId = peerId;
       this.remotePlayerName = control.playerName;
+      this.lastRemotePlayerName = control.playerName;
       this.remoteSupportsBoardPreload = control.capabilities?.includes(BOARD_PRELOAD_CAPABILITY) ?? false;
       this.markGuestSeen(peerId);
       // A joining guest ends the candidate lease early: the room now has a
@@ -532,6 +575,17 @@ export class BluetoothSessionProvider implements SessionProvider {
       if (!this.acceptHostAuthority(control)) return;
       this.markHostSeen();
       this.startGuestHeartbeat();
+      if (
+        control.guestLivenessState &&
+        control.guestLivenessState !== this.reportedSelfLivenessState
+      ) {
+        this.reportedSelfLivenessState = control.guestLivenessState;
+        this.emitControl({
+          type: 'self-liveness',
+          state: control.guestLivenessState,
+          ...this.authorityFields(),
+        });
+      }
       return;
     }
     if (this.role === 'guest' && control.type === 'lobby-update') {
@@ -663,6 +717,7 @@ export class BluetoothSessionProvider implements SessionProvider {
         this.sendControl(this.remotePeerId, {
           type: 'heartbeat',
           sentAt: Date.now(),
+          guestLivenessState: this.guestLivenessState,
           ...this.authorityFields(),
         });
       }

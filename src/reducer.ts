@@ -1,6 +1,11 @@
 import type { GameState, Action, Buzz, Player } from './types.js';
 
-export function createInitialState(playerNames: string[], totalClues = 30, finalClue?: { category: string; text: string; answer: string } | null): GameState {
+export function createInitialState(
+  playerNames: string[],
+  totalClues = 30,
+  finalClue?: { category: string; text: string; answer: string } | null,
+  round1ClueIds?: number[],
+): GameState {
   const players: Record<string, Player> = {};
   for (const name of playerNames) {
     let id = name.trim().toLowerCase().replace(/\s+/g, '-') || 'player';
@@ -24,6 +29,7 @@ export function createInitialState(playerNames: string[], totalClues = 30, final
     passedPlayerIds: [],
     burnedClueIds: [],
     totalClues,
+    ...(round1ClueIds ? { round1ClueIds } : {}),
     finalClue: finalClue ?? null,
   };
 }
@@ -110,6 +116,7 @@ function handleSelectClue(state: GameState, action: Extract<Action, { type: 'SEL
     activeClue: {
       ...action.clue,
       failedPlayerIds: [],
+      wrongPlayerIds: [],
     },
     buzzes: [],
     passedPlayerIds: [],
@@ -339,21 +346,25 @@ function handleJudgeAnswer(state: GameState, action: Extract<Action, { type: 'JU
       ...state,
       ...transitionFromBoard(state, undefined),
       players: updatedPlayers,
-      currentTurnPlayerId: player.id,
+      currentTurnPlayerId: turnAfterClueBurn(state, state.activeClue.id, updatedPlayers, player.id),
       burnedClueIds: [...state.burnedClueIds, state.activeClue.id],
     };
   }
 
-  // Incorrect: deduct points, mark as failed, judge the next buzzer
+  // Retire this answer and remember whether it was genuinely wrong. The
+  // no-penalty judgment is neutral for clue-picking control.
   const updatedClue = {
     ...state.activeClue,
     failedPlayerIds: [...state.activeClue.failedPlayerIds, action.playerId],
+    wrongPlayerIds: action.penalty === false
+      ? (state.activeClue.wrongPlayerIds ?? [])
+      : [...(state.activeClue.wrongPlayerIds ?? []), action.playerId],
   };
 
   const scoreChange = action.penalty !== false ? -wager : 0;
   const judgedNewScore = player.score + scoreChange;
 
-  // Any unjudged buzzer left? If not, burn the clue — original picker keeps turn.
+  // Any unjudged buzzer left? If not, burn the clue and apply the control rule.
   const anyLeft = state.buzzes.some(b => !updatedClue.failedPlayerIds.includes(b.playerId));
 
   if (!anyLeft) {
@@ -378,7 +389,12 @@ function handleJudgeAnswer(state: GameState, action: Extract<Action, { type: 'JU
       ...state,
       ...transitionFromBoard(state, updatedClue.id),
       players: updatedPlayers,
-      currentTurnPlayerId: state.clueSelectPlayerId,
+      currentTurnPlayerId: turnAfterClueBurn(
+        state,
+        updatedClue.id,
+        updatedPlayers,
+        turnAfterNoCorrectAnswer(state, updatedClue.wrongPlayerIds ?? []),
+      ),
       burnedClueIds: [...state.burnedClueIds, updatedClue.id],
     };
   }
@@ -401,6 +417,18 @@ function handleJudgeAnswer(state: GameState, action: Extract<Action, { type: 'JU
 }
 
 function handleTimeout(state: GameState): GameState {
+  if (state.status === 'FINAL_WAGER' || state.status === 'FINAL_ANSWER') {
+    // Final uses one server-owned phase deadline. Expiry closes every
+    // unfinished input atomically; keyboard visibility is deliberately
+    // absent from this rule.
+    return state.buzzes.reduce(
+      (next, buzz) => buzz.locked
+        ? next
+        : handleLockAnswer(next, { type: 'LOCK_ANSWER', playerId: buzz.playerId }),
+      state,
+    );
+  }
+
   if (state.status !== 'BUZZ_OPEN') return state;
   if (!state.activeClue) return state;
 
@@ -438,7 +466,12 @@ function handleDismissClue(state: GameState): GameState {
     ...state,
     ...transitionFromBoard(state, state.activeClue.id),
     players: updatedPlayers,
-    currentTurnPlayerId: state.clueSelectPlayerId,
+    currentTurnPlayerId: turnAfterClueBurn(
+      state,
+      state.activeClue.id,
+      updatedPlayers,
+      state.clueSelectPlayerId,
+    ),
     burnedClueIds: [...state.burnedClueIds, state.activeClue.id],
   };
 }
@@ -462,7 +495,12 @@ function handleSkipClue(state: GameState, action: Extract<Action, { type: 'SKIP_
   return {
     ...state,
     ...transitionFromBoard(state, clueId),
-    currentTurnPlayerId: skippingActive ? state.clueSelectPlayerId : state.currentTurnPlayerId,
+    currentTurnPlayerId: turnAfterClueBurn(
+      state,
+      clueId,
+      state.players,
+      skippingActive ? state.clueSelectPlayerId : state.currentTurnPlayerId,
+    ),
     burnedClueIds: [...state.burnedClueIds, clueId],
   };
 }
@@ -533,4 +571,45 @@ function transitionFromBoard(state: GameState, burningClueId?: number): Partial<
   }
   
   return { status: 'GAME_OVER', activeClue: null, buzzes: [], clueSelectPlayerId: null, passedPlayerIds: [] };
+}
+
+/** If the picker was the only player genuinely wrong, control passes to an
+ *  eligible opponent. If everyone was wrong (or the picker was not wrong),
+ *  the original picker keeps control. */
+function turnAfterNoCorrectAnswer(state: GameState, wrongPlayerIds: string[]): string | null {
+  const pickerId = state.clueSelectPlayerId;
+  if (!pickerId || !wrongPlayerIds.includes(pickerId)) return pickerId;
+
+  const eligibleOpponent = Object.keys(state.players).find(
+    id => id !== 'opponent' && id !== pickerId && !wrongPlayerIds.includes(id),
+  );
+  return eligibleOpponent ?? pickerId;
+}
+
+/** The exact transition into Round Two overrides the ordinary clue result:
+ *  the uniquely lowest-scoring player selects first. A tie preserves the
+ *  ordinary control result. */
+function turnAfterClueBurn(
+  state: GameState,
+  burnedClueId: number,
+  players: Record<string, Player>,
+  ordinaryTurnPlayerId: string | null,
+): string | null {
+  const round1ClueIds = state.round1ClueIds;
+  if (!round1ClueIds?.length || state.totalClues <= round1ClueIds.length) {
+    return ordinaryTurnPlayerId;
+  }
+
+  const wasRoundOneComplete = round1ClueIds.every(id => state.burnedClueIds.includes(id));
+  if (wasRoundOneComplete) return ordinaryTurnPlayerId;
+
+  const nextBurned = new Set([...state.burnedClueIds, burnedClueId]);
+  const entersRoundTwo = round1ClueIds.every(id => nextBurned.has(id));
+  if (!entersRoundTwo) return ordinaryTurnPlayerId;
+
+  const activePlayers = Object.values(players).filter(player => player.id !== 'opponent');
+  if (activePlayers.length === 0) return ordinaryTurnPlayerId;
+  const lowestScore = Math.min(...activePlayers.map(player => player.score));
+  const lowestPlayers = activePlayers.filter(player => player.score === lowestScore);
+  return lowestPlayers.length === 1 ? lowestPlayers[0]!.id : ordinaryTurnPlayerId;
 }

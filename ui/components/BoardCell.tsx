@@ -17,6 +17,9 @@ interface BoardCellProps {
   burned: boolean;
   disabled: boolean;
   onPress: (rect: CellRect) => void;
+  /** Reports this cell's window-space rect after layout so a clue selected
+   *  on the other phone can expand from the matching local board cell. */
+  onRect?: ((rect: CellRect) => void) | undefined;
   empty?: boolean;
   onSkip?: (() => void) | undefined;
   /**
@@ -29,7 +32,7 @@ interface BoardCellProps {
   onFinalValueLayout?: (() => void) | undefined;
 }
 
-export function BoardCell({ value, valueFontSize, burned, disabled, onPress, empty, onSkip, flashDelay, onFinalValueLayout }: BoardCellProps) {
+export function BoardCell({ value, valueFontSize, burned, disabled, onPress, onRect, empty, onSkip, flashDelay, onFinalValueLayout }: BoardCellProps) {
   const wrapRef = useRef<View>(null);
   const dead = burned || empty;
   // Board derives this from the actual cell dimensions after its first
@@ -74,6 +77,17 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
     }
   };
 
+  const handleLayout = () => {
+    if (!onRect) return;
+    requestAnimationFrame(() => {
+      const node = wrapRef.current;
+      if (!node || typeof node.measureInWindow !== 'function') return;
+      node.measureInWindow((x, y, width, height) => {
+        if (width > 0 && height > 0) onRect({ x, y, width, height });
+      });
+    });
+  };
+
   if (inFlashMode && !animDone) {
     const textOpacity = flashAnim.interpolate({
       inputRange: [0, 1],
@@ -82,7 +96,7 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
     });
 
     return (
-      <View ref={wrapRef} style={styles.cellWrap}>
+      <View ref={wrapRef} style={styles.cellWrap} onLayout={handleLayout}>
         <View style={[styles.cell, { backgroundColor: colors.cellBurned }]}>
           <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: colors.cell, borderRadius: radius, opacity: flashAnim }]} pointerEvents="none" />
           <Pressable style={styles.pressableInner} onPress={handlePress} disabled={disabled}>
@@ -111,7 +125,7 @@ export function BoardCell({ value, valueFontSize, burned, disabled, onPress, emp
   }
 
   return (
-    <View ref={wrapRef} style={styles.cellWrap}>
+    <View ref={wrapRef} style={styles.cellWrap} onLayout={handleLayout}>
       <Pressable
         style={({ pressed }) => [
           styles.cell,

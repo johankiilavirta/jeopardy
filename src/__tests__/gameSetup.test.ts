@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildServerOptions, countClues, TOTAL_CLUES_DEMO, validateResumeState, type SetupGameData } from '../gameSetup.js';
+import { buildServerOptions, countClues, roundOneClueIds, TOTAL_CLUES_DEMO, validateResumeState, type SetupGameData } from '../gameSetup.js';
 import { createInitialState } from '../reducer.js';
 import type { GameState } from '../types.js';
 
@@ -25,6 +25,12 @@ describe('countClues', () => {
   });
 });
 
+describe('roundOneClueIds', () => {
+  it('matches the board ids even when categories are incomplete', () => {
+    expect(roundOneClueIds([cat('A', 2), cat('B', 1)])).toEqual([0, 1, 5]);
+  });
+});
+
 describe('buildServerOptions', () => {
   it('falls back to the demo board when no game data', () => {
     const opts = buildServerOptions(null, null);
@@ -35,6 +41,7 @@ describe('buildServerOptions', () => {
   it('counts both rounds and arms Final Wager for a full game', () => {
     const opts = buildServerOptions(fullGame(), null);
     expect(opts.totalClues).toBe(22);
+    expect(opts.round1ClueIds).toEqual(Array.from({ length: 14 }, (_, id) => id));
     expect(opts.finalClue).toEqual({ category: 'FJ', text: 'Q', answer: 'A' });
     expect(opts.initialState).toBeUndefined();
   });
@@ -43,7 +50,8 @@ describe('buildServerOptions', () => {
     const saved: GameState = { ...createInitialState(['Alice', 'Bob'], 22), burnedClueIds: [0, 1] };
     const opts = buildServerOptions(fullGame(), saved);
     expect(opts.totalClues).toBe(22);
-    expect(opts.initialState).toBe(saved);
+    expect(opts.initialState).toMatchObject(saved);
+    expect(opts.initialState?.round1ClueIds).toEqual(Array.from({ length: 14 }, (_, id) => id));
     expect(opts.finalClue).toEqual({ category: 'FJ', text: 'Q', answer: 'A' });
   });
 

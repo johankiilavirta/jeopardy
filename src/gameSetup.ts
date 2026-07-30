@@ -25,6 +25,13 @@ export function countClues(cats: SetupCategoryData[]): number {
   return cats.reduce((n, c) => n + c.clues.length, 0);
 }
 
+/** Match the board's column-major clue ids (five rows per category). */
+export function roundOneClueIds(cats: SetupCategoryData[]): number[] {
+  return cats.flatMap((category, column) =>
+    category.clues.map((_clue, row) => column * 5 + row),
+  );
+}
+
 /** Validate an untrusted saved state for resuming: a shape check, then
  *  normalization (abandon any in-flight clue, back to the board).
  *  Returns null when the payload isn't a usable GameState. */
@@ -43,7 +50,14 @@ export function buildServerOptions(
   resumeState: GameState | null,
   buzzerDelay?: number,
   narrationEnabled = false,
-): { totalClues: number; finalClue: { category: string; text: string; answer: string } | null; readingMs?: number; initialState?: GameState; narrationEnabled?: boolean } {
+): {
+  totalClues: number;
+  finalClue: { category: string; text: string; answer: string } | null;
+  round1ClueIds?: number[];
+  readingMs?: number;
+  initialState?: GameState;
+  narrationEnabled?: boolean;
+} {
   const totalClues = resumeState
     ? resumeState.totalClues
     : gameData
@@ -52,11 +66,19 @@ export function buildServerOptions(
   const readingMs = buzzerDelay != null && Number.isFinite(buzzerDelay) && buzzerDelay >= 0
     ? Math.round(buzzerDelay * 1000)
     : undefined;
+  const gameRound1ClueIds = gameData ? roundOneClueIds(gameData.round1) : undefined;
+  const initialState = resumeState && gameRound1ClueIds
+    ? {
+        ...resumeState,
+        round1ClueIds: resumeState.round1ClueIds ?? gameRound1ClueIds,
+      }
+    : resumeState;
   return {
     totalClues,
     finalClue: gameData?.final ?? null,
+    ...(gameRound1ClueIds ? { round1ClueIds: gameRound1ClueIds } : {}),
     ...(narrationEnabled ? { narrationEnabled: true } : {}),
     ...(readingMs != null ? { readingMs } : {}),
-    ...(resumeState ? { initialState: resumeState } : {}),
+    ...(initialState ? { initialState } : {}),
   };
 }

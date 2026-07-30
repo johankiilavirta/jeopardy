@@ -897,6 +897,81 @@ describe('GameServer Final Wager undo/redo', () => {
   });
 });
 
+describe('GameServer Final phase deadlines', () => {
+  function setupFinalAnswer() {
+    const clock = createMockTimer();
+    const host = new MockTransport('host');
+    const initial = createInitialState(
+      ['Alice', 'Bob'],
+      1,
+      {
+        category: 'WORLD CAPITALS',
+        text: 'Australia moved its capital to this city in 1927',
+        answer: 'What is Canberra',
+      },
+    );
+    initial.players['alice']!.score = 1500;
+    initial.players['bob']!.score = 700;
+    const server = createServer(host, [], {
+      timer: clock.timer,
+      initialState: initial,
+    });
+    const alice = new MockTransport('alice-phone');
+    const bob = new MockTransport('bob-phone');
+    MockTransport.link(host, alice);
+    MockTransport.link(host, bob);
+
+    alice.send('host', JSON.stringify({ type: 'SKIP_CLUE', clueId: 1 }));
+    alice.send('host', JSON.stringify({ type: 'LOCK_ANSWER', answer: '500' }));
+    bob.send('host', JSON.stringify({ type: 'LOCK_ANSWER', answer: '300' }));
+
+    expect(server.history.current.status).toBe('FINAL_ANSWER');
+    expect(clock.pendingMs()).toEqual([30000]);
+    return { clock, server, alice, bob };
+  }
+
+  it('keeps one shared deadline and does not reveal after only one answer', () => {
+    const { clock, server, alice } = setupFinalAnswer();
+
+    alice.send('host', JSON.stringify({ type: 'LOCK_ANSWER', answer: 'CANBERRA' }));
+
+    expect(server.history.current.status).toBe('FINAL_ANSWER');
+    expect(server.history.current.buzzes.find(b => b.playerId === 'bob')?.locked).toBe(false);
+    expect(clock.pendingMs()).toEqual([30000]);
+  });
+
+  it('reveals at the shared deadline even when the other player never types', () => {
+    const { clock, server, alice } = setupFinalAnswer();
+    alice.send('host', JSON.stringify({ type: 'LOCK_ANSWER', answer: 'CANBERRA' }));
+
+    clock.fire();
+
+    expect(server.history.current.status).toBe('REVEAL');
+    expect(server.history.current.buzzes).toEqual([
+      { playerId: 'alice', answer: 'CANBERRA', locked: true },
+      { playerId: 'bob', answer: '', locked: true },
+    ]);
+    expect(clock.pendingMs()).toEqual([]);
+  });
+
+  it('reveals early only after both players answer or explicitly skip', () => {
+    const { clock, server, alice, bob } = setupFinalAnswer();
+    alice.send('host', JSON.stringify({ type: 'LOCK_ANSWER', answer: 'CANBERRA' }));
+    expect(server.history.current.status).toBe('FINAL_ANSWER');
+
+    // An empty locked answer is an explicit skip.
+    bob.send('host', JSON.stringify({ type: 'LOCK_ANSWER', answer: '' }));
+
+    expect(server.history.current.status).toBe('REVEAL');
+    expect(server.history.current.buzzes.find(b => b.playerId === 'bob')).toEqual({
+      playerId: 'bob',
+      answer: '',
+      locked: true,
+    });
+    expect(clock.pendingMs()).toEqual([]);
+  });
+});
+
 describe('ANSWER_UPDATE delta', () => {
   function setupBuzzed() {
     const { timer, fire } = createMockTimer();

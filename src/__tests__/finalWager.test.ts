@@ -65,6 +65,49 @@ describe('Final Wager flow', () => {
     expect(state.activeClue!.id).toBe(-1);
     expect(state.buzzes).toHaveLength(2);
   });
+
+  it('does not reveal when only one player has submitted a Final answer', () => {
+    let state = reachWager();
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice', answer: '500' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob', answer: '300' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice', answer: 'CANBERRA' });
+
+    expect(state.status).toBe('FINAL_ANSWER');
+    expect(state.buzzes.find(b => b.playerId === 'alice')?.locked).toBe(true);
+    expect(state.buzzes.find(b => b.playerId === 'bob')?.locked).toBe(false);
+  });
+
+  it('the shared deadline locks unfinished Final input and advances the phase', () => {
+    let state = reachWager();
+    state = reducer(state, { type: 'SET_ANSWER', playerId: 'alice', text: '500' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice' });
+
+    state = reducer(state, { type: 'TIMEOUT' });
+    expect(state.status).toBe('FINAL_ANSWER');
+    expect(state.finalWagers).toEqual({ alice: 500, bob: 0 });
+
+    state = reducer(state, { type: 'SET_ANSWER', playerId: 'alice', text: 'CANBERRA' });
+    state = reducer(state, { type: 'TIMEOUT' });
+    expect(state.status).toBe('REVEAL');
+    expect(state.buzzes).toEqual([
+      { playerId: 'alice', answer: 'CANBERRA', locked: true },
+      { playerId: 'bob', answer: '', locked: true },
+    ]);
+  });
+
+  it('an empty locked Final answer counts as a skip', () => {
+    let state = reachWager();
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice', answer: '500' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob', answer: '300' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'alice', answer: 'CANBERRA' });
+    state = reducer(state, { type: 'LOCK_ANSWER', playerId: 'bob', answer: '' });
+
+    expect(state.status).toBe('REVEAL');
+    expect(state.buzzes.find(b => b.playerId === 'bob')).toMatchObject({
+      answer: '',
+      locked: true,
+    });
+  });
 });
 
 describe('Final Wager wager clamping', () => {

@@ -333,6 +333,24 @@ describe('BluetoothSessionProvider', () => {
     expect(lastOfType(guest.controls, 'host-liveness')?.state).toBe('dead');
   });
 
+  it('does not emit a second disconnect when native teardown follows the watchdog', async () => {
+    vi.useFakeTimers();
+    const host = createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+    const disconnected: string[] = [];
+
+    host.run(() => host.provider.createRoom('Alice', 142));
+    guest.provider.onPeerDisconnected(peerId => disconnected.push(peerId));
+    guest.run(() => guest.provider.joinRoom(142, 'Bob'));
+
+    bus.killSilently('HOST');
+    await vi.advanceTimersByTimeAsync(3200);
+    expect(disconnected).toEqual(['server']);
+
+    bus.emitTo('GUEST', 'onPeerDisconnected', { peerId: 'HOST' });
+    expect(disconnected).toEqual(['server']);
+  });
+
   it('detects silent host death after native connect even before authority arrives', async () => {
     vi.useFakeTimers();
     createPeer('host', 'HOST');
@@ -400,6 +418,104 @@ describe('BluetoothSessionProvider', () => {
     });
     expect(lastOfType(host.controls, 'guest-liveness')?.state).toBe('connected');
     expect(disconnected).toEqual([]);
+  });
+
+  it('mirrors the host guest-liveness view back to the guest phone', async () => {
+    vi.useFakeTimers();
+    const host = createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+
+    host.run(() => host.provider.createRoom('Alice', 142, auth(2, 'leader-bob')));
+    guest.run(() => guest.provider.joinRoom(142, 'Bob', auth(2, 'leader-bob')));
+
+    // Silence the guest while leaving the host timer active. The mock marks
+    // the device dead in both directions, so manually deliver the host's most
+    // recent heartbeat to model the real one-way BLE failure seen on device.
+    bus.killSilently('GUEST');
+    bus.activate('HOST');
+    await vi.advanceTimersByTimeAsync(900);
+    const missedHeartbeat = [...bus.sent].reverse().find(sent => {
+      if (sent.from !== 'HOST' || sent.to !== 'GUEST') return false;
+      const message = JSON.parse(sent.message) as { type?: string; guestLivenessState?: string };
+      return message.type === 'heartbeat' && message.guestLivenessState === 'missed';
+    });
+    expect(missedHeartbeat).toBeDefined();
+
+    bus.emitTo('GUEST', 'onMessage', {
+      peerId: 'HOST',
+      message: missedHeartbeat!.message,
+    });
+    expect(lastOfType(guest.controls, 'self-liveness')?.state).toBe('missed');
+
+    // When the reverse path resumes, the next host heartbeat clears the same
+    // local marker instead of leaving the two screens permanently mismatched.
+    bus.emitTo('HOST', 'onMessage', {
+      peerId: 'GUEST',
+      message: JSON.stringify({
+        __nearby: true,
+        type: 'guest-heartbeat',
+        roomCode: 142,
+        roomId: 'room-a',
+        epoch: 2,
+        leaderId: 'leader-bob',
+      }),
+    });
+    await vi.advanceTimersByTimeAsync(300);
+    const connectedHeartbeat = [...bus.sent].reverse().find(sent => {
+      if (sent.from !== 'HOST' || sent.to !== 'GUEST') return false;
+      const message = JSON.parse(sent.message) as { type?: string; guestLivenessState?: string };
+      return message.type === 'heartbeat' && message.guestLivenessState === 'connected';
+    });
+    expect(connectedHeartbeat).toBeDefined();
+    bus.emitTo('GUEST', 'onMessage', {
+      peerId: 'HOST',
+      message: connectedHeartbeat!.message,
+    });
+    expect(lastOfType(guest.controls, 'self-liveness')?.state).toBe('connected');
+  });
+
+  it('lets the host kick a guest mid-game without stopping local play', () => {
+    const host = createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+
+    host.run(() => host.provider.createRoom('Alice', 142));
+    guest.run(() => guest.provider.joinRoom(142, 'Bob'));
+    host.run(() => host.provider.startGame({ gameId: 42 }));
+
+    host.run(() => host.provider.kickRemotePlayer());
+
+    expect(lastOfType(guest.controls, 'player-kicked')).toBeDefined();
+    expect(lastOfType(host.controls, 'guest-liveness')?.state).toBe('dead');
+
+    // The host remains attached to its in-process server and can keep
+    // advancing the authoritative game after removing the remote seat.
+    host.run(() => sendAction(host.provider, 'server', { type: 'SKIP_CLUE', clueId: 1 }));
+    expect(host.client?.state?.burnedClueIds).toContain(1);
+  });
+
+  it('kicks an already-disconnected seat and rejects its automatic reconnect', async () => {
+    vi.useFakeTimers();
+    const host = createPeer('host', 'HOST');
+    const guest = createPeer('guest', 'GUEST');
+
+    host.run(() => host.provider.createRoom('Alice', 142));
+    guest.run(() => guest.provider.joinRoom(142, 'Bob'));
+    host.run(() => host.provider.startGame({ gameId: 42 }));
+
+    bus.killSilently('GUEST');
+    bus.activate('HOST');
+    await vi.advanceTimersByTimeAsync(3200);
+
+    // The watchdog has cleared the live peer id, but the host still evicts
+    // the disconnected player's seat by its retained reconnect identity.
+    host.run(() => host.provider.kickRemotePlayer());
+
+    const rejoined = createPeer('guest', 'GUEST-2');
+    rejoined.run(() => rejoined.provider.joinRoom(142, 'Bob'));
+
+    expect(lastOfType(rejoined.controls, 'player-kicked')).toBeDefined();
+    expect(lastOfType(rejoined.controls, 'game-started')).toBeUndefined();
+    expect(rejoined.client).toBeNull();
   });
 
   it('detects a silent guest death with the guest heartbeat watchdog', async () => {

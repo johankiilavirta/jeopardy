@@ -7,7 +7,7 @@ const EXPAND_MS = 250;
 
 interface ExpandingClueOverlayProps {
   /** The tapped grid cell's rect in window coords — the card grows from here.
-   *  Null (e.g. a clue another player picked) means no animation. */
+   *  Null (e.g. reconnecting into an active clue) means no animation. */
   fromRect: CellRect | null;
   /** When false, the overlay just fills the screen instantly. */
   animate: boolean;
@@ -38,7 +38,11 @@ const CARD_WIDTH_FRACTION = 0.9;
  */
 export function ExpandingClueOverlay({ fromRect, animate, bottomInset = 0, onExpanded, children }: ExpandingClueOverlayProps) {
   const { width: ow, height: oh } = useWindowDimensions();
-  const willAnimate = animate && !!fromRect;
+  // Decide at mount. A reconnect may finish measuring its board after the
+  // already-open clue appears; that late rect must not shrink the full card
+  // back into a cell and replay the expansion.
+  const initialFromRect = useRef(fromRect).current;
+  const willAnimate = useRef(animate && !!initialFromRect).current;
   const progress = useRef(new Animated.Value(willAnimate ? 0 : 1)).current;
   const onExpandedRef = useRef(onExpanded);
   onExpandedRef.current = onExpanded;
@@ -72,11 +76,11 @@ export function ExpandingClueOverlay({ fromRect, animate, bottomInset = 0, onExp
   // Calculate start parameters synchronously.
   // We calculate the start scale `k` so the inner blue card matches the cell width exactly.
   const cardWidth = ow * CARD_WIDTH_FRACTION;
-  const start = fromRect
+  const start = initialFromRect
     ? {
-        cx: fromRect.x + fromRect.width / 2,
-        cy: fromRect.y + fromRect.height / 2,
-        k: fromRect.width / cardWidth,
+        cx: initialFromRect.x + initialFromRect.width / 2,
+        cy: initialFromRect.y + initialFromRect.height / 2,
+        k: initialFromRect.width / cardWidth,
       }
     : null;
 

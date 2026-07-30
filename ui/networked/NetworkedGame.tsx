@@ -51,13 +51,14 @@ interface NetworkedGameProps {
   serverPeerId: string;
   initialState?: { state: GameState; playerId: string | null; canUndo?: boolean; canRedo?: boolean } | null;
   boardData?: GameData | null;
-  remotePeerConnectionStatus?: 'connected' | 'remote-disconnected';
+  peerConnectionStatus?: 'connected' | 'remote-disconnected' | 'local-disconnected';
   localIsHost?: boolean;
   localRecovery?: 'none' | 'reconnecting' | 'promoting';
   roomCode?: number;
   relayHost?: string;
   relayPort?: string;
   onLeave?: () => void;
+  onKickPlayer?: (() => void) | undefined;
   onNewGame?: () => void;
   onJoinGame?: () => void;
   onBoardVisible?: () => void;
@@ -95,7 +96,7 @@ const PROPOSAL_INTRO = ['ESTHER', 'WILL', 'YOU', 'BE', 'MY', 'GIRLFRIEND?'] as c
 
 
 
-export function NetworkedGame({ transport, serverPeerId, initialState, boardData, remotePeerConnectionStatus = 'connected', localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onNewGame, onJoinGame, onBoardVisible, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, vibrationEnabled = false, onVibrationChange, textToSpeechEnabled = false, onTextToSpeechChange, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume, recentMatches, sessionMode }: NetworkedGameProps) {
+export function NetworkedGame({ transport, serverPeerId, initialState, boardData, peerConnectionStatus = 'connected', localIsHost = false, localRecovery = 'none', roomCode, relayHost, relayPort, onLeave, onKickPlayer, onNewGame, onJoinGame, onBoardVisible, playerName, onNameChange, relayHostSetting, onRelayHostChange, relayPortSetting, onRelayPortChange, animationsEnabled = true, vibrationEnabled = false, onVibrationChange, textToSpeechEnabled = false, onTextToSpeechChange, onAnimationsChange, visibleCategories = 6, onVisibleCategoriesChange, isResume, recentMatches, sessionMode }: NetworkedGameProps) {
   // createClient is called in App.tsx before this component mounts, so
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
@@ -107,6 +108,9 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     clue: ActiveClue;
     rect: CellRect;
   } | null>(null);
+  const selectedCellRef = useRef<{ clueId: number; rect: CellRect } | null>(null);
+  const [boardCellRects, setBoardCellRects] = useState<Record<number, CellRect>>({});
+  const [remoteAnimationClueId, setRemoteAnimationClueId] = useState<number | null>(null);
   const fadeToBlackAnim = useRef(new Animated.Value(0)).current;
   const currentVisibleStateRef = useRef<GameState | null>(initialState?.state ?? null);
   // The newest server state, always — the fade below holds the *visible*
@@ -121,6 +125,18 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     const incoming = initialState.state;
     latestStateRef.current = incoming;
     const current = currentVisibleStateRef.current;
+    const incomingClueId = incoming.activeClue?.id ?? null;
+    const currentClueId = current?.activeClue?.id ?? null;
+    if (
+      incomingClueId != null &&
+      incomingClueId !== -1 &&
+      currentClueId == null &&
+      selectedCellRef.current?.clueId !== incomingClueId
+    ) {
+      setRemoteAnimationClueId(incomingClueId);
+    } else if (incomingClueId == null) {
+      setRemoteAnimationClueId(null);
+    }
 
     const inFinal = (s: GameState) =>
       s.status === 'FINAL_WAGER' || s.status === 'FINAL_ANSWER';
@@ -195,6 +211,16 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     currentVisibleStateRef.current = incoming;
     setGameState(incoming);
   }, [initialState?.state, fadeToBlackAnim]);
+
+  // A normally mounted board has already measured every cell before anyone
+  // can pick. If a very fast remote selection wins that race, briefly keep
+  // showing the board so its local cell can report a source rect. Never let
+  // a failed measurement hide the clue indefinitely.
+  useEffect(() => {
+    if (remoteAnimationClueId == null) return;
+    const timeout = setTimeout(() => setRemoteAnimationClueId(null), 250);
+    return () => clearTimeout(timeout);
+  }, [remoteAnimationClueId]);
 
   // Fire after BUZZ_OPEN has committed but before that frame is displayed,
   // keeping the physical cue aligned with the lights' instant-on frame.
@@ -297,10 +323,23 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // they drive the activation lights' drain.
   const previousStatusRef = useRef<GameStatus | null>(null);
   const buzzWindowDeadlineRef = useRef<number | null>(null);
-  // Window rect of the cell this device last tapped, so the clue card can grow
-  // out of it. Only set for clues *we* picked — a clue another player selects
-  // arrives with no rect and simply appears full-screen.
-  const selectedCellRef = useRef<{ clueId: number; rect: CellRect } | null>(null);
+  // Cache this phone's window-space board geometry so both local and remote
+  // selections can grow out of the correct cell on this particular screen.
+  const handleBoardCellRect = useCallback((clueId: number, rect: CellRect) => {
+    setBoardCellRects(current => {
+      const previous = current[clueId];
+      if (
+        previous &&
+        previous.x === rect.x &&
+        previous.y === rect.y &&
+        previous.width === rect.width &&
+        previous.height === rect.height
+      ) {
+        return current;
+      }
+      return { ...current, [clueId]: rect };
+    });
+  }, []);
   // Category fly-by: each round plays its intro once, before the board is
   // usable. We track which rounds have already shown theirs so the intro never
   // replays (e.g. on a reconnect / state update).
@@ -341,9 +380,12 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const recoveringLocally = localRecovery !== 'none';
 
   const dispatch = useCallback((action: Action) => {
-    if (recoveringLocally || remotePeerConnectionStatus === 'remote-disconnected') return;
+    // Liveness is a visual hint, not permission to play. Traffic may still
+    // succeed during a one-way/brief BLE gap and itself restore liveness.
+    // Only an actual provider replacement blocks actions.
+    if (recoveringLocally) return;
     sendAction(transport, serverPeerId, action as unknown as Record<string, unknown>);
-  }, [transport, serverPeerId, recoveringLocally, remotePeerConnectionStatus]);
+  }, [transport, serverPeerId, recoveringLocally]);
 
   // Dev shortcut: Y key burns all-but-one clue on the current board.
   const yKeyHandlerRef = useRef<(() => void) | null>(null);
@@ -398,8 +440,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
       gameState?.status !== 'BUZZ_OPEN' ||
       localBuzz ||
       optimisticBuzzing ||
-      recoveringLocally ||
-      remotePeerConnectionStatus === 'remote-disconnected'
+      recoveringLocally
     ) return;
     setOptimisticBuzzClueId(activeClueId);
     dispatch({ type: 'BUZZ', playerId });
@@ -411,7 +452,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     optimisticBuzzing,
     playerId,
     recoveringLocally,
-    remotePeerConnectionStatus,
   ]);
 
   const localPassed = (gameState?.passedPlayerIds ?? []).includes(playerId ?? '');
@@ -464,8 +504,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const handleSelectClue = useCallback((clueId: number, rect: CellRect) => {
     if (
       !playerId ||
-      recoveringLocally ||
-      remotePeerConnectionStatus === 'remote-disconnected'
+      recoveringLocally
     ) return;
     const clue = { ...getClue(clueId), failedPlayerIds: [] };
     selectedCellRef.current = { clueId, rect };
@@ -477,7 +516,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     getClue,
     playerId,
     recoveringLocally,
-    remotePeerConnectionStatus,
   ]);
 
   // Reconcile the instant local card with the authoritative host selection.
@@ -576,12 +614,18 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   const displayedClueRect =
     displayedClue && selectedCellRef.current?.clueId === displayedClue.id
       ? selectedCellRef.current.rect
-      : null;
+      : displayedClue
+        ? boardCellRects[displayedClue.id] ?? null
+        : null;
   const displayedClueWillAnimate =
     !!displayedClue &&
     animationsEnabled &&
     displayedClue.id !== -1 &&
     displayedClueRect != null;
+  const waitingForRemoteClueRect =
+    animationsEnabled &&
+    displayedClue?.id === remoteAnimationClueId &&
+    displayedClueRect == null;
 
   // Final Wager spans three statuses — WAGER, ANSWER, and the shared
   // REVEAL used for judging — but the clue keeps its sentinel id (-1)
@@ -603,9 +647,12 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           : []
       : [];
 
-  const disconnectedPlayerId = remotePeerConnectionStatus === 'remote-disconnected'
-    ? Object.keys(gameState.players).find(id => id !== playerId) ?? null
-    : null;
+  const disconnectedPlayerId =
+    peerConnectionStatus === 'local-disconnected'
+      ? playerId
+      : peerConnectionStatus === 'remote-disconnected'
+        ? Object.keys(gameState.players).find(id => id !== playerId) ?? null
+        : null;
   const remotePlayerId = Object.keys(gameState.players).find(id => id !== playerId) ?? null;
   const hostPlayerId = localIsHost ? playerId : remotePlayerId;
   const promotingPlayerId = recoveringLocally && !localIsHost ? playerId : null;
@@ -705,6 +752,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
             animationsEnabled={animationsEnabled}
             judgingPlayerId={gameState.status === 'REVEAL' && !isFinalClue ? onStand : null}
             onSelectClue={handleSelectClue}
+            onCellRect={handleBoardCellRect}
             onSkipClue={handleSkipClue}
           />
         </View>
@@ -723,7 +771,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           </Pressable>
         )}
 
-        {displayedClue && (
+        {displayedClue && !waitingForRemoteClueRect && (
           <View style={StyleSheet.absoluteFill}>
             {isFinalClue && (
               <View
@@ -752,8 +800,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                 gameState.status === 'BUZZ_OPEN' &&
                 !localBuzz &&
                 !optimisticBuzzing &&
-                !recoveringLocally &&
-                remotePeerConnectionStatus !== 'remote-disconnected'
+                !recoveringLocally
               }
               canPass={
                 !recoveringLocally &&
@@ -963,6 +1010,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
         <InGameSettingsScreen
           onClose={() => setSettingsOpen(false)}
           onQuit={onLeave ?? (() => {})}
+          onKickPlayer={localIsHost ? onKickPlayer : undefined}
           animationsEnabled={animationsEnabled}
           onAnimationsChange={onAnimationsChange ?? (() => {})}
           vibrationEnabled={vibrationEnabled}

@@ -290,11 +290,10 @@ export function ClueScreen({
     outputRange: [24, 0],
   });
 
-  // The player can swipe the keyboard down without locking if they haven't
-  // typed anything yet — it just dismisses temporarily. Tapping the card
-  // brings it back. Only a swipe-down with at least one character locks
-  // for real. `dismissed` resets whenever `showKeyboard` drops (lock,
-  // phase change, timer expiry).
+  // An empty keyboard can be dismissed temporarily and summoned again while
+  // time remains. Only a swipe-down with typed text locks an answer.
+  // `dismissed` resets whenever `showKeyboard` drops (lock, phase change,
+  // timer expiry).
   const [dismissed, setDismissed] = useState(() => isFinalRound);
   useEffect(() => {
     if (!showKeyboard) setDismissed(isFinalRound);
@@ -586,8 +585,8 @@ export function ClueScreen({
         answerOpacity.setValue(0);
         setKbMounted(false);
         const s = stateRef.current;
-        if (s.answer) {
-          s.onLockAnswer?.(s.answer);
+        if (s.onLockAnswer && s.answer) {
+          s.onLockAnswer(s.answer);
         } else {
           s.setDismissed(true);
         }
@@ -744,7 +743,10 @@ export function ClueScreen({
         s.onBuzz();
         return;
       }
-      if (s.onLockAnswer && s.answer && e.key === 'Enter') { s.onLockAnswer(s.answer); return; }
+      if (s.onLockAnswer && s.answer && e.key === 'Enter') {
+        s.onLockAnswer(s.answer);
+        return;
+      }
       if (e.key === 'ArrowDown' && !s.keyboardVisible && s.canPass) {
         e.preventDefault();
         s.onPass?.();

@@ -38,6 +38,8 @@ export interface ServerOptions {
   answerMs?: number;
   /** Total number of clues on the board (default 30) */
   totalClues?: number;
+  /** Exact Round One clue ids for assigning the first Round Two selection. */
+  round1ClueIds?: number[];
   /** Resume a saved game: start from this state instead of a fresh board.
    *  When set, `playerNames` is ignored — seats reattach to the state's
    *  players by name matching on connect. */
@@ -76,9 +78,10 @@ export function createServer(
     dismissMs = 5000,
     answerMs = 20000,
     totalClues,
+    round1ClueIds,
     finalClue,
   } = options;
-  const initialState = options.initialState ?? createInitialState(playerNames, totalClues, finalClue);
+  const initialState = options.initialState ?? createInitialState(playerNames, totalClues, finalClue, round1ClueIds);
   const server: GameServer = {
     history: createHistory(initialState),
     playerPeers: new Map(),
@@ -95,7 +98,7 @@ export function createServer(
   /** Wall-clock time when the current buzz window opened (Date.now()). */
   let buzzWindowOpenAt: number | null = null;
 
-  /** One lock timer per unlocked buzzer, all scheduled against the shared deadline. */
+  /** One lock timer per unlocked buzzer during ordinary clues. */
   const answerTimerIds = new Map<string, unknown>();
 
   function clearPhaseTimer(): void {
@@ -138,14 +141,20 @@ export function createServer(
         buzzWindowOpenAt = Date.now();
         phaseTimerId = timer.set(() => fireTimerAction({ type: 'TIMEOUT' }), buzzerMs);
         break;
+      case 'FINAL_WAGER':
+      case 'FINAL_ANSWER':
+        // Final input is one shared phase, not a timer per keyboard/player.
+        // The reducer atomically locks every unfinished entry at the deadline.
+        phaseTimerId = timer.set(() => fireTimerAction({ type: 'TIMEOUT' }), 30000);
+        break;
       case 'CLUE_EXPIRED':
         phaseTimerId = timer.set(
           () => fireTimerAction({ type: 'DISMISS_CLUE' }),
           (server.history.current.passedPlayerIds?.length ?? 0) > 0 ? 3000 : dismissMs,
         );
         break;
-      // ANSWERING and REVEAL are not phase-timed: ANSWERING ends via the
-      // per-player lock timers below, REVEAL via manual judging.
+      // ANSWERING is not phase-timed: it ends via the ordinary clue's
+      // per-player lock timers below. REVEAL ends via manual judging.
     }
   }
 
@@ -155,7 +164,7 @@ export function createServer(
    *  entries are cleared. A timer-fired lock keeps the last synced answer. */
   function syncAnswerTimers(): void {
     const state = server.history.current;
-    if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING' && state.status !== 'FINAL_WAGER' && state.status !== 'FINAL_ANSWER') {
+    if (state.status !== 'BUZZ_OPEN' && state.status !== 'ANSWERING') {
       clearAnswerTimers();
       return;
     }
@@ -169,10 +178,9 @@ export function createServer(
     for (const buzz of state.buzzes) {
       if (!buzz.locked && !answerTimerIds.has(buzz.playerId)) {
         const playerId = buzz.playerId;
-        const isFinal = state.status === 'FINAL_WAGER' || state.status === 'FINAL_ANSWER';
-        const remainingMs = isFinal ? 30000 : (buzzWindowOpenAt != null
+        const remainingMs = buzzWindowOpenAt != null
           ? Math.max(50, Math.round((buzzWindowOpenAt + buzzerMs - Date.now()) / 100) * 100)
-          : answerMs);
+          : answerMs;
         answerTimerIds.set(playerId, timer.set(() => {
           answerTimerIds.delete(playerId);
           applyAction({ type: 'LOCK_ANSWER', playerId });
@@ -188,7 +196,10 @@ export function createServer(
     const next = dispatch(server.history, action, opts);
     if (next === server.history) return;
     server.history = next;
-    if (server.history.current.status !== prevStatus) armPhaseTimer();
+    const nextStatus = server.history.current.status;
+    if (nextStatus !== prevStatus) {
+      armPhaseTimer();
+    }
     syncAnswerTimers();
     // Typing is the wire's hot path: a SET_ANSWER only rewrites one buzz's
     // answer text, so broadcast a small delta instead of the full snapshot

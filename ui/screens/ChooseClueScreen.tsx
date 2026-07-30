@@ -14,6 +14,7 @@ interface ChooseClueScreenProps {
   localPlayerId: string;
   board: BoardDefinition;
   onSelectClue?: ((clueId: number, rect: CellRect) => void) | undefined;
+  onCellRect?: ((clueId: number, rect: CellRect) => void) | undefined;
   onSkipClue?: ((clueId: number) => void) | undefined;
   /** Id of a player who has disconnected. */
   disconnectedPlayerId?: string | null;
@@ -37,6 +38,7 @@ export function ChooseClueScreen({
   localPlayerId,
   board,
   onSelectClue,
+  onCellRect,
   onSkipClue,
   disconnectedPlayerId,
   hostPlayerId,
@@ -119,6 +121,7 @@ export function ChooseClueScreen({
             burnedClueIds={state.burnedClueIds}
             locked={locked}
             onSelectClue={onSelectClue}
+            onCellRect={onCellRect}
             onSkipClue={onSkipClue}
             boardAnimKey={boardAnimKey}
             onReady={handleBoardReady}
