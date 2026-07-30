@@ -91,6 +91,20 @@ function instanceIdForMatch(match: MatchResult): string {
   return match.matchInstanceId ?? match.id.replace(/\|(ongoing|completed)$/, '');
 }
 
+/**
+ * Early versions saved a fresh record for each reconnect without a stable
+ * match instance id. Ongoing snapshots describe the same game when their
+ * board and player key match, so retain only the newest one while reading
+ * history. Completed legacy records remain separate: they may be replays.
+ */
+function displayIdentity(match: MatchResult): string {
+  return match.matchInstanceId
+    ? `instance:${match.matchInstanceId}`
+    : isOngoingMatch(match)
+      ? `legacy-ongoing:${gameKeyForMatch(match)}`
+      : `record:${match.id}`;
+}
+
 /** New records have an explicit owner. Legacy records belong to a username
  * only when that name appears in their player list. */
 export function matchBelongsToPlayer(match: MatchResult, playerName: string): boolean {
@@ -115,7 +129,13 @@ export async function loadMatchHistory(): Promise<MatchResult[]> {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as MatchResult[];
     if (!Array.isArray(parsed)) return [];
-    return parsed;
+    const seen = new Set<string>();
+    return parsed.filter(match => {
+      const identity = displayIdentity(match);
+      if (seen.has(identity)) return false;
+      seen.add(identity);
+      return true;
+    });
   } catch {
     return [];
   }

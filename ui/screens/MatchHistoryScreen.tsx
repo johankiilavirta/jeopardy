@@ -31,13 +31,10 @@ function resultForMatch(match: MatchResult, playerName: string): 'W' | 'L' | 'T'
   return match.winnerNames[0].trim().toLowerCase() === normalizedPlayerName ? 'W' : 'L';
 }
 
-function compactScore(score: number, roundUp = false): string {
+function compactScore(score: number): string {
   const absolute = Math.abs(Math.round(score));
   if (absolute < 1000) return `${score < 0 ? '-' : ''}${absolute}`;
-  if (score < 0) return `-${(absolute / 1000).toFixed(1).replace('.0', '')}k`;
-  const thousands = Math.floor(absolute / 1000);
-  const rounded = roundUp || absolute % 1000 >= 900 ? thousands + 1 : thousands;
-  return `${score < 0 ? '-' : ''}${rounded}k`;
+  return `${score < 0 ? '-' : ''}${(absolute / 1000).toFixed(1).replace('.0', '')}k`;
 }
 
 function deltaAmount(amount: number): string {
@@ -58,27 +55,7 @@ function scoreBug(match: MatchResult, result: 'W' | 'L' | 'T' | null, playerName
   }
   const first = players[0]!;
   const second = players[1]!;
-  const scoreDifference = Math.abs(first.score - second.score);
-  let firstScore: string;
-  let secondScore: string;
-  const useCloseScorePrecision = scoreDifference > 0 && scoreDifference <= 1500 &&
-    Math.max(Math.abs(first.score), Math.abs(second.score)) >= 1000;
-  if (useCloseScorePrecision) {
-    firstScore = `${(first.score / 1000).toFixed(1).replace('.0', '')}k`;
-    secondScore = `${(second.score / 1000).toFixed(1).replace('.0', '')}k`;
-  } else {
-    const firstNeedsBump = result !== 'T' && result !== null &&
-      Math.floor(Math.abs(first.score) / 1000) === Math.floor(Math.abs(second.score) / 1000) &&
-      ((result === 'W' && first.name.trim().toLowerCase() === normalizedPlayerName) ||
-        (result === 'L' && first.name.trim().toLowerCase() !== normalizedPlayerName));
-    const secondNeedsBump = result !== 'T' && result !== null &&
-      Math.floor(Math.abs(first.score) / 1000) === Math.floor(Math.abs(second.score) / 1000) &&
-      ((result === 'W' && second.name.trim().toLowerCase() === normalizedPlayerName) ||
-        (result === 'L' && second.name.trim().toLowerCase() !== normalizedPlayerName));
-    firstScore = compactScore(first.score, firstNeedsBump);
-    secondScore = compactScore(second.score, secondNeedsBump);
-  }
-  return `$${firstScore} vs $${secondScore}`;
+  return `$${compactScore(first.score)} vs $${compactScore(second.score)}`;
 }
 
 function dateLabel(timestamp: number): string {
