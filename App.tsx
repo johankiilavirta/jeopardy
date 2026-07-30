@@ -238,7 +238,13 @@ export default function App() {
   const [lobbyError, setLobbyError] = useState<string | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joinSearching, setJoinSearching] = useState(false);
-  const [initialGameState, setInitialGameState] = useState<{ state: GameState; playerId: string | null; canUndo?: boolean; canRedo?: boolean } | null>(null);
+  const [initialGameState, setInitialGameState] = useState<{
+    state: GameState;
+    playerId: string | null;
+    canUndo?: boolean;
+    canRedo?: boolean;
+    buzzOpensAt?: number | null;
+  } | null>(null);
   const [boardData, setBoardData] = useState<GameData | null>(null);
   const boardDataRef = useRef<GameData | null>(null);
   const [peerConnectionStatus, setPeerConnectionStatus] = useState<PeerConnectionStatus>('connected');
@@ -333,8 +339,20 @@ export default function App() {
 
   /** Every STATE_UPDATE lands here: feed the UI, keep the on-device
    *  snapshot current, and clear all persistence once the game is over. */
-  const handleStateUpdate = useCallback((state: GameState, pid: string | null, cu?: boolean, cr?: boolean) => {
-    setInitialGameState({ state, playerId: pid, ...(cu != null ? { canUndo: cu } : {}), ...(cr != null ? { canRedo: cr } : {}) });
+  const handleStateUpdate = useCallback((
+    state: GameState,
+    pid: string | null,
+    cu?: boolean,
+    cr?: boolean,
+    buzzOpensAt?: number | null,
+  ) => {
+    setInitialGameState({
+      state,
+      playerId: pid,
+      ...(cu != null ? { canUndo: cu } : {}),
+      ...(cr != null ? { canRedo: cr } : {}),
+      ...(buzzOpensAt !== undefined ? { buzzOpensAt } : {}),
+    });
     if (!PERSISTENCE_ENABLED) return;
     const localPlayerName =
       (pid ? state.players[pid]?.name : undefined) ??
@@ -643,7 +661,7 @@ export default function App() {
               ctl.timer = null;
               retry();
             }, CONNECTION_TIMEOUT_MS);
-            createClient(transport, (state, pid, cu, cr) => {
+            createClient(transport, (state, pid, cu, cr, buzzOpensAt) => {
               const firstUpdate = !gameMounted;
               if (firstUpdate) {
                 // Ignore a late snapshot from an attempt that already timed
@@ -657,7 +675,7 @@ export default function App() {
                 sessionRef.current = joinedSession;
                 if (persistenceStartedRef.current) void saveSession(joinedSession);
               }
-              handleStateUpdate(state, pid, cu, cr);
+              handleStateUpdate(state, pid, cu, cr, buzzOpensAt);
               if (firstUpdate) {
                 setScreen(gameScreen);
                 if (keepGameMounted) {
@@ -959,8 +977,8 @@ export default function App() {
             isResume: !!msg.isResume,
           };
           let gameMounted = false;
-          createClient(transport, (state, pid, cu, cr) => {
-            handleStateUpdate(state, pid, cu, cr);
+          createClient(transport, (state, pid, cu, cr, buzzOpensAt) => {
+            handleStateUpdate(state, pid, cu, cr, buzzOpensAt);
             // Mount the game screen only once the first STATE_UPDATE is in,
             // so NetworkedGame's mount-time animation decisions (category
             // intro, DJ board flash) always see the real game state instead
@@ -1185,8 +1203,8 @@ export default function App() {
           break;
         }
         case 'game-started': {
-          createClient(transport, (state, pid, cu, cr) => {
-            handleStateUpdate(state, pid, cu, cr);
+          createClient(transport, (state, pid, cu, cr, buzzOpensAt) => {
+            handleStateUpdate(state, pid, cu, cr, buzzOpensAt);
           });
           const board = (msg.board as GameData) ?? null;
           setBoardData(board);

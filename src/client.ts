@@ -7,15 +7,24 @@ export interface GameClient {
   state: GameState | null;
   /** This client's player ID (null until assigned by server) */
   playerId: string | null;
+  /** Authoritative end of the reading lockout, when one is predictable. */
+  buzzOpensAt: number | null;
 }
 
 export function createClient(
   transport: Transport,
-  onStateUpdate?: (state: GameState, playerId: string | null, canUndo?: boolean, canRedo?: boolean) => void,
+  onStateUpdate?: (
+    state: GameState,
+    playerId: string | null,
+    canUndo?: boolean,
+    canRedo?: boolean,
+    buzzOpensAt?: number | null,
+  ) => void,
 ): GameClient {
   const client: GameClient = {
     state: null,
     playerId: null,
+    buzzOpensAt: null,
   };
 
   // ANSWER_UPDATE deltas don't carry undo flags (typing is transient and
@@ -31,6 +40,7 @@ export function createClient(
       playerId?: string;
       canUndo?: boolean;
       canRedo?: boolean;
+      buzzOpensAt?: number | null;
       clueId?: number;
       text?: string;
     };
@@ -43,9 +53,16 @@ export function createClient(
     if (parsed.type === 'STATE_UPDATE' && parsed.state) {
       client.state = parsed.state;
       client.playerId = parsed.playerId ?? null;
+      client.buzzOpensAt = parsed.buzzOpensAt ?? null;
       lastCanUndo = parsed.canUndo;
       lastCanRedo = parsed.canRedo;
-      onStateUpdate?.(client.state, client.playerId, parsed.canUndo, parsed.canRedo);
+      onStateUpdate?.(
+        client.state,
+        client.playerId,
+        parsed.canUndo,
+        parsed.canRedo,
+        client.buzzOpensAt,
+      );
       return;
     }
 
@@ -62,7 +79,13 @@ export function createClient(
       });
       if (next === client.state) return;
       client.state = next;
-      onStateUpdate?.(client.state, client.playerId, lastCanUndo, lastCanRedo);
+      onStateUpdate?.(
+        client.state,
+        client.playerId,
+        lastCanUndo,
+        lastCanRedo,
+        client.buzzOpensAt,
+      );
     }
   });
 

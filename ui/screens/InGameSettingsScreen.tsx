@@ -29,8 +29,8 @@ interface InGameSettingsScreenProps {
   showTextToSpeech?: boolean;
   visibleCategories: number;
   onVisibleCategoriesChange: (n: number) => void;
-  showLastClueButton: boolean;
-  onShowLastClueButtonChange: (visible: boolean) => void;
+  revealDelayEnabled: boolean;
+  onRevealDelayChange: (enabled: boolean) => void;
   /** Kept in interface for compatibility — not rendered. */
   playerName?: string;
   onNameChange?: (name: string) => void;
@@ -293,15 +293,15 @@ export function InGameSettingsScreen(props: InGameSettingsScreenProps) {
               </View>
 
               <View style={styles.settingGroup}>
-                <Text style={styles.label}>LAST CLUE</Text>
+                <Text style={styles.label}>REVEAL DELAY</Text>
                 <Pressable
                   accessibilityRole="switch"
-                  accessibilityState={{ checked: props.showLastClueButton }}
+                  accessibilityState={{ checked: props.revealDelayEnabled }}
                   style={styles.toggleBox}
-                  onPress={() => props.onShowLastClueButtonChange(!props.showLastClueButton)}
+                  onPress={() => props.onRevealDelayChange(!props.revealDelayEnabled)}
                 >
-                  <Text style={[styles.toggleText, !props.showLastClueButton && styles.toggleTextOff]}>
-                    {props.showLastClueButton ? 'SHOWN' : 'HIDDEN'}
+                  <Text style={[styles.toggleText, !props.revealDelayEnabled && styles.toggleTextOff]}>
+                    {props.revealDelayEnabled ? 'ON' : 'OFF'}
                   </Text>
                 </Pressable>
               </View>

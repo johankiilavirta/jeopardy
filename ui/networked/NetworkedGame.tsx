@@ -49,7 +49,13 @@ import { colors, type as typeTokens } from '../theme/tokens';
 interface NetworkedGameProps {
   transport: Transport;
   serverPeerId: string;
-  initialState?: { state: GameState; playerId: string | null; canUndo?: boolean; canRedo?: boolean } | null;
+  initialState?: {
+    state: GameState;
+    playerId: string | null;
+    canUndo?: boolean;
+    canRedo?: boolean;
+    buzzOpensAt?: number | null;
+  } | null;
   boardData?: GameData | null;
   peerConnectionStatus?: 'connected' | 'remote-disconnected' | 'local-disconnected';
   localIsHost?: boolean;
@@ -101,7 +107,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
   // STATE_UPDATE messages are never lost. App.tsx passes the latest state
   // down as initialState (updated on every STATE_UPDATE from the server).
   const [gameState, setGameState] = useState<GameState | null>(initialState?.state ?? null);
-  const [showLastClueButton, setShowLastClueButton] = useState(false);
+  const [revealDelayEnabled, setRevealDelayEnabled] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [expandedClueId, setExpandedClueId] = useState<number | null>(null);
   const [optimisticSelection, setOptimisticSelection] = useState<{
@@ -666,7 +672,7 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
     unburnedCurrentRoundClueIds.length > 1;
 
   // Update the Y-key handler every render so it closes over fresh state.
-  // The floating test button below calls the same action on native builds.
+  // The keyboard shortcut remains available for local development builds.
   const skipToLastClue = () => {
     if (!canSkipToLastClue) return;
     unburnedCurrentRoundClueIds.slice(0, -1).forEach(clueId => {
@@ -757,20 +763,6 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           />
         </View>
 
-        {showLastClueButton && canSkipToLastClue && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Skip to the last clue"
-            onPress={skipToLastClue}
-            style={({ pressed }) => [
-              styles.localTestButton,
-              pressed ? styles.localTestButtonPressed : undefined,
-            ]}
-          >
-            <Text style={styles.localTestButtonText}>TEST: LAST CLUE</Text>
-          </Pressable>
-        )}
-
         {displayedClue && !waitingForRemoteClueRect && (
           <View style={StyleSheet.absoluteFill}>
             {isFinalClue && (
@@ -818,6 +810,11 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
                 dispatch({ type: 'PASS_CLUE', playerId });
               }}
               lights={lights}
+              revealDelayDeadline={
+                revealDelayEnabled && gameState.status === 'CLUE_READING'
+                  ? initialState?.buzzOpensAt ?? null
+                  : null
+              }
               showKeyboard={typing}
               prepareKeyboard={
                 expandedClueId === displayedClue.id &&
@@ -1020,8 +1017,8 @@ export function NetworkedGame({ transport, serverPeerId, initialState, boardData
           showTextToSpeech={localIsHost}
           visibleCategories={visibleCategories}
           onVisibleCategoriesChange={onVisibleCategoriesChange ?? (() => {})}
-          showLastClueButton={showLastClueButton}
-          onShowLastClueButtonChange={setShowLastClueButton}
+          revealDelayEnabled={revealDelayEnabled}
+          onRevealDelayChange={setRevealDelayEnabled}
           playerName={playerName ?? ''}
           onNameChange={onNameChange ?? (() => {})}
           relayHost={relayHostSetting ?? relayHost ?? 'localhost'}
@@ -1050,27 +1047,6 @@ const styles = StyleSheet.create({
     fontFamily: typeTokens.ui500,
     fontSize: 20,
     color: colors.categoryText,
-  },
-  localTestButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    zIndex: 500,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.55)',
-    backgroundColor: 'rgba(0,0,0,0.72)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  localTestButtonPressed: {
-    opacity: 0.55,
-  },
-  localTestButtonText: {
-    fontFamily: typeTokens.ui700,
-    fontSize: 11,
-    letterSpacing: 0.7,
-    color: '#fff',
   },
   gameOverOverlay: {
     ...StyleSheet.absoluteFill,

@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import type { ActiveClue } from '../../src/types';
 import type { CellRect } from '../components/BoardCell';
+import { formatRevealDelay } from '../../src/revealDelay';
 import { sanitizeText } from '../../src/sanitizeText';
 import { ActivationLights, LIGHTS_REST_BOTTOM, LIGHTS_WIDTH_PCT } from '../components/ActivationLights';
 import { AnswerKeyboard } from '../components/AnswerKeyboard';
@@ -125,6 +126,8 @@ interface ClueScreenProps {
   /** Activation lights in the band under the card: flash on buzzer open,
    *  then drain outside-in until the deadline. Null/undefined hides them. */
   lights?: { deadline: number; durationMs: number; flash: boolean } | null | undefined;
+  /** Authoritative instant when buzzing opens. Null hides the optional countdown. */
+  revealDelayDeadline?: number | null | undefined;
   /** The type of keyboard to show. Defaults to 'text'. */
   keyboardType?: 'text' | 'number';
   /** Called when MAX WAGER is pressed on the number keyboard */
@@ -169,6 +172,7 @@ export function ClueScreen({
   onPass,
   onDismiss,
   lights,
+  revealDelayDeadline,
   keyboardType = 'text',
   onMaxWager,
   maxInputValue,
@@ -263,6 +267,43 @@ export function ClueScreen({
   }, [onClueTextLayout]);
 
   const revealAnim = useRef(new Animated.Value(0)).current;
+
+  // Keep the final countdown value mounted while it fades beneath the newly
+  // activated lights. The deadline is server-supplied, so clue expansion
+  // and Bluetooth delivery latency do not restart or extend the delay.
+  const [displayedRevealDeadline, setDisplayedRevealDeadline] = useState<number | null>(
+    revealDelayDeadline ?? null,
+  );
+  const [revealDelayRemainingMs, setRevealDelayRemainingMs] = useState(() =>
+    revealDelayDeadline == null ? 0 : Math.max(0, revealDelayDeadline - Date.now()),
+  );
+  const revealDelayOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (revealDelayDeadline == null) return;
+    setDisplayedRevealDeadline(revealDelayDeadline);
+    const update = () => {
+      setRevealDelayRemainingMs(Math.max(0, revealDelayDeadline - Date.now()));
+    };
+    update();
+    const interval = setInterval(update, 100);
+    return () => clearInterval(interval);
+  }, [revealDelayDeadline]);
+
+  useEffect(() => {
+    revealDelayOpacity.stopAnimation();
+    const visible = revealDelayDeadline != null && contentVisible;
+    Animated.timing(revealDelayOpacity, {
+      toValue: visible ? 1 : 0,
+      duration: visible ? 160 : 260,
+      easing: visible ? Easing.out(Easing.ease) : Easing.in(Easing.ease),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished && revealDelayDeadline == null) {
+        setDisplayedRevealDeadline(null);
+      }
+    });
+  }, [contentVisible, revealDelayDeadline, revealDelayOpacity]);
 
   useEffect(() => {
     if (reveal) {
@@ -966,6 +1007,17 @@ export function ClueScreen({
         </Animated.View>
       )}
 
+      {displayedRevealDeadline != null && (
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.revealDelayLayer, { opacity: revealDelayOpacity }]}
+        >
+          <Text style={styles.revealDelayText} allowFontScaling={false}>
+            {formatRevealDelay(revealDelayRemainingMs)}
+          </Text>
+        </Animated.View>
+      )}
+
       {/* The answer sheet: a floating console docked to the true screen
           bottom — centered, at least half the screen tall — sliding up
           over the score bugs and the card's lower edge. One recessed-blue
@@ -1300,5 +1352,19 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     bottom: PLAYER_BAR_HEIGHT,
+  },
+  revealDelayLayer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: PLAYER_BAR_HEIGHT + 17,
+    alignItems: 'center',
+  },
+  revealDelayText: {
+    fontFamily: typeTokens.ui700,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 0.8,
+    color: '#FFFFFF',
   },
 });

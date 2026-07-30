@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { MockTransport } from '../mockTransport.js';
 import { createServer, type Timer } from '../server.js';
 import { createClient, sendAction } from '../client.js';
@@ -22,6 +22,8 @@ function createMockTimer() {
     },
   };
 }
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('GameClient', () => {
   it('receives state on connect', () => {
@@ -57,6 +59,26 @@ describe('GameClient', () => {
 
     expect(client1.state!.status).toBe('CLUE_READING');
     expect(client2.state!.status).toBe('CLUE_READING');
+  });
+
+  it('exposes reveal-delay metadata from full snapshots', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(2_000_000);
+    const { timer } = createMockTimer();
+    const host = new MockTransport('host');
+    createServer(host, ['Alice', 'Bob'], { timer, readingMs: 5000 });
+
+    const p1 = new MockTransport('player1');
+    const onUpdate = vi.fn();
+    const client = createClient(p1, onUpdate);
+    MockTransport.link(host, p1);
+
+    sendAction(p1, 'host', {
+      type: 'SELECT_CLUE',
+      clue: { id: 1, category: 'Science', text: 'Q', answer: 'A', value: 200 },
+    });
+
+    expect(client.buzzOpensAt).toBe(2_003_500);
+    expect(onUpdate.mock.calls.at(-1)?.[4]).toBe(2_003_500);
   });
 
   it('sendAction sends to server', () => {
@@ -159,7 +181,7 @@ describe('ANSWER_UPDATE handling', () => {
 
     expect(client.state!.buzzes[0]!.answer).toBe('PLU');
     expect(client.playerId).toBe('alice');
-    expect(onUpdate).toHaveBeenLastCalledWith(client.state, 'alice', true, false);
+    expect(onUpdate).toHaveBeenLastCalledWith(client.state, 'alice', true, false, null);
   });
 
   it('drops a delta whose clue id does not match the active clue', () => {
